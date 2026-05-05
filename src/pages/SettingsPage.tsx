@@ -232,6 +232,48 @@ export default function SettingsPage() {
 
       <section className="card p-4">
         <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
+          <UserRound size={16} className="text-brand-400" /> 프로필
+        </h2>
+        {userCount !== undefined && userCount > 1 && (
+          <p className="mb-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/90">
+            예전 데이터에 프로필이 여러 개 남아 있을 수 있어요. 앱은 하나의 프로필만 사용합니다. 정리하려면 아래{" "}
+            <strong className="text-amber-50">모든 데이터 삭제</strong> 후 다시 시작해 주세요.
+          </p>
+        )}
+        {profileUser ? (
+          <div className="space-y-4">
+            <ProfileIdentitySection user={profileUser} authUser={user} />
+            <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+              <p className="mb-2 text-[11px] text-slate-500">
+                피드·달력 등에서 내 항목을 구분할 때 쓰이는 색이에요.
+              </p>
+              <div className="flex items-center gap-3">
+                <span className="shrink-0 text-xs text-slate-400">식별 색</span>
+                <label className="relative shrink-0 cursor-pointer">
+                  <span
+                    className="flex h-10 w-10 items-center justify-center rounded-xl text-base font-bold text-white shadow-inner"
+                    style={{ backgroundColor: profileUser.color }}
+                  >
+                    {profileUser.name.slice(0, 1)}
+                  </span>
+                  <input
+                    type="color"
+                    value={profileUser.color}
+                    onChange={(e) => changeColor(profileUser, e.target.value)}
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    aria-label="식별 색 변경"
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">프로필을 불러오는 중이에요.</p>
+        )}
+      </section>
+
+      <section className="card p-4">
+        <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
           <KeyRound size={16} className="text-brand-400" /> Google Gemini 키
         </h2>
         <p className="mb-3 text-xs text-slate-400">
@@ -308,48 +350,6 @@ export default function SettingsPage() {
       </section>
 
       <ThemeSection currentTheme={normalizeTheme(settings?.theme)} />
-
-      <section className="card p-4">
-        <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
-          <UserRound size={16} className="text-brand-400" /> 프로필
-        </h2>
-        {userCount !== undefined && userCount > 1 && (
-          <p className="mb-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/90">
-            예전 데이터에 프로필이 여러 개 남아 있을 수 있어요. 앱은 하나의 프로필만 사용합니다. 정리하려면 아래{" "}
-            <strong className="text-amber-50">모든 데이터 삭제</strong> 후 다시 시작해 주세요.
-          </p>
-        )}
-        {profileUser ? (
-          <div className="space-y-4">
-            <ProfileIdentitySection user={profileUser} authUser={user} />
-            <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
-              <p className="mb-2 text-[11px] text-slate-500">
-                피드·달력 등에서 내 항목을 구분할 때 쓰이는 색이에요.
-              </p>
-              <div className="flex items-center gap-3">
-                <span className="shrink-0 text-xs text-slate-400">식별 색</span>
-                <label className="relative shrink-0 cursor-pointer">
-                  <span
-                    className="flex h-10 w-10 items-center justify-center rounded-xl text-base font-bold text-white shadow-inner"
-                    style={{ backgroundColor: profileUser.color }}
-                  >
-                    {profileUser.name.slice(0, 1)}
-                  </span>
-                  <input
-                    type="color"
-                    value={profileUser.color}
-                    onChange={(e) => changeColor(profileUser, e.target.value)}
-                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                    aria-label="식별 색 변경"
-                  />
-                </label>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <p className="text-sm text-slate-500">프로필을 불러오는 중이에요.</p>
-        )}
-      </section>
 
       <section className="card p-4">
         <h2 className="mb-2 text-base font-semibold text-rose-300">위험 영역</h2>

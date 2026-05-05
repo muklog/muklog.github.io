@@ -12,6 +12,15 @@ export default function FeedIntroBanner() {
       <p className="mt-1 text-sm font-semibold leading-snug text-slate-100">
         나의 한 끼를 기록하고, 친구와 서로 응원하는 식단 다이어리
       </p>
+      <p className="mt-2 text-[11px] text-slate-500">
+        문의{" "}
+        <a
+          href="mailto:jyj7236@knou.ac.kr"
+          className="text-brand-400 underline-offset-2 hover:underline"
+        >
+          jyj7236@knou.ac.kr
+        </a>
+      </p>
     </aside>
   );
 }
