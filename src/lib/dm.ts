@@ -16,16 +16,26 @@ import { getFirebaseAuth, getFirestoreDb } from "./firebaseApp";
 import { isCalendarConnectedPairFromServer } from "./friends";
 
 function isPermissionDenied(e: unknown): boolean {
-  const code = (e as { code?: string })?.code;
+  const code = String((e as { code?: string })?.code ?? "");
   const raw = e instanceof Error ? e.message : String(e);
-  return code === "permission-denied" || /insufficient permissions/i.test(raw);
+  return (
+    code === "permission-denied" ||
+    code.endsWith("/permission-denied") ||
+    /insufficient permissions/i.test(raw) ||
+    /missing or insufficient permissions/i.test(raw)
+  );
 }
 
 /** DM 전송·스레드 생성 실패 시 사용자에게 보여 줄 메시지 */
 function dmFirestoreUserMessage(e: unknown): string {
-  const code = (e as { code?: string })?.code;
+  const code = String((e as { code?: string })?.code ?? "");
   const raw = e instanceof Error ? e.message : String(e);
-  if (code === "permission-denied" || /insufficient permissions/i.test(raw)) {
+  if (
+    code === "permission-denied" ||
+    code.endsWith("/permission-denied") ||
+    /insufficient permissions/i.test(raw) ||
+    /missing or insufficient permissions/i.test(raw)
+  ) {
     return "메시지를 저장하지 못했어요. 로그인을 확인하고 잠시 후 다시 시도해 주세요. 계속되면 로그아웃 후 다시 로그인해 보세요.";
   }
   if (code === "unavailable" || code === "unauthenticated") {
@@ -182,7 +192,7 @@ export async function sendDmMessage(threadId: string, rawText: string): Promise<
   const threadSnap = await getDoc(tref);
   if (!threadSnap.exists()) throw new Error("대화방을 불러오지 못했습니다.");
   const p = (threadSnap.data() as { participantUids?: string[] }).participantUids;
-  if (!Array.isArray(p) || p.length !== 2 || !p.includes(me)) {
+  if (!Array.isArray(p) || !p.includes(me)) {
     throw new Error("이 대화에 참가할 수 없습니다.");
   }
 

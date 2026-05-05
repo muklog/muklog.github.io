@@ -175,12 +175,11 @@ service cloud.firestore {
         && request.resource.data.lastSenderUid is string
         && (request.resource.data.updatedAt is int || request.resource.data.updatedAt is float)
         && (request.resource.data.createdAt is int || request.resource.data.createdAt is float);
-      // 참가자만, 미리보기 필드만 변경 허용 — participantUids 배열 == 비교 실패(타입/순서 이슈) 방지
+      // 참가자만 — participantUids·createdAt 변경 금지 (hasOnly 나열은 SDK/병합 차이로 거절되는 경우가 있음)
       allow update: if signedIn()
         && resource.data.participantUids is list
-        && resource.data.participantUids.size() == 2
         && me() in resource.data.participantUids
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastText','lastSenderUid','updatedAt']);
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['participantUids','createdAt']);
     }
     match /dmThreads/{threadId}/messages/{mid} {
       allow read: if request.auth != null
@@ -188,7 +187,6 @@ service cloud.firestore {
         && request.auth.uid in dmThreadDoc(threadId).participantUids;
       allow create: if signedIn()
         && dmThreadDoc(threadId).participantUids is list
-        && dmThreadDoc(threadId).participantUids.size() == 2
         && me() in dmThreadDoc(threadId).participantUids
         && request.resource.data.senderUid == me()
         && request.resource.data.text is string
