@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Home, Rss, Sparkles, UserPlus } from "lucide-react";
+import { Home, Plus, Rss, Sparkles, UserPlus } from "lucide-react";
 import { db, getAnalysisProfileForUser, getSettings, normalizeMeal } from "../lib/db";
 import {
   subscribeFriendLatestMeals,
@@ -19,7 +19,7 @@ import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { MealItemCard, MealItemEditDialog } from "../components/MealCard";
 import MealSocialBlock from "../components/MealSocialBlock";
 import FeedIntroBanner from "../components/FeedIntroBanner";
-import { formatKoDate } from "../lib/utils";
+import { dateKey, formatKoDate, suggestMealSlotForNow } from "../lib/utils";
 import { resolveDisplayName, resolveDisplayPhotoURL } from "../lib/identity";
 import {
   deleteMealItem,
@@ -197,17 +197,29 @@ export default function FeedPage() {
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-5">
-      <header className="flex items-center justify-between">
-        <div>
+      <header className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
           <p className="text-xs text-slate-400">나와 친구들의 최근 식단</p>
           <h1 className="text-xl font-bold">
             <Rss size={18} className="mb-0.5 mr-1 inline text-brand-400" />
             피드
           </h1>
         </div>
-        <Link to="/home" className="btn-secondary py-2 text-sm">
-          <Home size={14} /> 달력
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          {myUserId && (
+            <Link
+              to={`/day/${dateKey()}?slot=${suggestMealSlotForNow()}`}
+              className="btn-primary inline-flex h-10 w-10 items-center justify-center rounded-full p-0"
+              aria-label="오늘 식단 사진 추가"
+              title="오늘 식단 기록"
+            >
+              <Plus size={22} strokeWidth={2.5} />
+            </Link>
+          )}
+          <Link to="/home" className="btn-secondary whitespace-nowrap py-2 text-sm">
+            <Home size={14} /> 달력
+          </Link>
+        </div>
       </header>
 
       <FeedIntroBanner />

@@ -120,8 +120,9 @@ service cloud.firestore {
         && request.resource.data.requestedScope.health != true
         && request.resource.data.status == 'pending'
         && request.resource.data.createdAt < request.resource.data.expiresAt
+        // createdAt/expiresAt 은 밀리초 정수 — duration 은 Timestamp 전용이라 숫자와 더하면 규칙이 실패(거부)함.
         && request.resource.data.expiresAt
-             <= request.resource.data.createdAt + duration.value(72, 'h');
+             <= request.resource.data.createdAt + 259200000;
 
       allow delete: if signedIn() && resource.data.fromUid == me();
 

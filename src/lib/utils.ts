@@ -1,5 +1,6 @@
 import { format, parse } from "date-fns";
 import { ko } from "date-fns/locale";
+import type { MealSlot } from "../types";
 
 export function cls(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -9,6 +10,17 @@ export const DATE_KEY_FMT = "yyyy-MM-dd";
 
 export function dateKey(date: Date = new Date()): string {
   return format(date, DATE_KEY_FMT);
+}
+
+/** 현재 시각 기준 오늘 끼니 슬롯 추천 (빠른 기록 진입용) */
+export function suggestMealSlotForNow(now: Date = new Date()): MealSlot {
+  const t = now.getHours() + now.getMinutes() / 60;
+  if (t < 10) return "breakfast";
+  if (t < 11.5) return "morningSnack";
+  if (t < 15) return "lunch";
+  if (t < 17) return "afternoonSnack";
+  if (t < 21.5) return "dinner";
+  return "eveningSnack";
 }
 
 export function parseDateKey(key: string): Date {
