@@ -5,62 +5,40 @@ import {
   Check,
   ChevronRight,
   Copy,
-  Eye,
   Link2,
   Loader2,
-  Mail,
-  Send,
   Share2,
   Trash2,
-  UserPlus,
   Users,
   X,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import {
-  acceptFollowRequest,
   buildFriendInviteLink,
-  cancelFollowRequest,
   createFriendInviteCode,
   FRIEND_INVITE_TTL_MS,
-  isGmailAddress,
-  rejectFollowRequest,
   removeShare,
-  sendFollowRequest,
-  subscribeIncomingRequests,
   subscribeIncomingShares,
-  subscribeOutgoingRequests,
   subscribeOutgoingShares,
   updateOutgoingScope,
 } from "../lib/friends";
 import { db } from "../lib/db";
-import type { FollowRequest, Share, ShareScope } from "../types";
+import type { Share, ShareScope } from "../types";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
 import { cls } from "../lib/utils";
 
-type Tab = "friends" | "incoming" | "outgoing";
-
 export default function FriendsPage() {
   const { user, firebaseReady } = useAuth();
-  const [tab, setTab] = useState<Tab>("friends");
   const [outShares, setOutShares] = useState<Share[] | null>(null);
   const [inShares, setInShares] = useState<Share[] | null>(null);
-  const [incoming, setIncoming] = useState<FollowRequest[] | null>(null);
-  const [outgoing, setOutgoing] = useState<FollowRequest[] | null>(null);
   const [errF, setErrF] = useState<string | null>(null);
-  const [errI, setErrI] = useState<string | null>(null);
-  const [errO, setErrO] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
       setOutShares(null);
       setInShares(null);
-      setIncoming(null);
-      setOutgoing(null);
       setErrF(null);
-      setErrI(null);
-      setErrO(null);
       return;
     }
     const toMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -75,30 +53,11 @@ export default function FriendsPage() {
       (rows) => setInShares(rows),
       (e) => setErrF(toMsg(e)),
     );
-    const unsubI = subscribeIncomingRequests(
-      (rows) => {
-        setErrI(null);
-        setIncoming(rows);
-      },
-      (e) => setErrI(toMsg(e)),
-    );
-    const unsubO = subscribeOutgoingRequests(
-      (rows) => {
-        setErrO(null);
-        setOutgoing(rows);
-      },
-      (e) => setErrO(toMsg(e)),
-    );
     return () => {
       unsubOut();
       unsubIn();
-      unsubI();
-      unsubO();
     };
   }, [user?.uid]);
-
-  const friendCount =
-    outShares && inShares ? new Set([...outShares.map((s) => s.ownerUid), ...inShares.map((s) => s.viewerUid)]).size : 0;
 
   if (!firebaseReady) {
     return (
@@ -127,28 +86,12 @@ export default function FriendsPage() {
     <div className="flex flex-col gap-4 px-4 pt-5">
       <Header />
 
-      <div className="flex gap-1 rounded-xl bg-slate-900/60 p-1">
-        <TabButton active={tab === "friends"} onClick={() => setTab("friends")}>
-          친구 {friendCount ? `(${friendCount})` : ""}
-        </TabButton>
-        <TabButton active={tab === "incoming"} onClick={() => setTab("incoming")}>
-          받은 신청 {incoming?.length ? `(${incoming.length})` : ""}
-        </TabButton>
-        <TabButton active={tab === "outgoing"} onClick={() => setTab("outgoing")}>
-          보낸 신청 {outgoing?.length ? `(${outgoing.length})` : ""}
-        </TabButton>
-      </div>
-
-      {tab === "friends" && (
-        <FriendsTab
-          outShares={outShares}
-          inShares={inShares}
-          myUid={user.uid}
-          error={errF}
-        />
-      )}
-      {tab === "incoming" && <IncomingTab requests={incoming} error={errI} />}
-      {tab === "outgoing" && <OutgoingTab requests={outgoing} error={errO} />}
+      <FriendsTab
+        outShares={outShares}
+        inShares={inShares}
+        myUid={user.uid}
+        error={errF}
+      />
     </div>
   );
 }
@@ -165,32 +108,7 @@ function Header() {
   );
 }
 
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cls(
-        "flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors",
-        active
-          ? "bg-brand-500/20 text-brand-200"
-          : "text-slate-400 hover:text-slate-200",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-// ---- 친구 목록 탭 --------------------------------------------------------
+// ---- 친구 목록 --------------------------------------------------------
 
 interface FriendRow {
   /** 상대 uid */
@@ -281,7 +199,6 @@ function FriendsTab({
   return (
     <>
       <LinkInviteCard />
-      <SendRequestCard />
       <section className="space-y-3">
         {error && <ErrorBanner message={error} />}
         {!error && rows === null && (
@@ -289,7 +206,7 @@ function FriendsTab({
         )}
         {rows?.length === 0 && (
           <p className="card p-4 text-center text-xs text-slate-500">
-            아직 친구가 없어요. 링크 초대 또는 이메일로 팔로우 신청을 보내보세요.
+            아직 친구가 없어요. 위에서 초대 링크를 만들어 공유해 보세요.
           </p>
         )}
         {rows?.map((r) => (
@@ -420,128 +337,11 @@ function LinkInviteCard() {
   );
 }
 
-function SendRequestCard() {
-  const [email, setEmail] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [lastSentLink, setLastSentLink] = useState<string | null>(null);
-  const [lastSentEmail, setLastSentEmail] = useState<string | null>(null);
-
-  const trimmed = email.trim();
-  // 빈 입력 단계에서는 빨간 경고 띄우지 않고, 무언가 입력했을 때만 형식 검사.
-  const gmailInvalid = trimmed.length > 0 && !isGmailAddress(trimmed);
-
-  async function submit() {
-    setErr(null);
-    setBusy(true);
-    try {
-      const req = await sendFollowRequest(email, CALENDAR_ONLY_SCOPE);
-      const link = buildInviteLink(req.id);
-      setLastSentLink(link);
-      setLastSentEmail(req.toEmail);
-      setEmail("");
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section className="card space-y-3 p-4">
-      <h3 className="text-sm font-semibold text-slate-200">
-        <UserPlus size={14} className="mb-0.5 mr-1 inline text-brand-400" />
-        이메일로 팔로우 신청
-      </h3>
-      <p className="text-[11px] text-slate-400">
-        상대가 수락하면 그 사람의 <strong className="text-slate-200">식단(달력) 기록</strong>을 볼 수 있어요.
-        <span className="mt-1 block text-slate-500">Gmail 주소만 신청할 수 있어요.</span>
-      </p>
-      <input
-        type="email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        placeholder="friend@gmail.com"
-        autoComplete="email"
-        inputMode="email"
-        className={cls("input", gmailInvalid && "border-rose-500/60 focus:border-rose-500")}
-        aria-invalid={gmailInvalid || undefined}
-      />
-      {gmailInvalid && (
-        <p className="-mt-1 text-[11px] text-rose-300">
-          Gmail 주소(@gmail.com)만 신청할 수 있어요.
-        </p>
-      )}
-      <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2 text-[11px] text-slate-400">
-        공개 범위: <strong className="text-slate-200">식단(달력)</strong>
-      </div>
-      <button
-        onClick={submit}
-        disabled={busy || !trimmed || gmailInvalid}
-        className="btn-primary w-full py-2.5 text-sm disabled:opacity-60"
-      >
-        {busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-        팔로우 신청 보내기
-      </button>
-      {err && (
-        <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-          {err}
-        </p>
-      )}
-      {lastSentLink && lastSentEmail && (
-        <InviteLinkBlock email={lastSentEmail} link={lastSentLink} />
-      )}
-    </section>
-  );
-}
-
-export function buildInviteLink(requestId: string): string {
-  const base = import.meta.env.BASE_URL || "/";
-  return `${location.origin}${base}#/friends/invite/${requestId}`;
-}
-
-function InviteLinkBlock({ email, link }: { email: string; link: string }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      prompt("링크를 복사하세요", link);
-    }
-  }
-  const mailHref = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent("헬스헬스 팔로우 신청")}&body=${encodeURIComponent(
-    `헬스헬스에서 팔로우 신청을 보냈어요.\n\n이 링크를 열어 수락해 주세요:\n${link}\n`,
-  )}`;
-  return (
-    <div className="space-y-2 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3 text-xs text-emerald-100/90">
-      <p className="font-medium">팔로우 신청을 보냈어요.</p>
-      <p className="break-all rounded-lg bg-slate-900/60 px-2 py-1.5 font-mono text-[11px] text-slate-300">
-        {link}
-      </p>
-      <div className="flex gap-2">
-        <button onClick={copy} className="btn-secondary flex-1 py-2 text-xs">
-          {copied ? <Check size={12} /> : <Copy size={12} />}
-          {copied ? "복사됨" : "링크 복사"}
-        </button>
-        <a href={mailHref} className="btn-secondary flex-1 py-2 text-xs">
-          <Mail size={12} /> 메일로 열기
-        </a>
-      </div>
-      <p className="text-[11px] text-emerald-200/70">
-        받는 사람이 같은 Google 계정으로 로그인하면 수락할 수 있어요.
-      </p>
-    </div>
-  );
-}
-
 function FriendCard({ row, myUid }: { row: FriendRow; myUid: string }) {
   const { otherUid, name, email, photo, outgoing, incoming } = row;
   const mutual = !!outgoing && !!incoming;
-  const [busy, setBusy] = useState<"stopOut" | "stopIn" | "follow" | null>(null);
+  const [busy, setBusy] = useState<"stopOut" | "stopIn" | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [followSent, setFollowSent] = useState(false);
 
   // 기존 사용자가 scope.health=true 로 저장된 share 가 있을 수 있다.
   // 앱은 더 이상 건강을 공유하지 않으므로, 공개 중이라면 달력 전용으로 강제 재저장.
@@ -572,19 +372,6 @@ function FriendCard({ row, myUid }: { row: FriendRow; myUid: string }) {
     setBusy("stopIn");
     try {
       await removeShare(incoming.id);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function followBack() {
-    setErr(null);
-    setBusy("follow");
-    try {
-      await sendFollowRequest(email, CALENDAR_ONLY_SCOPE);
-      setFollowSent(true);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -633,54 +420,41 @@ function FriendCard({ row, myUid }: { row: FriendRow; myUid: string }) {
           </p>
         )}
         <div className="flex flex-wrap gap-2">
-            {outgoing && (
-              <button
-                onClick={stopOutgoing}
-                disabled={busy !== null}
-                className="btn-secondary flex-1 py-1.5 text-xs text-rose-300 disabled:opacity-60"
-              >
-                {busy === "stopOut" ? (
-                  <Loader2 size={12} className="animate-spin" />
-                ) : (
-                  <Trash2 size={12} />
-                )}
-                공개 중단
-              </button>
-            )}
-            {incoming && (
-              <button
-                onClick={stopIncoming}
-                disabled={busy !== null}
-                className="btn-secondary flex-1 py-1.5 text-xs text-rose-300 disabled:opacity-60"
-              >
-                {busy === "stopIn" ? (
-                  <Loader2 size={12} className="animate-spin" />
-                ) : (
-                  <X size={12} />
-                )}
-                팔로우 끊기
-              </button>
-            )}
-            {!incoming && !followSent && (
-              <button
-                onClick={followBack}
-                disabled={busy !== null}
-                className="btn-primary flex-1 py-1.5 text-xs disabled:opacity-60"
-              >
-                {busy === "follow" ? (
-                  <Loader2 size={12} className="animate-spin" />
-                ) : (
-                  <Eye size={12} />
-                )}
-                나도 팔로우 신청
-              </button>
-            )}
-            {!incoming && followSent && (
-              <span className="flex-1 rounded-lg bg-slate-900/60 px-2 py-1.5 text-center text-[11px] text-slate-400">
-                팔로우 신청을 보냈어요. 보낸 신청 탭에서 확인하세요.
-              </span>
-            )}
+          {outgoing && (
+            <button
+              onClick={stopOutgoing}
+              disabled={busy !== null}
+              className="btn-secondary flex-1 py-1.5 text-xs text-rose-300 disabled:opacity-60"
+            >
+              {busy === "stopOut" ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Trash2 size={12} />
+              )}
+              공개 중단
+            </button>
+          )}
+          {incoming && (
+            <button
+              onClick={stopIncoming}
+              disabled={busy !== null}
+              className="btn-secondary flex-1 py-1.5 text-xs text-rose-300 disabled:opacity-60"
+            >
+              {busy === "stopIn" ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <X size={12} />
+              )}
+              팔로우 끊기
+            </button>
+          )}
         </div>
+        {!incoming && (
+          <p className="rounded-lg bg-slate-900/50 px-2 py-1.5 text-center text-[11px] leading-relaxed text-slate-400">
+            상대 식단을 보고 싶다면 위에서 <strong className="text-slate-300">초대 링크</strong>를 만들어 보내거나,
+            상대가 보낸 링크로 수락해 주세요.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -723,186 +497,6 @@ function Avatar({ name, photoURL }: { name: string; photoURL?: string }) {
   return (
     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-sm font-semibold text-slate-200">
       {initial}
-    </div>
-  );
-}
-
-// ---- 받은 신청 탭 --------------------------------------------------------
-
-function IncomingTab({
-  requests,
-  error,
-}: {
-  requests: FollowRequest[] | null;
-  error?: string | null;
-}) {
-  return (
-    <section className="space-y-3">
-      {error && <ErrorBanner message={error} />}
-      {!error && requests === null && (
-        <p className="card p-4 text-center text-xs text-slate-500">불러오는 중…</p>
-      )}
-      {requests?.length === 0 && (
-        <p className="card p-4 text-center text-xs text-slate-500">
-          받은 팔로우 신청이 없어요.
-        </p>
-      )}
-      {requests?.map((r) => (
-        <IncomingCard key={r.id} req={r} />
-      ))}
-    </section>
-  );
-}
-
-function IncomingCard({ req }: { req: FollowRequest }) {
-  const [busy, setBusy] = useState<"accept" | "reject" | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function onAccept() {
-    setErr(null);
-    setBusy("accept");
-    try {
-      // 건강 기록은 앱 정책상 공유 불가 — scope 는 항상 calendar 만.
-      await acceptFollowRequest(req.id, CALENDAR_ONLY_SCOPE);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
-  }
-  async function onReject() {
-    setErr(null);
-    setBusy("reject");
-    try {
-      await rejectFollowRequest(req.id);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  return (
-    <div className="card space-y-3 p-4">
-      <div className="flex items-center gap-3">
-        <Avatar name={req.fromName} photoURL={req.fromPhotoURL} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-100">{req.fromName}</p>
-          <p className="truncate text-xs text-slate-500">{req.fromEmail}</p>
-        </div>
-      </div>
-      <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2 text-[11px] text-slate-400">
-        공개 범위: <strong className="text-slate-200">식단(달력)</strong>
-      </div>
-      {err && (
-        <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-          {err}
-        </p>
-      )}
-      <div className="flex gap-2">
-        <button
-          onClick={onReject}
-          disabled={busy !== null}
-          className="btn-secondary flex-1 py-2 text-xs text-rose-300 disabled:opacity-60"
-        >
-          {busy === "reject" ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <X size={12} />
-          )}
-          거절
-        </button>
-        <button
-          onClick={onAccept}
-          disabled={busy !== null}
-          className="btn-primary flex-1 py-2 text-xs disabled:opacity-60"
-        >
-          {busy === "accept" ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <Check size={12} />
-          )}
-          수락
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ---- 보낸 신청 탭 --------------------------------------------------------
-
-function OutgoingTab({
-  requests,
-  error,
-}: {
-  requests: FollowRequest[] | null;
-  error?: string | null;
-}) {
-  return (
-    <section className="space-y-3">
-      {error && <ErrorBanner message={error} />}
-      {!error && requests === null && (
-        <p className="card p-4 text-center text-xs text-slate-500">불러오는 중…</p>
-      )}
-      {requests?.length === 0 && (
-        <p className="card p-4 text-center text-xs text-slate-500">
-          보낸 팔로우 신청이 없어요.
-        </p>
-      )}
-      {requests?.map((r) => (
-        <OutgoingCard key={r.id} req={r} />
-      ))}
-    </section>
-  );
-}
-
-function OutgoingCard({ req }: { req: FollowRequest }) {
-  const link = useMemo(() => buildInviteLink(req.id), [req.id]);
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
-  async function cancel() {
-    if (!confirm("이 팔로우 신청을 취소할까요?")) return;
-    setBusy(true);
-    try {
-      await cancelFollowRequest(req.id);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      prompt("링크를 복사하세요", link);
-    }
-  }
-  return (
-    <div className="card space-y-3 p-4">
-      <div>
-        <p className="text-xs text-slate-400">대상 이메일</p>
-        <p className="truncate text-sm font-medium text-slate-100">{req.toEmail}</p>
-      </div>
-      <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2 text-[11px] text-slate-400">
-        공개 범위: <strong className="text-slate-200">식단(달력)</strong>
-      </div>
-      <div className="flex gap-2">
-        <button onClick={copy} className="btn-secondary flex-1 py-2 text-xs">
-          {copied ? <Check size={12} /> : <Link2 size={12} />}
-          {copied ? "복사됨" : "초대 링크 복사"}
-        </button>
-        <button
-          onClick={cancel}
-          disabled={busy}
-          className="btn-secondary flex-1 py-2 text-xs text-rose-300 disabled:opacity-60"
-        >
-          {busy ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
-          취소
-        </button>
-      </div>
     </div>
   );
 }

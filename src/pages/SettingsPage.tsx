@@ -105,7 +105,7 @@ export default function SettingsPage() {
     const confirmMsg = loggedIn
       ? "⚠ 이 기기와 클라우드의 내 데이터를 모두 삭제합니다.\n\n" +
         "• 식단·건강기록·프로필\n" +
-        "• 친구와의 공유 관계, 받은/보낸 팔로우 신청\n" +
+        "• 친구와의 공유 관계, 링크 초대(friendInviteCodes)\n" +
         "• 다른 사람이 내 식단에 단 댓글/좋아요\n" +
         "이 모든 것이 영구적으로 사라지며 되돌릴 수 없어요."
       : "⚠ 이 기기의 모든 데이터를 삭제합니다.\n\n" +

@@ -4,7 +4,6 @@ import { endOfMonth, endOfWeek, startOfMonth, startOfWeek } from "date-fns";
 import {
   ArrowLeft,
   Loader2,
-  UserPlus,
   Users,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
@@ -57,20 +56,15 @@ export default function FriendProfilePage() {
     return (
       <Shell>
         <p className="mb-3">
-          이 친구가 공개한 기록이 없어요. 팔로우 신청을 보내면 상대가 수락한 범위만 볼 수 있어요.
+          이 친구가 공개한 기록이 없어요. 친구 탭에서 <strong className="text-slate-200">초대 링크</strong>를 보내 받은 뒤
+          수락하면 볼 수 있어요.
         </p>
         <div className="flex gap-2">
           <button
             onClick={() => navigate("/friends")}
-            className="btn-secondary flex-1 py-2 text-xs"
+            className="btn-primary w-full py-2 text-sm"
           >
-            친구 목록으로
-          </button>
-          <button
-            onClick={() => navigate("/friends")}
-            className="btn-primary flex-1 py-2 text-xs"
-          >
-            <UserPlus size={12} /> 팔로우 신청
+            친구 탭에서 초대 링크 보내기
           </button>
         </div>
       </Shell>

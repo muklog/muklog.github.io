@@ -12,7 +12,6 @@ import OnboardingPage from "./pages/OnboardingPage";
 import FriendsPage from "./pages/FriendsPage";
 import FriendProfilePage from "./pages/FriendProfilePage";
 import FriendDayPage from "./pages/FriendDayPage";
-import InvitePage from "./pages/InvitePage";
 import InviteCodePage from "./pages/InviteCodePage";
 import BottomNav from "./components/BottomNav";
 
@@ -99,7 +98,6 @@ export default function App() {
           <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/friends" element={<FriendsPage />} />
           <Route path="/friends/invite/c/:inviteCode" element={<InviteCodePage />} />
-          <Route path="/friends/invite/:reqId" element={<InvitePage />} />
           <Route path="/friends/:uid" element={<FriendProfilePage />} />
           <Route path="/friends/:uid/day/:date" element={<FriendDayPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
