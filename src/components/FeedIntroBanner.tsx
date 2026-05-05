@@ -10,7 +10,7 @@ export default function FeedIntroBanner() {
         <Sparkles size={12} className="inline" /> 헬스헬스
       </p>
       <p className="mt-1 text-sm font-semibold leading-snug text-slate-100">
-        나의 한 끼를 기록하고, 치눅와 서로 응원하는 식단 다이어리
+        나의 한 끼를 기록하고, 친구와 서로 응원하는 식단 다이어리
       </p>
     </aside>
   );
