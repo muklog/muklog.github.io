@@ -16,8 +16,8 @@ import HealthRecordCard from "../components/HealthRecordCard";
 import {
   getMyViewerShare,
   permissionDeniedMessage,
-  pullFriendHealth,
-  pullFriendMealsInRange,
+  subscribeFriendHealth,
+  subscribeFriendMealsInRange,
 } from "../lib/friends";
 import { HEALTH_TYPE_LABELS, type HealthRecord, type Share } from "../types";
 import { cls, dateKey, formatKoDate } from "../lib/utils";
@@ -207,12 +207,14 @@ function FriendCalendarTab({ friendUid }: { friendUid: string }) {
   }, [cursor]);
 
   useEffect(() => {
-    let cancelled = false;
     setCounts(null);
     setErr(null);
-    pullFriendMealsInRange(friendUid, startKey, endKey)
-      .then((meals) => {
-        if (cancelled) return;
+    // 실시간 구독: 친구가 분석 완료/식단 변경 시 달력 수치도 곧바로 갱신된다.
+    const unsub = subscribeFriendMealsInRange(
+      friendUid,
+      startKey,
+      endKey,
+      (meals) => {
         const map = new Map<string, DayCount>();
         for (const m of meals) {
           const cur = map.get(m.date) ?? { total: 0, ratings: [] };
@@ -221,13 +223,10 @@ function FriendCalendarTab({ friendUid }: { friendUid: string }) {
           map.set(m.date, cur);
         }
         setCounts(map);
-      })
-      .catch((e) => {
-        if (!cancelled) setErr(permissionDeniedMessage(e));
-      });
-    return () => {
-      cancelled = true;
-    };
+      },
+      (e) => setErr(permissionDeniedMessage(e)),
+    );
+    return () => unsub();
   }, [friendUid, startKey, endKey]);
 
   return (
@@ -263,19 +262,14 @@ function FriendHealthTab({ friendUid }: { friendUid: string }) {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
     setRows(null);
     setErr(null);
-    pullFriendHealth(friendUid)
-      .then((r) => {
-        if (!cancelled) setRows(r);
-      })
-      .catch((e) => {
-        if (!cancelled) setErr(permissionDeniedMessage(e));
-      });
-    return () => {
-      cancelled = true;
-    };
+    const unsub = subscribeFriendHealth(
+      friendUid,
+      (r) => setRows(r),
+      (e) => setErr(permissionDeniedMessage(e)),
+    );
+    return () => unsub();
   }, [friendUid]);
 
   const latest = rows?.[0];

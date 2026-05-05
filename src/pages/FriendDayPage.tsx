@@ -7,7 +7,7 @@ import MealSocialBlock from "../components/MealSocialBlock";
 import {
   getMyViewerShare,
   permissionDeniedMessage,
-  pullFriendMealsForDate,
+  subscribeFriendMealsForDate,
 } from "../lib/friends";
 import {
   MEAL_SLOTS,
@@ -56,19 +56,16 @@ export default function FriendDayPage() {
 
   useEffect(() => {
     if (!canCalendar || !validDate) return;
-    let cancelled = false;
     setMeals(null);
     setErr(null);
-    pullFriendMealsForDate(friendUid, date)
-      .then((rows) => {
-        if (!cancelled) setMeals(rows);
-      })
-      .catch((e) => {
-        if (!cancelled) setErr(permissionDeniedMessage(e));
-      });
-    return () => {
-      cancelled = true;
-    };
+    // 친구 기기에서 AI 분석이 끝나면 onSnapshot 이 곧바로 재호출돼 analyzing 상태가 풀린다.
+    const unsub = subscribeFriendMealsForDate(
+      friendUid,
+      date,
+      (rows) => setMeals(rows),
+      (e) => setErr(permissionDeniedMessage(e)),
+    );
+    return () => unsub();
   }, [canCalendar, friendUid, date, validDate]);
 
   const mealsBySlot = useMemo(() => {

@@ -388,6 +388,114 @@ export async function pullFriendHealth(
   return rows;
 }
 
+// ---- 친구 데이터 실시간 구독 ---------------------------------------------
+// 친구 기기에서 AI 분석이 완료돼 Firestore 가 갱신될 때 내 화면도 곧바로
+// 반영되도록 onSnapshot 으로 구독한다. getDocs 일회성 호출만 쓰면
+// "analyzing" 상태 그대로 멈춰 있는 문제가 발생한다.
+//
+// base64 사진을 Blob 으로 디코딩하는 작업이 비싸므로, 문서별 updatedAt 이
+// 이전과 같으면 기존에 만들어 둔 Meal/HealthRecord 를 재사용한다.
+
+/** 친구 meals 를 date 범위로 실시간 구독 */
+export function subscribeFriendMealsInRange(
+  ownerUid: string,
+  startDateKey: string,
+  endDateKey: string,
+  cb: (rows: Meal[]) => void,
+  onErr?: (e: unknown) => void,
+): Unsubscribe {
+  const fs = getFirestoreDb();
+  const q = query(
+    collection(fs, "users", ownerUid, "meals"),
+    where("date", ">=", startDateKey),
+    where("date", "<=", endDateKey),
+  );
+  const cache = new Map<string, { updatedAt: number; meal: Meal }>();
+  return onSnapshot(
+    q,
+    async (snap) => {
+      try {
+        const rows = await Promise.all(
+          snap.docs.map(async (d) => {
+            const data = { ...(d.data() as MealStored), id: d.id };
+            const cached = cache.get(d.id);
+            if (cached && cached.updatedAt === data.updatedAt) {
+              return cached.meal;
+            }
+            const meal = await storedToMeal(data);
+            cache.set(d.id, { updatedAt: data.updatedAt, meal });
+            return meal;
+          }),
+        );
+        const alive = new Set(snap.docs.map((d) => d.id));
+        for (const id of [...cache.keys()]) if (!alive.has(id)) cache.delete(id);
+        cb(rows);
+      } catch (e) {
+        console.error("[friends] meals snapshot decode", e);
+        onErr?.(e);
+      }
+    },
+    (err) => {
+      console.error("[friends] meals subscribe", err);
+      onErr?.(err);
+    },
+  );
+}
+
+/** 친구 meals 단일 일자 실시간 구독 */
+export function subscribeFriendMealsForDate(
+  ownerUid: string,
+  dateKey: string,
+  cb: (rows: Meal[]) => void,
+  onErr?: (e: unknown) => void,
+): Unsubscribe {
+  return subscribeFriendMealsInRange(ownerUid, dateKey, dateKey, cb, onErr);
+}
+
+/** 친구 health 전체 실시간 구독 */
+export function subscribeFriendHealth(
+  ownerUid: string,
+  cb: (rows: HealthRecord[]) => void,
+  onErr?: (e: unknown) => void,
+): Unsubscribe {
+  const fs = getFirestoreDb();
+  const cache = new Map<string, { updatedAt: number; rec: HealthRecord }>();
+  return onSnapshot(
+    collection(fs, "users", ownerUid, "health"),
+    async (snap) => {
+      try {
+        const rows = await Promise.all(
+          snap.docs.map(async (d) => {
+            const data = { ...(d.data() as HealthStored), id: d.id };
+            const cached = cache.get(d.id);
+            if (cached && cached.updatedAt === data.updatedAt) {
+              return cached.rec;
+            }
+            const rec = await storedToHealth(data);
+            cache.set(d.id, { updatedAt: data.updatedAt, rec });
+            return rec;
+          }),
+        );
+        const alive = new Set(snap.docs.map((d) => d.id));
+        for (const id of [...cache.keys()]) if (!alive.has(id)) cache.delete(id);
+        rows.sort((a, b) => {
+          const d = b.recordDate.localeCompare(a.recordDate);
+          if (d !== 0) return d;
+          return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+        });
+        cb(rows);
+      } catch (e) {
+        console.error("[friends] health snapshot decode", e);
+        onErr?.(e);
+      }
+    },
+    (err) => {
+      console.error("[friends] health subscribe", err);
+      onErr?.(err);
+    },
+  );
+}
+
 // ---- 편의 함수 ----------------------------------------------------------
 
 export function permissionDeniedMessage(e: unknown): string {

@@ -49,13 +49,27 @@ export default function PhotoUpload({
       });
       await onPicked(compressed, thumb);
     } catch (e) {
-      console.error(e);
-      alert("이미지를 처리하지 못했습니다.");
+      console.error("[PhotoUpload] 사진 처리 실패", e, {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+      });
+      const detail = e instanceof Error ? e.message : String(e);
+      alert(`이미지를 처리하지 못했습니다.\n${detail}\n\n다시 시도하거나 갤러리에서 JPG/PNG 로 저장한 사진을 선택해 보세요.`);
     } finally {
       setBusy(false);
       if (camRef.current) camRef.current.value = "";
       if (galRef.current) galRef.current.value = "";
     }
+  }
+
+  // 같은 사진을 연속으로 선택하면 onChange 가 안 뜨는 iOS 버그 방지 —
+  // 클릭 직전에도 value 를 비워 둔다.
+  function openPicker(ref: React.RefObject<HTMLInputElement | null>) {
+    const el = ref.current;
+    if (!el) return;
+    el.value = "";
+    el.click();
   }
 
   const btnClass =
@@ -68,7 +82,7 @@ export default function PhotoUpload({
       <button
         type="button"
         disabled={disabled || busy}
-        onClick={() => camRef.current?.click()}
+        onClick={() => openPicker(camRef)}
         className={cls(btnClass, "flex-1")}
       >
         {busy ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
@@ -77,7 +91,7 @@ export default function PhotoUpload({
       <button
         type="button"
         disabled={disabled || busy}
-        onClick={() => galRef.current?.click()}
+        onClick={() => openPicker(galRef)}
         className="btn-secondary"
         aria-label="갤러리에서 선택"
       >
