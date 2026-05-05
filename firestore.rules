@@ -22,12 +22,12 @@ service cloud.firestore {
         && s.scope[scope] == true;
     }
 
-    /** scope 필드가 없거나, null/비맵, calendar 미지정·true 일 때 허용 — 클라이언트 shareDocAllowsDmConnection 과 동일 */
+    /** calendar 가 명시적으로 bool false 일 때만 차단 — 클라이언트 `scope.calendar !== false` 와 동일 */
     function calendarShareAllows(scope) {
       return scope == null
         || !(scope is map)
         || !('calendar' in scope)
-        || scope.calendar == true;
+        || !(scope.calendar is bool && scope.calendar == false);
     }
 
     /** owner 가 viewer 에게 달력 공유 허용(shared 문서 존재 + calendar 가 명시적으로 false 가 아님) */

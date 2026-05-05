@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import type { DmMessageDoc, DmThreadDoc } from "../types";
 import { getFirebaseAuth, getFirestoreDb } from "./firebaseApp";
-import { isCalendarConnectedPair, permissionDeniedMessage } from "./friends";
+import { isCalendarConnectedPairFromServer, permissionDeniedMessage } from "./friends";
 
 /** threadId 규약: uid 문자열 순서 오름차순 [a,b] 일 때 `${a}_${b}` */
 export function dmThreadIdForPair(uidA: string, uidB: string): string {
@@ -46,7 +46,7 @@ export async function ensureDmThreadWith(peerUid: string): Promise<string> {
   const ref = doc(getFirestoreDb(), "dmThreads", tid);
   const s = await getDoc(ref);
   if (!s.exists()) {
-    const linked = await isCalendarConnectedPair(me, peerUid);
+    const linked = await isCalendarConnectedPairFromServer(me, peerUid);
     if (!linked) {
       throw new Error("서로 친구로 연결된 경우에만 DM을 보낼 수 있어요.");
     }
@@ -135,7 +135,7 @@ export async function sendDmMessage(threadId: string, rawText: string): Promise<
   if (!Array.isArray(p) || p.length !== 2 || !p.includes(me)) {
     throw new Error("이 대화에 참가할 수 없습니다.");
   }
-  const linked = await isCalendarConnectedPair(p[0], p[1]);
+  const linked = await isCalendarConnectedPairFromServer(p[0], p[1]);
   if (!linked) throw new Error("달력 공유가 끊겨 새 DM을 보낼 수 없어요.");
 
   const msgRef = doc(collection(fs, "dmThreads", threadId, "messages"));
@@ -147,11 +147,15 @@ export async function sendDmMessage(threadId: string, rawText: string): Promise<
     lastSenderUid: me,
     updatedAt: now,
   });
-  batch.set(dmReadDoc(me, threadId), { threadId, lastReadAt: now }, { merge: true });
   try {
     await batch.commit();
   } catch (e) {
     throw new Error(permissionDeniedMessage(e));
+  }
+  try {
+    await setDoc(dmReadDoc(me, threadId), { threadId, lastReadAt: now }, { merge: true });
+  } catch (e) {
+    console.warn("[dm] read state after send failed", e);
   }
 }
 

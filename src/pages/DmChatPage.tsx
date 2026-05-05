@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
 import { ArrowLeft, Loader2, Send } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { getPublicProfile, isCalendarConnectedPair } from "../lib/friends";
+import { getPublicProfile, isCalendarConnectedPairFromServer } from "../lib/friends";
 import {
   markDmThreadReadForMe,
   sendDmMessage,
@@ -43,7 +43,7 @@ export default function DmChatPage() {
       const p = (snap.data() as { participantUids?: string[] } | undefined)?.participantUids ?? [];
       const peer = p.find((x) => x !== user.uid);
       if (cancelled || !peer) return;
-      const linked = await isCalendarConnectedPair(user.uid, peer);
+      const linked = await isCalendarConnectedPairFromServer(user.uid, peer);
       if (cancelled) return;
       setCanSend(linked);
       const prof = await getPublicProfile(peer);

@@ -56,7 +56,10 @@ export default function App() {
 
   /** 게이트로 조기 return 하기 전에 호출해야 함 — 그렇지 않으면 React #310 (훅 개수 불일치) */
   const mainRef = useRef<HTMLElement>(null);
-  const { progress: ptrProgress } = usePullToRefresh(mainRef, pullRefreshEnabled);
+  const { progress: ptrProgress, pendingReload: ptrReloading } = usePullToRefresh(
+    mainRef,
+    pullRefreshEnabled,
+  );
   const ptrReady =
     ptrProgress >= PULL_TO_REFRESH_THRESHOLD_PX / PULL_TO_REFRESH_PROGRESS_CAP_PX;
 
@@ -122,23 +125,28 @@ export default function App() {
           className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain overflow-x-hidden pb-24 [-webkit-overflow-scrolling:touch]"
         >
           <div
-            className="pointer-events-none sticky top-1 z-[60] flex justify-center px-4 transition-opacity duration-150"
+            className="pointer-events-none sticky top-1 z-[60] flex justify-center px-4 transition-opacity duration-300"
             style={{
-              opacity: ptrProgress > 0.06 ? Math.min(1, ptrProgress * 1.2) : 0,
+              opacity:
+                ptrReloading || ptrProgress > 0.04 ? Math.min(1, ptrReloading ? 1 : ptrProgress * 1.25 + 0.12) : 0,
             }}
             aria-hidden
           >
             <span className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/92 px-3 py-1.5 text-[11px] font-medium text-slate-300 shadow-lg backdrop-blur-sm">
               <RefreshCw
                 size={14}
-                className="shrink-0 text-brand-400"
-                style={{
-                  transform: `rotate(${ptrProgress * 270}deg)`,
-                  opacity: ptrReady ? 1 : 0.65 + ptrProgress * 0.35,
-                }}
+                className={`shrink-0 text-brand-400 ${ptrReloading ? "animate-spin" : ""}`}
+                style={
+                  ptrReloading
+                    ? undefined
+                    : {
+                        transform: `rotate(${ptrProgress * 270}deg)`,
+                        opacity: ptrReady ? 1 : 0.65 + ptrProgress * 0.35,
+                      }
+                }
                 aria-hidden
               />
-              {ptrReady ? "놓으면 새로고침···" : "당겨서 새로고침"}
+              {ptrReloading ? "새로고침 중…" : ptrReady ? "놓으면 새로고침···" : "당겨서 새로고침"}
             </span>
           </div>
           <Routes>

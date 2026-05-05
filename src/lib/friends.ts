@@ -3,6 +3,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   limit,
   onSnapshot,
@@ -99,6 +100,31 @@ export async function isCalendarConnectedPair(uidA: string, uidB: string): Promi
   ];
   for (const ref of refs) {
     const snap = await getDoc(ref);
+    if (!snap.exists()) continue;
+    const sh = { id: snap.id, ...snap.data() } as Share;
+    if (shareDocAllowsDmConnection(sh)) return true;
+  }
+  return false;
+}
+
+/**
+ * DM 전송 등 서버 규칙과 맞출 때 사용 — 로컬 캐시만 보면 허용인데 Firestore 가 거절하는 불일치를 줄임.
+ * 오프라인 등으로 서버 조회 실패 시 일반 getDoc 으로 한 번 더 시도한다.
+ */
+export async function isCalendarConnectedPairFromServer(uidA: string, uidB: string): Promise<boolean> {
+  if (!uidA || !uidB || uidA === uidB) return false;
+  const fs = getFirestoreDb();
+  const refs = [
+    doc(fs, "shares", shareIdFor(uidA, uidB)),
+    doc(fs, "shares", shareIdFor(uidB, uidA)),
+  ];
+  for (const ref of refs) {
+    let snap;
+    try {
+      snap = await getDocFromServer(ref);
+    } catch {
+      snap = await getDoc(ref);
+    }
     if (!snap.exists()) continue;
     const sh = { id: snap.id, ...snap.data() } as Share;
     if (shareDocAllowsDmConnection(sh)) return true;

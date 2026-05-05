@@ -24,12 +24,14 @@ function isTouchEnvironment(): boolean {
 export function usePullToRefresh(
   scrollEl: RefObject<HTMLElement | null>,
   enabled: boolean,
-): { progress: number } {
+): { progress: number; pendingReload: boolean } {
   const [progress, setProgress] = useState(0);
+  const [pendingReload, setPendingReload] = useState(false);
 
   useLayoutEffect(() => {
     if (!enabled || !isTouchEnvironment()) {
       setProgress(0);
+      setPendingReload(false);
       return undefined;
     }
 
@@ -83,8 +85,13 @@ export function usePullToRefresh(
         touchActive = false;
         const go = top() && maxPull >= PULL_TO_REFRESH_THRESHOLD_PX;
         maxPull = 0;
-        setProgress(0);
-        if (go) window.location.reload();
+        if (go) {
+          setProgress(1);
+          setPendingReload(true);
+          window.location.reload();
+        } else {
+          setProgress(0);
+        }
       };
 
       el.addEventListener("touchstart", onTouchStart, passiveOpt);
@@ -114,5 +121,5 @@ export function usePullToRefresh(
     };
   }, [enabled, scrollEl]);
 
-  return { progress };
+  return { progress, pendingReload };
 }
