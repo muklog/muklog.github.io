@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { MealItemCard, MealItemCardsCarousel } from "../components/MealCard";
@@ -22,6 +22,8 @@ import { formatKoDate } from "../lib/utils";
 export default function FriendDayPage() {
   const { uid: friendUid = "", date = "" } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const focusSlot = searchParams.get("slot");
   const { user, firebaseReady } = useAuth();
   const [share, setShare] = useState<Share | null | "missing">(null);
   const [meals, setMeals] = useState<Meal[] | null>(null);
@@ -73,6 +75,19 @@ export default function FriendDayPage() {
     meals?.forEach((x) => m.set(x.slot, x));
     return m;
   }, [meals]);
+
+  useEffect(() => {
+    if (!focusSlot || meals === null) return;
+    if (!(MEAL_SLOTS as readonly string[]).includes(focusSlot)) return;
+    const slot = focusSlot as MealSlot;
+    const el = typeof document !== "undefined"
+      ? document.getElementById(`meal-slot-${slot}`)
+      : null;
+    if (!el) return;
+    requestAnimationFrame(() =>
+      el.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  }, [focusSlot, meals, date]);
 
   if (!firebaseReady) return <Shell onBack={() => navigate(-1)}>Firebase 연동이 필요해요.</Shell>;
   if (!user) return <Shell onBack={() => navigate(-1)}>로그인이 필요해요.</Shell>;
@@ -163,7 +178,7 @@ function SlotSection({
 }) {
   const items = meal?.items ?? [];
   return (
-    <section className="card overflow-hidden">
+    <section id={`meal-slot-${slot}`} className="card scroll-mt-24 overflow-hidden">
       <header className="flex items-center gap-2 border-b border-slate-800 px-4 py-3">
         <span className="text-xl">{MEAL_SLOT_EMOJI[slot]}</span>
         <h3 className="text-base font-semibold">{MEAL_SLOT_LABELS[slot]}</h3>

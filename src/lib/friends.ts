@@ -80,6 +80,26 @@ export function shareIdFor(ownerUid: string, viewerUid: string): string {
   return `${ownerUid}_${viewerUid}`;
 }
 
+/**
+ * 한쪽이라도 달력 공유(shares 의 scope.calendar)가 열려 있으면 "연결됨".
+ * DM은 이 관계일 때만 스레드를 만들 수 있고, 이후 새 메시지는 규칙으로도 동일 조건이다.
+ */
+export async function isCalendarConnectedPair(uidA: string, uidB: string): Promise<boolean> {
+  if (!uidA || !uidB || uidA === uidB) return false;
+  const fs = getFirestoreDb();
+  const refs = [
+    doc(fs, "shares", shareIdFor(uidA, uidB)),
+    doc(fs, "shares", shareIdFor(uidB, uidA)),
+  ];
+  for (const ref of refs) {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) continue;
+    const scope = (snap.data() as Share).scope;
+    if (scope?.calendar === true) return true;
+  }
+  return false;
+}
+
 function requireUser(): FirebaseUser {
   const auth = getFirebaseAuth();
   const u = auth.currentUser;

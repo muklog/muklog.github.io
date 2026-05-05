@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, getSettings, patchSettings } from "./lib/db";
 import { applyTheme, normalizeTheme } from "./lib/theme";
+import { FeedStreamProvider } from "./contexts/FeedStreamContext";
 import FeedPage from "./pages/FeedPage";
 import HomePage from "./pages/HomePage";
 import DayPage from "./pages/DayPage";
@@ -13,6 +14,9 @@ import FriendsPage from "./pages/FriendsPage";
 import FriendProfilePage from "./pages/FriendProfilePage";
 import FriendDayPage from "./pages/FriendDayPage";
 import InviteCodePage from "./pages/InviteCodePage";
+import NotificationsPage from "./pages/NotificationsPage";
+import MessagesPage from "./pages/MessagesPage";
+import DmChatPage from "./pages/DmChatPage";
 import BottomNav from "./components/BottomNav";
 
 export default function App() {
@@ -80,30 +84,35 @@ export default function App() {
   }
 
   return (
-    <div
-      className="app-shell mx-auto flex h-full w-full max-w-screen-sm flex-col"
-      style={{
-        paddingTop: "var(--safe-top)",
-        paddingBottom: "var(--safe-bottom)",
-      }}
-    >
-      <main className="flex-1 overflow-y-auto pb-24">
-        <Routes>
-          {/* 첫 화면은 피드. 기존 달력 홈은 /home 으로 이동 */}
-          <Route path="/" element={<FeedPage />} />
-          <Route path="/home" element={<HomePage />} />
-          <Route path="/day/:date" element={<DayPage />} />
-          <Route path="/health" element={<HealthPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/onboarding" element={<OnboardingPage />} />
-          <Route path="/friends" element={<FriendsPage />} />
-          <Route path="/friends/invite/c/:inviteCode" element={<InviteCodePage />} />
-          <Route path="/friends/:uid" element={<FriendProfilePage />} />
-          <Route path="/friends/:uid/day/:date" element={<FriendDayPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </main>
-      {!isOnboardingRoute && <BottomNav />}
-    </div>
+    <FeedStreamProvider>
+      <div
+        className="app-shell mx-auto flex h-full w-full max-w-screen-sm flex-col"
+        style={{
+          paddingTop: "var(--safe-top)",
+          paddingBottom: "var(--safe-bottom)",
+        }}
+      >
+        <main className="flex-1 overflow-y-auto pb-24">
+          <Routes>
+            {/* 첫 화면은 피드. 기존 달력 홈은 /home 으로 이동 */}
+            <Route path="/" element={<FeedPage />} />
+            <Route path="/home" element={<HomePage />} />
+            <Route path="/day/:date" element={<DayPage />} />
+            <Route path="/health" element={<HealthPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/onboarding" element={<OnboardingPage />} />
+            <Route path="/friends" element={<FriendsPage />} />
+            <Route path="/friends/invite/c/:inviteCode" element={<InviteCodePage />} />
+            <Route path="/friends/:uid" element={<FriendProfilePage />} />
+            <Route path="/friends/:uid/day/:date" element={<FriendDayPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/messages" element={<MessagesPage />} />
+            <Route path="/messages/:threadId" element={<DmChatPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+        {!isOnboardingRoute && <BottomNav />}
+      </div>
+    </FeedStreamProvider>
   );
 }

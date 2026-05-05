@@ -178,12 +178,64 @@ export interface AppSettings {
   /** 마지막 클라우드 동기화 완료 시각 (로컬 전용) */
   lastCloudSyncAt?: number;
   /**
+   * 피드에서 마지막으로 확인한 시점의 카드 목록 최대 meal.updatedAt (로컬 전용 — 새 피드 배지 비교값)
+   */
+  feedLastSeenMaxUpdatedAt?: number;
+  /**
    * 로컬에서 삭제 후 Firestore 반영 전·병합 시 원격 부활 방지용 ID (로컬만, 동기화 후 정리)
    */
   cloudPendingDeletes?: {
     meals?: string[];
     health?: string[];
   };
+}
+
+/** /users/{uid}/activityInbox — 좋아요·댓글 등 알림(수신함) */
+export type ActivityInboxKind = "meal_like" | "meal_comment" | "comment_like" | "comment_reply";
+
+export interface ActivityInboxDoc {
+  id: string;
+  /** 경로 문서 소유자와 동일해야 함 (규칙 검증용) */
+  recipientUid: string;
+  kind: ActivityInboxKind;
+  actorUid: string;
+  actorName: string;
+  actorPhotoURL?: string;
+  /** 식단 경로 분해용 — 본문 식단이 속한 사용자(Firebase uid) */
+  mealOwnerUid: string;
+  mealId: string;
+  mealDate: string;
+  mealSlot: MealSlot;
+  commentId?: string;
+  /** 선택 — UI 요약 문자열 */
+  snippet?: string;
+  createdAt: number;
+  read: boolean;
+}
+
+/** /dmThreads/{threadId} — 1:1 채팅 스레드 */
+export interface DmThreadDoc {
+  id: string;
+  /** 문자열 순서 오름차순 [a,b], threadId === a+'_'+b 이어야 한다 */
+  participantUids: [string, string];
+  lastText: string;
+  lastSenderUid: string;
+  updatedAt: number;
+  createdAt: number;
+}
+
+/** /dmThreads/{tid}/messages */
+export interface DmMessageDoc {
+  id: string;
+  senderUid: string;
+  text: string;
+  createdAt: number;
+}
+
+/** /users/{uid}/dmReadState/{threadId} */
+export interface DmReadStateDoc {
+  threadId: string;
+  lastReadAt: number;
 }
 
 /** 친구 공유 기능 — Firestore 전용 타입 (로컬 IndexedDB 에는 저장하지 않음) */

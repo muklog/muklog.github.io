@@ -15,10 +15,10 @@ export default function FeedIntroBanner() {
       <p className="mt-2 text-[11px] text-slate-500">
         문의{" "}
         <a
-          href="mailto:jyj7236@knou.ac.kr"
+          href="mailto:gogojeje1022@gmail.com"
           className="text-brand-400 underline-offset-2 hover:underline"
         >
-          jyj7236@knou.ac.kr
+          gogojeje1022@gmail.com
         </a>
       </p>
     </aside>

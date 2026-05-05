@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -9,7 +10,8 @@ import {
   updateDoc,
   type Unsubscribe,
 } from "firebase/firestore";
-import type { MealComment } from "../types";
+import type { MealComment, MealSlot } from "../types";
+import { pushActivityInboxItem } from "./activityInbox";
 import { getFirebaseAuth, getFirestoreDb } from "./firebaseApp";
 
 interface AuthorRef {
@@ -58,6 +60,23 @@ function commentLikesCol(ownerUid: string, mealId: string, commentId: string) {
   );
 }
 
+async function readMealRoutingMeta(
+  ownerUid: string,
+  mealId: string,
+): Promise<{ date: string; slot: MealSlot } | null> {
+  try {
+    const fs = getFirestoreDb();
+    const s = await getDoc(doc(fs, "users", ownerUid, "meals", mealId));
+    if (!s.exists()) return null;
+    const d = s.data() as { date?: string; slot?: MealSlot };
+    if (!d.date || !d.slot) return null;
+    return { date: d.date, slot: d.slot };
+  } catch (e) {
+    console.warn("[social] meal meta for notification", e);
+    return null;
+  }
+}
+
 /** 식단의 좋아요 누른 uid 목록을 실시간 구독. */
 export function subscribeLikes(
   ownerUid: string,
@@ -84,6 +103,26 @@ export async function setMyLike(
   const ref = doc(likesCol(ownerUid, mealId), me.uid);
   if (liked) {
     await setDoc(ref, { viewerUid: me.uid, createdAt: Date.now() });
+    if (ownerUid !== me.uid) {
+      void (async () => {
+        try {
+          const meta = await readMealRoutingMeta(ownerUid, mealId);
+          if (!meta) return;
+          await pushActivityInboxItem(ownerUid, {
+            kind: "meal_like",
+            actorUid: me.uid,
+            actorName: me.name,
+            actorPhotoURL: me.photoURL,
+            mealOwnerUid: ownerUid,
+            mealId,
+            mealDate: meta.date,
+            mealSlot: meta.slot,
+          });
+        } catch (e) {
+          console.warn("[social] activity meal_like", e);
+        }
+      })();
+    }
   } else {
     await deleteDoc(ref);
   }
@@ -147,6 +186,50 @@ export async function addComment(
   if (clean.authorPhotoURL === undefined) delete clean.authorPhotoURL;
   if (clean.parentCommentId === undefined) delete clean.parentCommentId;
   await setDoc(doc(commentsCol(ownerUid, mealId), id), clean);
+
+  void (async () => {
+    try {
+      const meta = await readMealRoutingMeta(ownerUid, mealId);
+      if (!meta) return;
+      const snippet = trimmed.slice(0, 200);
+      if (!parentCommentId) {
+        if (ownerUid !== me.uid) {
+          await pushActivityInboxItem(ownerUid, {
+            kind: "meal_comment",
+            actorUid: me.uid,
+            actorName: authorOverride?.name?.trim() || me.name,
+            actorPhotoURL: authorOverride?.photoURL || me.photoURL,
+            mealOwnerUid: ownerUid,
+            mealId,
+            mealDate: meta.date,
+            mealSlot: meta.slot,
+            commentId: id,
+            snippet,
+          });
+        }
+      } else {
+        const pSnap = await getDoc(doc(commentsCol(ownerUid, mealId), parentCommentId));
+        if (!pSnap.exists()) return;
+        const parent = pSnap.data() as MealComment;
+        if (!parent.authorUid || parent.authorUid === me.uid) return;
+        await pushActivityInboxItem(parent.authorUid, {
+          kind: "comment_reply",
+          actorUid: me.uid,
+          actorName: authorOverride?.name?.trim() || me.name,
+          actorPhotoURL: authorOverride?.photoURL || me.photoURL,
+          mealOwnerUid: ownerUid,
+          mealId,
+          mealDate: meta.date,
+          mealSlot: meta.slot,
+          commentId: id,
+          snippet,
+        });
+      }
+    } catch (e) {
+      console.warn("[social] activity comment notifications", e);
+    }
+  })();
+
   return data;
 }
 
@@ -223,6 +306,29 @@ export async function setMyCommentLike(
   const ref = doc(commentLikesCol(ownerUid, mealId, commentId), me.uid);
   if (liked) {
     await setDoc(ref, { viewerUid: me.uid, createdAt: Date.now() });
+    void (async () => {
+      try {
+        const cSnap = await getDoc(doc(commentsCol(ownerUid, mealId), commentId));
+        if (!cSnap.exists()) return;
+        const comment = cSnap.data() as MealComment;
+        if (!comment.authorUid || comment.authorUid === me.uid) return;
+        const meta = await readMealRoutingMeta(ownerUid, mealId);
+        if (!meta) return;
+        await pushActivityInboxItem(comment.authorUid, {
+          kind: "comment_like",
+          actorUid: me.uid,
+          actorName: me.name,
+          actorPhotoURL: me.photoURL,
+          mealOwnerUid: ownerUid,
+          mealId,
+          mealDate: meta.date,
+          mealSlot: meta.slot,
+          commentId,
+        });
+      } catch (e) {
+        console.warn("[social] activity comment_like", e);
+      }
+    })();
   } else {
     await deleteDoc(ref);
   }

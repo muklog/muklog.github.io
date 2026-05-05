@@ -1,165 +1,47 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { useFeedStream, type FeedAuthor, type FeedEntry } from "../contexts/FeedStreamContext";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Home, Plus, Rss, Sparkles, UserPlus } from "lucide-react";
-import { db, getAnalysisProfileForUser, getSettings, normalizeMeal } from "../lib/db";
-import {
-  subscribeFriendLatestMeals,
-  subscribeOutgoingShares,
-} from "../lib/friends";
-import {
-  MEAL_SLOT_EMOJI,
-  MEAL_SLOT_LABELS,
-  type Meal,
-  type MealItem,
-  type Share,
-} from "../types";
+import { getAnalysisProfileForUser, getSettings } from "../lib/db";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { MealItemCard, MealItemCardsCarousel, MealItemEditDialog } from "../components/MealCard";
 import MealSocialBlock from "../components/MealSocialBlock";
 import FeedIntroBanner from "../components/FeedIntroBanner";
 import { dateKey, formatKoDate, suggestMealSlotForNow } from "../lib/utils";
-import { resolveDisplayName, resolveDisplayPhotoURL } from "../lib/identity";
 import {
   deleteMealItem,
   saveMealItemPatch,
   updateMealItem,
 } from "../lib/mealItems";
 import { analyzeMealImage } from "../lib/ai";
+import FeedAlertsHeaderIcons from "../components/FeedAlertsHeaderIcons";
+import { MEAL_SLOT_EMOJI, MEAL_SLOT_LABELS, type MealItem } from "../types";
 
 /**
- * 피드 탭 — 인스타그램 피드처럼 나와 친구들의 식단 카드를 최신순으로.
- *
- * 데이터 소스:
- *  - 내 meals: Dexie 에서 실시간(useLiveQuery)
- *  - 친구 meals: 내가 viewer 인 share 들(subscribeOutgoingShares) 의 owner 별로
- *    최근 N 개 snapshots 를 구독해 병합.
- *  - 각 카드엔 작성자 프로필(나 | 친구), 날짜/슬롯, 여러 사진 항목, 좋아요/댓글 블록.
+ * 피드 탭 — 스트림은 App 의 FeedStreamProvider 에서 구독하고, 여기서는 렌더링만 합니다.
  */
-interface FeedAuthor {
-  uid: string;
-  name: string;
-  photoURL?: string;
-  color?: string;
-}
-
-interface FeedEntry {
-  author: FeedAuthor;
-  meal: Meal;
-  /** 나/친구 구분 — 사회 블록 표시 조건용 */
-  isMine: boolean;
-}
-
-const MAX_PER_FRIEND = 15;
-const MAX_MINE = 30;
-/** 최초·추가로 그릴 피드 카드 개수 (무한 스크롤 단계) */
 const FEED_PAGE_SIZE = 8;
 
 export default function FeedPage() {
   const { user, firebaseReady } = useAuth();
+  const fs = useFeedStream();
+  const entries = fs?.entries ?? [];
+  const loading = fs?.loading ?? true;
   const myUid = firebaseReady ? user?.uid : undefined;
   const myUserId = usePrimaryUserId();
   const settings = useLiveQuery(() => getSettings(), []);
   const apiKey = settings?.geminiApiKey;
 
-  const myProfile = useLiveQuery(
-    async () => (myUserId ? await db.users.get(myUserId) : undefined),
-    [myUserId],
-  );
+  const markWatermark = fs?.markFeedWatermark;
+  useEffect(() => () => void markWatermark?.(), [markWatermark]);
 
-  // 내 로컬 식단 (항상 표시)
-  const myMeals = useLiveQuery(async () => {
-    if (!myUserId) return [] as Meal[];
-    const arr = await db.meals.where("userId").equals(myUserId).toArray();
-    return arr
-      .map(normalizeMeal)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, MAX_MINE);
-  }, [myUserId]);
-
-  // 친구(내가 viewer 인 share) 목록 실시간 구독
-  const [friendShares, setFriendShares] = useState<Share[] | null>(null);
-  useEffect(() => {
-    if (!myUid) {
-      setFriendShares(null);
-      return;
-    }
-    const unsub = subscribeOutgoingShares(
-      (rows) => setFriendShares(rows.filter((s) => s.scope.calendar)),
-      (e) => console.warn("[feed] outgoing shares", e),
-    );
-    return () => unsub();
-  }, [myUid]);
-
-  // 각 친구별 최근 식단 구독 — 친구가 추가/삭제되면 unsubscribe/resubscribe.
-  const [friendMealsByOwner, setFriendMealsByOwner] = useState<Map<string, Meal[]>>(
-    new Map(),
-  );
-  useEffect(() => {
-    if (!friendShares) return;
-    const unsubs: (() => void)[] = [];
-    const current = new Set<string>();
-    for (const s of friendShares) {
-      current.add(s.ownerUid);
-      const unsub = subscribeFriendLatestMeals(
-        s.ownerUid,
-        MAX_PER_FRIEND,
-        (rows) => {
-          setFriendMealsByOwner((prev) => {
-            const next = new Map(prev);
-            next.set(s.ownerUid, rows);
-            return next;
-          });
-        },
-        () => {
-          // 권한 오류 등은 조용히 무시 — 해당 친구는 피드에 표시 안 됨.
-        },
-      );
-      unsubs.push(unsub);
-    }
-    // 더 이상 친구가 아닌 owner 의 식단은 상태에서 제거.
-    setFriendMealsByOwner((prev) => {
-      const next = new Map<string, Meal[]>();
-      for (const [k, v] of prev) if (current.has(k)) next.set(k, v);
-      return next;
-    });
-    return () => {
-      for (const u of unsubs) u();
-    };
-  }, [friendShares]);
-
-  // 모든 엔트리를 병합 후 최신순 정렬.
-  const entries = useMemo<FeedEntry[]>(() => {
-    const out: FeedEntry[] = [];
-    const myAuthor: FeedAuthor = {
-      uid: myUid ?? "local-me",
-      name: resolveDisplayName(myProfile, user),
-      photoURL: resolveDisplayPhotoURL(myProfile, user?.photoURL),
-      color: myProfile?.color,
-    };
-    for (const m of myMeals ?? []) {
-      if ((m.items ?? []).length === 0) continue;
-      out.push({ author: myAuthor, meal: m, isMine: true });
-    }
-    for (const share of friendShares ?? []) {
-      const rows = friendMealsByOwner.get(share.ownerUid) ?? [];
-      for (const m of rows) {
-        if ((m.items ?? []).length === 0) continue;
-        out.push({
-          author: {
-            uid: share.ownerUid,
-            name: share.ownerName,
-            photoURL: share.ownerPhotoURL,
-          },
-          meal: m,
-          isMine: false,
-        });
-      }
-    }
-    out.sort((a, b) => b.meal.updatedAt - a.meal.updatedAt);
-    return out;
-  }, [myMeals, friendShares, friendMealsByOwner, myProfile, user?.displayName, user?.photoURL, myUid]);
+  const hasFriends = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of entries) if (!e.isMine) set.add(e.author.uid);
+    return set.size > 0;
+  }, [entries]);
 
   const [visibleCount, setVisibleCount] = useState(FEED_PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -190,11 +72,6 @@ export default function FeedPage() {
     return () => obs.disconnect();
   }, [visibleCount, entries.length]);
 
-  const hasFriends = (friendShares?.length ?? 0) > 0;
-  const loading =
-    myMeals === undefined ||
-    (firebaseReady && myUid !== undefined && friendShares === null);
-
   return (
     <div className="flex flex-col gap-4 px-4 pt-5">
       <header className="flex items-center justify-between gap-2">
@@ -206,6 +83,7 @@ export default function FeedPage() {
           </h1>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <FeedAlertsHeaderIcons />
           {myUserId && (
             <Link
               to={`/day/${dateKey()}?slot=${suggestMealSlotForNow()}`}
@@ -381,7 +259,7 @@ function FeedCard({ entry, showSocial, myUserId, myApiKey }: FeedCardProps) {
           </Link>
         ) : (
           <Link
-            to={`/friends/${author.uid}/day/${meal.date}`}
+            to={`/friends/${author.uid}/day/${meal.date}?slot=${meal.slot}`}
             className="rounded-lg bg-slate-800/60 px-2.5 py-1.5 text-[11px] text-slate-300 hover:text-slate-100"
           >
             상세

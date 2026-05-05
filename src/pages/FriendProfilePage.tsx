@@ -4,6 +4,7 @@ import { endOfMonth, endOfWeek, startOfMonth, startOfWeek } from "date-fns";
 import {
   ArrowLeft,
   Loader2,
+  MessageCircle,
   Users,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
@@ -90,6 +91,14 @@ export default function FriendProfilePage() {
           </p>
           <h1 className="truncate text-lg font-bold">{name}</h1>
         </div>
+        <Link
+          to={`/messages?with=${encodeURIComponent(friendUid)}`}
+          className="btn-secondary flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2 text-sm"
+          aria-label="쪽지 보내기"
+        >
+          <MessageCircle size={18} strokeWidth={2} />
+          쪽지
+        </Link>
       </header>
 
       {canCalendar ? (

@@ -22,6 +22,16 @@ service cloud.firestore {
         && s.scope[scope] == true;
     }
 
+    /** owner 가 viewer 에게 달력 공유(shares.scope.calendar) */
+    function calendarShareToward(ownerUid, viewerUid) {
+      return exists(/databases/$(database)/documents/shares/$(ownerUid + '_' + viewerUid))
+        && get(/databases/$(database)/documents/shares/$(ownerUid + '_' + viewerUid)).data.scope.calendar == true;
+    }
+    /** 한쪽이라도 서로에게 달력 공유가 열려 있는지 — DM 신규·쪽지 작성·일부 알림 검증용 */
+    function dmCalendarConnected(a, b) {
+      return calendarShareToward(a, b) || calendarShareToward(b, a);
+    }
+
     // ----- 본인 UID 하위 — 소유자는 전부, viewer 는 허용 범위만 read -----
     match /users/{userId}/meals/{docId} {
       allow read:  if signedIn() && (me() == userId || isViewerWithScope(userId, 'calendar'));
@@ -75,8 +85,106 @@ service cloud.firestore {
         && (me() == ownerUid || isViewerWithScope(ownerUid, 'calendar'));
     }
 
+    // 활동 알림함 — 수신자만 read/update; create 는 본인 검증 + 서로 달력 공유 친구 관계일 때만 허용.
+    match /users/{recipientUid}/activityInbox/{nid} {
+      allow read, update, delete: if signedIn() && me() == recipientUid;
+      allow create: if signedIn()
+        && recipientUid != me()
+        && request.resource.data.recipientUid == recipientUid
+        && request.resource.data.actorUid == me()
+        && request.resource.data.read == false
+        && request.resource.data.kind is string
+        && request.resource.data.actorName is string
+        && request.resource.data.actorName.size() > 0
+        && request.resource.data.actorName.size() <= 150
+        && request.resource.data.mealOwnerUid is string
+        && request.resource.data.mealId is string
+        && request.resource.data.mealDate is string
+        && request.resource.data.mealSlot is string
+        && request.resource.data.createdAt is int
+        // 식단 관련 알림은 — 수신자가 식단 소유자이면 actor 가 그 달력을 볼 수 있어야 하고,
+        // 수신자가 댓글 작성자면 actor·수신자 모두 그 식단 달력을 공유받은 관계여야 한다.
+        && (
+          (recipientUid == request.resource.data.mealOwnerUid
+            && calendarShareToward(recipientUid, me()))
+          || (recipientUid != request.resource.data.mealOwnerUid
+            && calendarShareToward(request.resource.data.mealOwnerUid, me())
+            && calendarShareToward(request.resource.data.mealOwnerUid, recipientUid))
+        )
+        && (
+          !('snippet' in request.resource.data)
+          || (request.resource.data.snippet is string && request.resource.data.snippet.size() <= 220)
+        )
+        && (
+          !('actorPhotoURL' in request.resource.data)
+          || request.resource.data.actorPhotoURL is string
+        )
+        && (
+          !('commentId' in request.resource.data)
+          || request.resource.data.commentId is string
+        );
+    }
+
     match /users/{userId}/{document=**} {
       allow read, write: if signedIn() && me() == userId;
+    }
+
+    // ----- 1:1 쪽지 -----
+    function dmPairOk(p) {
+      return p is list
+        && p.size() == 2
+        && p[0] is string
+        && p[1] is string
+        && p[0] < p[1]
+        && p[0].size() > 0
+        && p[1].size() > 0;
+    }
+    function dmThreadDoc(t) {
+      return get(/databases/$(database)/documents/dmThreads/$(t)).data;
+    }
+    match /dmThreads/{threadId} {
+      allow read: if signedIn()
+        && resource.data.participantUids is list
+        && resource.data.participantUids.size() == 2
+        && me() in resource.data.participantUids;
+      allow create: if signedIn()
+        && dmPairOk(request.resource.data.participantUids)
+        && threadId == request.resource.data.participantUids[0] + '_' + request.resource.data.participantUids[1]
+        && me() in request.resource.data.participantUids
+        && dmCalendarConnected(
+          request.resource.data.participantUids[0],
+          request.resource.data.participantUids[1]
+        )
+        && request.resource.data.lastText is string
+        && request.resource.data.lastSenderUid is string
+        && request.resource.data.updatedAt is int
+        && request.resource.data.createdAt is int;
+      allow update: if signedIn()
+        && resource.data.participantUids is list
+        && resource.data.participantUids.size() == 2
+        && me() in resource.data.participantUids
+        && request.resource.data.participantUids == resource.data.participantUids
+        && dmCalendarConnected(resource.data.participantUids[0], resource.data.participantUids[1]);
+    }
+    match /dmThreads/{threadId}/messages/{mid} {
+      allow read: if signedIn()
+        && dmThreadDoc(threadId).participantUids is list
+        && dmThreadDoc(threadId).participantUids.size() == 2
+        && me() in dmThreadDoc(threadId).participantUids;
+      allow create: if signedIn()
+        && dmThreadDoc(threadId).participantUids is list
+        && dmThreadDoc(threadId).participantUids.size() == 2
+        && me() in dmThreadDoc(threadId).participantUids
+        && dmCalendarConnected(
+          dmThreadDoc(threadId).participantUids[0],
+          dmThreadDoc(threadId).participantUids[1]
+        )
+        && request.resource.data.senderUid == me()
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 4000
+        && request.resource.data.createdAt is int;
+      allow update, delete: if false;
     }
 
     // ----- 공개 프로필 -----

@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { Calendar, HeartPulse, Rss, Settings, Users } from "lucide-react";
 import { cls } from "../lib/utils";
+import { useFeedDotVisible } from "../contexts/FeedStreamContext";
 
 const items = [
   { to: "/", label: "피드", icon: Rss },
@@ -12,6 +13,7 @@ const items = [
 
 export default function BottomNav() {
   const { pathname } = useLocation();
+  const feedDot = useFeedDotVisible();
   return (
     <nav
       className="bottom-nav fixed bottom-0 left-1/2 z-40 w-full max-w-screen-sm -translate-x-1/2 backdrop-blur"
@@ -20,16 +22,23 @@ export default function BottomNav() {
       <ul className="flex items-stretch justify-around">
         {items.map(({ to, label, icon: Icon }) => {
           const active = isActive(to, pathname);
+          const showFeedDot = to === "/" && feedDot && !active;
           return (
             <li key={to} className="flex-1">
               <Link
                 to={to}
                 className={cls(
-                  "flex flex-col items-center justify-center gap-1 py-3 text-[11px] transition-colors",
+                  "relative flex flex-col items-center justify-center gap-1 py-3 text-[11px] transition-colors",
                   active ? "text-brand-400" : "text-slate-400 hover:text-slate-200",
                 )}
               >
                 <Icon size={20} strokeWidth={active ? 2.4 : 2} />
+                {showFeedDot && (
+                  <span
+                    className="absolute right-[calc(50%-18px)] top-2 h-2 w-2 rounded-full bg-rose-500 shadow ring-2 ring-slate-950"
+                    aria-hidden
+                  />
+                )}
                 <span className={cls(active && "font-semibold")}>{label}</span>
               </Link>
             </li>
