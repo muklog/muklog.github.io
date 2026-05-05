@@ -76,7 +76,7 @@ export default function FeedPage() {
     <div className="flex flex-col gap-4 px-4 pt-5">
       <header className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-xs text-slate-400">나와 친구들의 최근 식단</p>
+          <p className="text-xs text-slate-400">나와 친구들의 식단</p>
           <h1 className="text-xl font-bold">
             <Rss size={18} className="mb-0.5 mr-1 inline text-brand-400" />
             피드
