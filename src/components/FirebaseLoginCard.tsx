@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Cloud, Loader2, LogIn, LogOut } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { isEmbeddedBrowserLikelyBlockingGoogleOAuth } from "../lib/inAppBrowser";
 import EmbeddedGoogleLoginNotice from "./EmbeddedGoogleLoginNotice";
 
 /** 메인 등 — Firebase 미연결 시 Google 로그인 유도 */
@@ -21,6 +22,9 @@ export default function FirebaseLoginCard() {
     if (!firebaseReady) return;
     refreshUser();
   }, [firebaseReady, refreshUser]);
+
+  const oauthInAppBlocked =
+    typeof navigator !== "undefined" && isEmbeddedBrowserLikelyBlockingGoogleOAuth();
 
   if (!firebaseReady) return null;
 
@@ -62,16 +66,18 @@ export default function FirebaseLoginCard() {
         <Cloud size={16} className="text-sky-400" /> 데이터 동기화
       </h2>
       <EmbeddedGoogleLoginNotice />
-      <button
-        type="button"
-        disabled={signInBusy}
-        onClick={() => void signInWithGoogle()}
-        className="btn-primary flex w-full items-center justify-center gap-2 py-2.5 text-sm disabled:opacity-60"
-      >
-        {signInBusy ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
-        {signInBusy ? "로그인 중…" : "Google로 로그인"}
-      </button>
-      {signInError && (
+      {!oauthInAppBlocked && (
+        <button
+          type="button"
+          disabled={signInBusy}
+          onClick={() => void signInWithGoogle()}
+          className="btn-primary flex w-full items-center justify-center gap-2 py-2.5 text-sm disabled:opacity-60"
+        >
+          {signInBusy ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
+          {signInBusy ? "로그인 중…" : "Google로 로그인"}
+        </button>
+      )}
+      {!oauthInAppBlocked && signInError && (
         <div className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200/95">
           <p className="whitespace-pre-wrap break-words">{signInError}</p>
           <button type="button" onClick={clearSignInError} className="mt-2 text-[11px] text-rose-300 underline">

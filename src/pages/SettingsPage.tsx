@@ -27,6 +27,7 @@ import { normalizeTheme, persistTheme } from "../lib/theme";
 import { THEME_IDS, THEME_LABELS, type ThemeId, type User } from "../types";
 import { cls } from "../lib/utils";
 import { wipeMyCloudData } from "../lib/wipeCloud";
+import { isEmbeddedBrowserLikelyBlockingGoogleOAuth } from "../lib/inAppBrowser";
 import EmbeddedGoogleLoginNotice from "../components/EmbeddedGoogleLoginNotice";
 import ProfileIdentitySection from "../components/ProfileIdentitySection";
 
@@ -59,6 +60,9 @@ export default function SettingsPage() {
     | { kind: "fail"; msg: string }
   >({ kind: "idle" });
   const [keySavedFlash, setKeySavedFlash] = useState(false);
+
+  const oauthInAppBlocked =
+    typeof navigator !== "undefined" && isEmbeddedBrowserLikelyBlockingGoogleOAuth();
 
   useEffect(() => {
     if (!firebaseReady) return;
@@ -188,16 +192,18 @@ export default function SettingsPage() {
         {firebaseReady && !authLoading && !user && (
           <div className="space-y-2">
             <EmbeddedGoogleLoginNotice />
-            <button
-              type="button"
-              disabled={signInBusy}
-              onClick={() => void signInWithGoogle()}
-              className="btn-primary flex w-full items-center justify-center gap-2 py-2.5 text-sm disabled:opacity-60"
-            >
-              {signInBusy ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
-              {signInBusy ? "로그인 중…" : "Google로 로그인"}
-            </button>
-            {signInError && (
+            {!oauthInAppBlocked && (
+              <button
+                type="button"
+                disabled={signInBusy}
+                onClick={() => void signInWithGoogle()}
+                className="btn-primary flex w-full items-center justify-center gap-2 py-2.5 text-sm disabled:opacity-60"
+              >
+                {signInBusy ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
+                {signInBusy ? "로그인 중…" : "Google로 로그인"}
+              </button>
+            )}
+            {!oauthInAppBlocked && signInError && (
               <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200/95">
                 <p className="whitespace-pre-wrap break-words">{signInError}</p>
                 <button type="button" onClick={clearSignInError} className="mt-2 text-[11px] text-rose-300 underline">

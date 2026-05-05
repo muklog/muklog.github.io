@@ -8,6 +8,7 @@ import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { db } from "../lib/db";
 import { getFirestoreDb } from "../lib/firebaseApp";
 import { acceptFriendInviteCode } from "../lib/friends";
+import { isEmbeddedBrowserLikelyBlockingGoogleOAuth } from "../lib/inAppBrowser";
 import EmbeddedGoogleLoginNotice from "../components/EmbeddedGoogleLoginNotice";
 import type { FriendInviteCode, ShareScope } from "../types";
 
@@ -28,6 +29,9 @@ export default function InviteCodePage() {
   const [busyAccept, setBusyAccept] = useState(false);
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [doneAccepted, setDoneAccepted] = useState(false);
+
+  const oauthInAppBlocked =
+    typeof navigator !== "undefined" && isEmbeddedBrowserLikelyBlockingGoogleOAuth();
 
   useEffect(() => {
     if (!firebaseReady || !user || !inviteCode.trim()) return;
@@ -66,19 +70,23 @@ export default function InviteCodePage() {
           친구 초대
         </h2>
         <p className="text-sm text-slate-300">
-          초대를 확인하려면 Google 계정으로 로그인해 주세요. 링크는 로그인한 뒤에도 다시 열 수 있어요.
+          {oauthInAppBlocked
+            ? "먼저 기본 브라우저에서 이 페이지를 연 뒤 Google 로그인을 진행해 주세요."
+            : "초대를 확인하려면 Google 계정으로 로그인해 주세요. 링크는 로그인한 뒤에도 다시 열 수 있어요."}
         </p>
         <EmbeddedGoogleLoginNotice />
-        <button
-          type="button"
-          disabled={signInBusy}
-          onClick={() => void signInWithGoogle()}
-          className="btn-primary flex w-full items-center justify-center gap-2 py-2.5 text-sm disabled:opacity-60"
-        >
-          {signInBusy ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
-          {signInBusy ? "로그인 중…" : "Google로 로그인"}
-        </button>
-        {signInError && (
+        {!oauthInAppBlocked && (
+          <button
+            type="button"
+            disabled={signInBusy}
+            onClick={() => void signInWithGoogle()}
+            className="btn-primary flex w-full items-center justify-center gap-2 py-2.5 text-sm disabled:opacity-60"
+          >
+            {signInBusy ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
+            {signInBusy ? "로그인 중…" : "Google로 로그인"}
+          </button>
+        )}
+        {!oauthInAppBlocked && signInError && (
           <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
             {signInError}
           </p>
