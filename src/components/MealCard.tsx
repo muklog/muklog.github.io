@@ -90,9 +90,14 @@ export function MealItemCard({
 export function MealItemCardsCarousel({
   items,
   renderSlide,
+  scrollToItemId,
+  onScrollToItemHandled,
 }: {
   items: MealItem[];
   renderSlide: (item: MealItem, index: number) => ReactNode;
+  /** 설정 시 해당 항목 슬라이드로 스크롤(추가 직후 등). 처리 후 `onScrollToItemHandled` 로 부모에서 비워 주세요 */
+  scrollToItemId?: string | null;
+  onScrollToItemHandled?: () => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [slide, setSlide] = useState(0);
@@ -117,11 +122,48 @@ export function MealItemCardsCarousel({
 
   const itemIdsKey = useMemo(() => items.map((i) => i.id).join("|"), [items]);
 
+  /** 한 장만 보일 때는 스크롤 UI 가 없어 부모 플래그만 바로 비운다 */
   useEffect(() => {
-    setSlide(0);
+    if (items.length !== 1 || scrollToItemId == null || scrollToItemId === "") return;
+    onScrollToItemHandled?.();
+  }, [items.length, scrollToItemId, onScrollToItemHandled]);
+
+  useEffect(() => {
     const el = scrollerRef.current;
-    if (el) el.scrollTo({ left: 0 });
-  }, [itemIdsKey]);
+    if (!el || items.length <= 1) return;
+
+    if (!scrollToItemId) {
+      syncSlideFromScroll();
+      return;
+    }
+
+    const idx = items.findIndex((i) => i.id === scrollToItemId);
+    if (idx < 0) {
+      onScrollToItemHandled?.();
+      return;
+    }
+
+    const scrollEl = el;
+    let cancelled = false;
+    let attempts = 0;
+    function tryScroll() {
+      if (cancelled) return;
+      const w = scrollEl.clientWidth;
+      if (w > 0) {
+        scrollEl.scrollTo({ left: idx * w, behavior: "smooth" });
+        setSlide(idx);
+        onScrollToItemHandled?.();
+        return;
+      }
+      attempts += 1;
+      if (attempts < 12) requestAnimationFrame(tryScroll);
+      else onScrollToItemHandled?.();
+    }
+    requestAnimationFrame(tryScroll);
+    return () => {
+      cancelled = true;
+    };
+  }, [itemIdsKey, scrollToItemId]);
 
   if (items.length === 0) return null;
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { ArrowLeft, ChevronDown, Plus, Trash2 } from "lucide-react";
@@ -124,9 +124,12 @@ interface SlotProps {
 
 function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) {
   const sectionRef = useRef<HTMLElement>(null);
+  /** AI 분석은 한 번에 하나씩 돌려 API·DB 업데이트 레이스를 줄인다 */
+  const analysisTailRef = useRef(Promise.resolve());
   const [searchParams] = useSearchParams();
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
+  const [scrollCarouselToItemId, setScrollCarouselToItemId] = useState<string | null>(null);
 
   useEffect(() => {
     if (searchParams.get("slot") !== slot) return;
@@ -138,8 +141,26 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
 
   const items = meal?.items ?? [];
 
+  const clearCarouselScrollRequest = useCallback(() => setScrollCarouselToItemId(null), []);
+
+  async function mealRowForSlot(): Promise<Meal | undefined> {
+    if (meal?.id) {
+      const row = await db.meals.get(meal.id);
+      if (row) return normalizeMeal(row);
+    }
+    const rows = await db.meals
+      .where("[userId+date]")
+      .equals([userId, date])
+      .filter((r) => r.slot === slot)
+      .toArray();
+    const row = rows[0];
+    return row ? normalizeMeal(row) : undefined;
+  }
+
   async function addItemWithPhoto(photo: Blob, thumbnail: Blob) {
-    if (items.length >= MAX_MEAL_ITEMS) {
+    const base = await mealRowForSlot();
+    const currentItems = base?.items ?? [];
+    if (currentItems.length >= MAX_MEAL_ITEMS) {
       alert(`한 끼니에는 사진을 최대 ${MAX_MEAL_ITEMS}장까지 올릴 수 있어요.`);
       return;
     }
@@ -153,9 +174,9 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
       createdAt: now,
       updatedAt: now,
     };
-    const mealId = meal?.id ?? uid();
-    const nextMeal: Meal = meal
-      ? { ...meal, items: [...items, newItem], updatedAt: now }
+    const mealId = base?.id ?? uid();
+    const nextMeal: Meal = base
+      ? { ...base, items: [...currentItems, newItem], updatedAt: now }
       : {
           id: mealId,
           userId,
@@ -167,11 +188,14 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
         };
     await db.meals.put(nextMeal);
     afterUserDataMutation();
+    setScrollCarouselToItemId(itemId);
+
     if (apiKey) {
       const mid = nextMeal.id;
-      const blob = photo;
-      const key = apiKey;
-      queueMicrotask(() => void runAnalysis(mid, itemId, blob, key));
+      analysisTailRef.current = analysisTailRef.current
+        .then(() => runAnalysis(mid, itemId, photo, apiKey))
+        .catch(() => {});
+      void analysisTailRef.current;
     }
   }
 
@@ -206,7 +230,10 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
       analysisError: undefined,
       manuallyEdited: false,
     }));
-    void runAnalysis(meal.id, item.id, item.photo, apiKey);
+    analysisTailRef.current = analysisTailRef.current
+      .then(() => runAnalysis(meal.id, item.id, item.photo!, apiKey))
+      .catch(() => {});
+    void analysisTailRef.current;
   }
 
   async function removeItem(itemId: string) {
@@ -264,6 +291,8 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
           {items.length > 0 && (
             <MealItemCardsCarousel
               items={items}
+              scrollToItemId={scrollCarouselToItemId}
+              onScrollToItemHandled={clearCarouselScrollRequest}
               renderSlide={(it, idx) => (
                 <MealItemCard
                   item={it}
@@ -280,6 +309,7 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
           <PhotoUpload
             label={items.length === 0 ? "사진 찍어 기록하기" : "사진 추가하기"}
             onPicked={addItemWithPhoto}
+            multipleGallery
             variant={items.length === 0 ? "primary" : "ghost"}
             disabled={items.length >= MAX_MEAL_ITEMS}
             square
