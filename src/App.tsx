@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, getSettings, patchSettings } from "./lib/db";
 import { applyTheme, normalizeTheme } from "./lib/theme";
+import FeedPage from "./pages/FeedPage";
 import HomePage from "./pages/HomePage";
 import DayPage from "./pages/DayPage";
 import HealthPage from "./pages/HealthPage";
@@ -85,7 +86,9 @@ export default function App() {
     >
       <main className="flex-1 overflow-y-auto pb-24">
         <Routes>
-          <Route path="/" element={<HomePage />} />
+          {/* 첫 화면은 피드. 기존 달력 홈은 /home 으로 이동 */}
+          <Route path="/" element={<FeedPage />} />
+          <Route path="/home" element={<HomePage />} />
           <Route path="/day/:date" element={<DayPage />} />
           <Route path="/health" element={<HealthPage />} />
           <Route path="/settings" element={<SettingsPage />} />

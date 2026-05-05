@@ -1,23 +1,37 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ArrowLeft, Trash2 } from "lucide-react";
-import { afterUserDataMutation, db, getSettings, registerCloudDelete, uid } from "../lib/db";
+import { ArrowLeft, ChevronDown, Plus, Trash2 } from "lucide-react";
+import {
+  afterUserDataMutation,
+  db,
+  getAnalysisProfileForUser,
+  getSettings,
+  normalizeMeal,
+  registerCloudDelete,
+  uid,
+} from "../lib/db";
 import { analyzeMealImage } from "../lib/ai";
 import {
   MEAL_SLOTS,
   MEAL_SLOT_EMOJI,
   MEAL_SLOT_LABELS,
   type Meal,
+  type MealItem,
   type MealSlot,
 } from "../types";
 import PhotoUpload from "../components/PhotoUpload";
-import { MealPhotoBlock } from "../components/MealCard";
+import {
+  MealItemCard,
+  MealItemEditDialog,
+  type MealItemPatch,
+} from "../components/MealCard";
 import MealSocialBlock from "../components/MealSocialBlock";
 import { cleanupMealSocial } from "../lib/social";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { useAuth } from "../contexts/AuthContext";
 import { formatKoDate } from "../lib/utils";
+import { cls } from "../lib/utils";
 
 export default function DayPage() {
   const { date = "" } = useParams();
@@ -30,7 +44,9 @@ export default function DayPage() {
   const meals = useLiveQuery(
     async () =>
       userId && date
-        ? await db.meals.where("[userId+date]").equals([userId, date]).toArray()
+        ? (
+            await db.meals.where("[userId+date]").equals([userId, date]).toArray()
+          ).map(normalizeMeal)
         : [],
     [userId, date],
   );
@@ -58,19 +74,22 @@ export default function DayPage() {
       </header>
 
       {!settings?.geminiApiKey && (
-        <Link to="/settings" className="card border-slate-700 bg-slate-900/40 px-4 py-3 text-xs text-slate-400">
+        <Link
+          to="/settings"
+          className="card border-slate-700 bg-slate-900/40 px-4 py-3 text-xs text-slate-400"
+        >
           AI 분석은 설정에 Gemini 키가 필요합니다.
         </Link>
       )}
 
       {!userId && (
-        <div className="card p-4 text-center text-sm text-slate-400">프로필을 불러오는 중이에요.</div>
+        <div className="card p-4 text-center text-sm text-slate-400">
+          프로필을 불러오는 중이에요.
+        </div>
       )}
 
       {!validDate && (
-        <div className="card p-4 text-center text-sm text-rose-300">
-          잘못된 날짜입니다.
-        </div>
+        <div className="card p-4 text-center text-sm text-rose-300">잘못된 날짜입니다.</div>
       )}
 
       {userId && validDate &&
@@ -95,15 +114,15 @@ interface SlotProps {
   userId: string;
   meal?: Meal;
   apiKey?: string;
-  /** 클라우드 동기화된 본인 Firebase UID — 좋아요/댓글 표시용. 미로그인이면 undefined */
   ownerUid?: string;
 }
 
 function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const [searchParams] = useSearchParams();
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(true);
 
-  // HashRouter에서는 #/경로#슬롯 이 한 fragment에 섞여 해시 매칭이 깨짐 → ?slot= 로 이동
   useEffect(() => {
     if (searchParams.get("slot") !== slot) return;
     const t = window.setTimeout(() => {
@@ -112,134 +131,239 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
     return () => clearTimeout(t);
   }, [slot, searchParams]);
 
-  async function createOrUpdateMealWithPhoto(photo: Blob, thumbnail: Blob) {
+  const items = meal?.items ?? [];
+
+  async function addItemWithPhoto(photo: Blob, thumbnail: Blob) {
     const now = Date.now();
-    const id = meal?.id ?? uid();
-    const base: Meal = meal
-      ? {
-          ...meal,
-          photo,
-          thumbnail,
-          analysisStatus: apiKey ? "analyzing" : "skipped",
-          updatedAt: now,
-          analysisError: undefined,
-        }
+    const itemId = uid();
+    const newItem: MealItem = {
+      id: itemId,
+      photo,
+      thumbnail,
+      analysisStatus: apiKey ? "analyzing" : "skipped",
+      createdAt: now,
+      updatedAt: now,
+    };
+    const mealId = meal?.id ?? uid();
+    const nextMeal: Meal = meal
+      ? { ...meal, items: [...items, newItem], updatedAt: now }
       : {
-          id,
+          id: mealId,
           userId,
           date,
           slot,
-          photo,
-          thumbnail,
-          analysisStatus: apiKey ? "analyzing" : "skipped",
+          items: [newItem],
           createdAt: now,
           updatedAt: now,
         };
-    await db.meals.put(base);
-    if (apiKey) {
-      runAnalysis(id, photo, apiKey);
-    }
+    await db.meals.put(nextMeal);
+    afterUserDataMutation();
+    if (apiKey) void runAnalysis(mealId, itemId, photo, apiKey);
   }
 
-  async function runAnalysis(
-    id: string,
-    photo: Blob,
-    key: string,
-  ) {
+  async function updateItem(
+    mealId: string,
+    itemId: string,
+    transform: (it: MealItem) => MealItem,
+  ): Promise<void> {
+    const cur = await db.meals.get(mealId);
+    if (!cur) return;
+    const normalized = normalizeMeal(cur);
+    const now = Date.now();
+    const nextItems = normalized.items.map((it) =>
+      it.id === itemId ? { ...transform(it), updatedAt: now } : it,
+    );
+    await db.meals.put({ ...normalized, items: nextItems, updatedAt: now });
+  }
+
+  async function runAnalysis(mealId: string, itemId: string, photo: Blob, key: string) {
     try {
-      const result = await analyzeMealImage(key, photo, slot);
-      const cur = await db.meals.get(id);
-      if (!cur) return;
-      await db.meals.put({
-        ...cur,
+      const profile = await getAnalysisProfileForUser(userId);
+      const result = await analyzeMealImage(key, photo, slot, undefined, profile);
+      await updateItem(mealId, itemId, (it) => ({
+        ...it,
         menuText: result.menuText,
         rating: result.rating,
         aiComment: result.aiComment,
         nutrition: result.nutrition,
         analysisStatus: "done",
         analysisError: undefined,
-        updatedAt: Date.now(),
-      });
+        manuallyEdited: false,
+      }));
       afterUserDataMutation();
     } catch (e) {
-      const cur = await db.meals.get(id);
-      if (!cur) return;
-      await db.meals.put({
-        ...cur,
+      await updateItem(mealId, itemId, (it) => ({
+        ...it,
         analysisStatus: "error",
         analysisError: e instanceof Error ? e.message : String(e),
-        updatedAt: Date.now(),
-      });
+      }));
       afterUserDataMutation();
     }
   }
 
-  async function reAnalyze() {
-    if (!meal?.photo || !apiKey) return;
-    await db.meals.put({
-      ...meal,
+  async function reAnalyzeItem(item: MealItem) {
+    if (!meal || !apiKey || !item.photo) return;
+    await updateItem(meal.id, item.id, (it) => ({
+      ...it,
       analysisStatus: "analyzing",
       analysisError: undefined,
-      updatedAt: Date.now(),
-    });
+      manuallyEdited: false,
+    }));
     afterUserDataMutation();
-    runAnalysis(meal.id, meal.photo, apiKey);
+    void runAnalysis(meal.id, item.id, item.photo, apiKey);
   }
 
-  async function removeMeal() {
+  async function saveItemEdit(itemId: string, patch: MealItemPatch) {
     if (!meal) return;
-    if (!confirm("이 기록을 삭제할까요?")) return;
+    await updateItem(meal.id, itemId, (it) => ({
+      ...it,
+      menuText: patch.menuText,
+      rating: patch.rating,
+      aiComment: patch.aiComment,
+      nutrition: patch.nutrition,
+      analysisStatus: "done",
+      analysisError: undefined,
+      manuallyEdited: true,
+    }));
+    afterUserDataMutation();
+  }
+
+  async function removeItem(itemId: string) {
+    if (!meal) return;
+    if (!confirm("이 사진을 삭제할까요?")) return;
+    const cur = await db.meals.get(meal.id);
+    if (!cur) return;
+    const normalized = normalizeMeal(cur);
+    const remaining = normalized.items.filter((it) => it.id !== itemId);
+    if (remaining.length === 0) {
+      await db.meals.delete(normalized.id);
+      await registerCloudDelete("meals", normalized.id);
+      if (ownerUid) void cleanupMealSocial(ownerUid, normalized.id);
+    } else {
+      await db.meals.put({ ...normalized, items: remaining, updatedAt: Date.now() });
+    }
+    afterUserDataMutation();
+  }
+
+  async function removeEntireSlot() {
+    if (!meal) return;
+    if (!confirm("이 끼니 전체를 지울까요? 사진과 분석 결과가 모두 사라져요.")) return;
     await db.meals.delete(meal.id);
     await registerCloudDelete("meals", meal.id);
-    if (ownerUid) {
-      // 좋아요·댓글 서브컬렉션은 부모 문서 삭제로 자동 정리되지 않으므로
-      // best-effort 로 같이 비운다. 실패해도 식단 삭제 자체는 진행됨.
-      void cleanupMealSocial(ownerUid, meal.id);
-    }
+    if (ownerUid) void cleanupMealSocial(ownerUid, meal.id);
+    afterUserDataMutation();
   }
+
+  const editingItem = items.find((it) => it.id === editingItemId) ?? null;
 
   return (
     <section ref={sectionRef} id={slot} className="card overflow-hidden">
       <header className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
           <span className="text-xl">{MEAL_SLOT_EMOJI[slot]}</span>
-          <h3 className="text-base font-semibold">{MEAL_SLOT_LABELS[slot]}</h3>
-        </div>
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold">{MEAL_SLOT_LABELS[slot]}</h3>
+            {items.length > 0 && (
+              <p className="text-[11px] text-slate-400">
+                사진 {items.length}장
+              </p>
+            )}
+          </div>
+          <ChevronDown
+            size={16}
+            className={cls(
+              "ml-1 shrink-0 text-slate-500 transition-transform",
+              !expanded && "-rotate-90",
+            )}
+          />
+        </button>
         {meal && (
           <button
-            onClick={removeMeal}
+            onClick={removeEntireSlot}
             className="rounded-lg p-2 text-slate-500 hover:text-rose-400"
-            aria-label="삭제"
+            aria-label="끼니 전체 삭제"
           >
             <Trash2 size={16} />
           </button>
         )}
       </header>
 
-      <div className="space-y-3 p-4">
-        {meal?.photo ? (
-          <MealPhotoBlock meal={meal} onReanalyze={reAnalyze} canAnalyze={!!apiKey} />
-        ) : (
-          <PhotoUpload
-            label="사진 찍어 기록하기"
-            onPicked={createOrUpdateMealWithPhoto}
-            square
-          />
-        )}
+      {expanded && (
+        <div className="space-y-3 p-4">
+          {items.length === 0 ? (
+            <PhotoUpload label="사진 찍어 기록하기" onPicked={addItemWithPhoto} square />
+          ) : (
+            <>
+              <div className="space-y-3">
+                {items.map((it, idx) => (
+                  <MealItemCard
+                    key={it.id}
+                    item={it}
+                    index={idx}
+                    canAnalyze={!!apiKey}
+                    onReanalyze={() => void reAnalyzeItem(it)}
+                    onEdit={() => setEditingItemId(it.id)}
+                    onRemove={() => void removeItem(it.id)}
+                  />
+                ))}
+              </div>
+              <PhotoUpload
+                label="사진 추가하기"
+                onPicked={addItemWithPhoto}
+                variant="ghost"
+                square
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  // 분석 없이 메뉴만 기록하고 싶을 때를 위한 빠른 진입점.
+                  const now = Date.now();
+                  const id = uid();
+                  const newItem: MealItem = {
+                    id,
+                    analysisStatus: "skipped",
+                    createdAt: now,
+                    updatedAt: now,
+                  };
+                  const base: Meal = meal
+                    ? { ...meal, items: [...items, newItem], updatedAt: now }
+                    : {
+                        id: uid(),
+                        userId,
+                        date,
+                        slot,
+                        items: [newItem],
+                        createdAt: now,
+                        updatedAt: now,
+                      };
+                  void (async () => {
+                    await db.meals.put(base);
+                    afterUserDataMutation();
+                    setEditingItemId(id);
+                  })();
+                }}
+                className="btn-secondary w-full py-2 text-xs"
+              >
+                <Plus size={14} /> 사진 없이 직접 기록 추가
+              </button>
+            </>
+          )}
 
-        {meal?.photo && (
-          <PhotoUpload
-            label="다시 찍기"
-            onPicked={createOrUpdateMealWithPhoto}
-            variant="ghost"
-            square
-          />
-        )}
+          {ownerUid && meal && <MealSocialBlock ownerUid={ownerUid} mealId={meal.id} />}
+        </div>
+      )}
 
-        {ownerUid && meal && (
-          <MealSocialBlock ownerUid={ownerUid} mealId={meal.id} />
-        )}
-      </div>
+      {editingItem && (
+        <MealItemEditDialog
+          item={editingItem}
+          onClose={() => setEditingItemId(null)}
+          onSave={(patch) => saveItemEdit(editingItem.id, patch)}
+        />
+      )}
     </section>
   );
 }

@@ -3,26 +3,19 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { endOfMonth, endOfWeek, startOfMonth, startOfWeek } from "date-fns";
 import {
   ArrowLeft,
-  CalendarDays,
-  HeartPulse,
   Loader2,
   UserPlus,
   Users,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import Calendar, { type DayCount } from "../components/Calendar";
-import HealthScoreRing from "../components/HealthScoreRing";
-import HealthRecordCard from "../components/HealthRecordCard";
 import {
   getMyViewerShare,
   permissionDeniedMessage,
-  subscribeFriendHealth,
   subscribeFriendMealsInRange,
 } from "../lib/friends";
-import { HEALTH_TYPE_LABELS, type HealthRecord, type Share } from "../types";
-import { cls, dateKey, formatKoDate } from "../lib/utils";
-
-type Tab = "calendar" | "health";
+import type { Share } from "../types";
+import { dateKey, formatKoDate } from "../lib/utils";
 
 export default function FriendProfilePage() {
   const { uid: friendUid = "" } = useParams();
@@ -30,7 +23,6 @@ export default function FriendProfilePage() {
   const { user, firebaseReady } = useAuth();
   // null = 로딩, "missing" = 권한 없음(=share 문서 없음)
   const [share, setShare] = useState<Share | null | "missing">(null);
-  const [tab, setTab] = useState<Tab | null>(null);
 
   useEffect(() => {
     if (!user || !friendUid) return;
@@ -88,14 +80,6 @@ export default function FriendProfilePage() {
   const name = share.ownerName || "친구";
   const email = share.ownerEmail || "";
   const canCalendar = share.scope.calendar;
-  const canHealth = share.scope.health;
-  // tab 미선택이거나 비공개 범위면 공개된 쪽으로 폴백.
-  const activeTab: Tab =
-    tab && ((tab === "calendar" && canCalendar) || (tab === "health" && canHealth))
-      ? tab
-      : canCalendar
-        ? "calendar"
-        : "health";
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-4">
@@ -116,38 +100,12 @@ export default function FriendProfilePage() {
         </div>
       </header>
 
-      {!canCalendar && !canHealth ? (
-        <div className="card p-4 text-center text-sm text-slate-400">
-          이 친구가 공개한 범위가 없어요.
-        </div>
+      {canCalendar ? (
+        <FriendCalendarTab friendUid={friendUid} />
       ) : (
-        <>
-          <div className="flex gap-1 rounded-xl bg-slate-900/60 p-1">
-            {canCalendar && (
-              <TabBtn
-                active={activeTab === "calendar"}
-                onClick={() => setTab("calendar")}
-              >
-                <CalendarDays size={14} /> 달력
-              </TabBtn>
-            )}
-            {canHealth && (
-              <TabBtn
-                active={activeTab === "health"}
-                onClick={() => setTab("health")}
-              >
-                <HeartPulse size={14} /> 건강
-              </TabBtn>
-            )}
-          </div>
-
-          {activeTab === "calendar" && canCalendar && (
-            <FriendCalendarTab friendUid={friendUid} />
-          )}
-          {activeTab === "health" && canHealth && (
-            <FriendHealthTab friendUid={friendUid} />
-          )}
-        </>
+        <div className="card p-4 text-center text-sm text-slate-400">
+          이 친구가 공개한 기록이 없어요.
+        </div>
       )}
     </div>
   );
@@ -163,31 +121,6 @@ function Shell({ children }: { children: React.ReactNode }) {
       </header>
       <div className="card p-4 text-sm text-slate-400">{children}</div>
     </div>
-  );
-}
-
-function TabBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cls(
-        "flex flex-1 items-center justify-center gap-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors",
-        active
-          ? "bg-brand-500/20 text-brand-200"
-          : "text-slate-400 hover:text-slate-200",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -217,9 +150,13 @@ function FriendCalendarTab({ friendUid }: { friendUid: string }) {
       (meals) => {
         const map = new Map<string, DayCount>();
         for (const m of meals) {
+          const items = m.items ?? [];
+          if (items.length === 0) continue;
           const cur = map.get(m.date) ?? { total: 0, ratings: [] };
           cur.total += 1;
-          if (typeof m.rating === "number") cur.ratings.push(m.rating);
+          for (const it of items) {
+            if (typeof it.rating === "number") cur.ratings.push(it.rating);
+          }
           map.set(m.date, cur);
         }
         setCounts(map);
@@ -255,63 +192,3 @@ function FriendCalendarTab({ friendUid }: { friendUid: string }) {
   );
 }
 
-// ---- 건강 탭 -------------------------------------------------------------
-
-function FriendHealthTab({ friendUid }: { friendUid: string }) {
-  const [rows, setRows] = useState<HealthRecord[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    setRows(null);
-    setErr(null);
-    const unsub = subscribeFriendHealth(
-      friendUid,
-      (r) => setRows(r),
-      (e) => setErr(permissionDeniedMessage(e)),
-    );
-    return () => unsub();
-  }, [friendUid]);
-
-  const latest = rows?.[0];
-
-  if (err) {
-    return (
-      <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-        {err}
-      </p>
-    );
-  }
-
-  return (
-    <>
-      <section className="card flex items-center gap-4 p-5">
-        <HealthScoreRing score={latest?.healthScore} />
-        <div className="min-w-0 flex-1">
-          <p className="text-xs text-slate-400">최근 건강 평가</p>
-          <h2 className="mt-0.5 break-words text-base font-semibold leading-snug text-slate-100">
-            {latest?.summary ?? "아직 등록된 건강기록이 없어요."}
-          </h2>
-          {latest && (
-            <p className="mt-1 text-xs text-slate-500">
-              {HEALTH_TYPE_LABELS[latest.type]} · {formatKoDate(latest.recordDate)}
-            </p>
-          )}
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        {rows === null && (
-          <p className="card p-4 text-center text-xs text-slate-500">불러오는 중…</p>
-        )}
-        {rows?.length === 0 && (
-          <p className="card p-4 text-center text-xs text-slate-500">
-            등록된 건강기록이 없어요.
-          </p>
-        )}
-        {rows?.map((r) => (
-          <HealthRecordCard key={r.id} record={r} readOnly />
-        ))}
-      </section>
-    </>
-  );
-}

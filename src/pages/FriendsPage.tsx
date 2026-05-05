@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  CalendarDays,
   Check,
   ChevronRight,
   Copy,
   Eye,
-  HeartPulse,
   Link2,
   Loader2,
   Mail,
@@ -307,9 +305,11 @@ function ErrorBanner({ message }: { message: string }) {
   );
 }
 
+// 건강 기록은 민감 정보라 공유 불가. scope.health 는 항상 false 로 강제한다.
+const CALENDAR_ONLY_SCOPE: ShareScope = { calendar: true, health: false };
+
 function SendRequestCard() {
   const [email, setEmail] = useState("");
-  const [scope, setScope] = useState<ShareScope>({ calendar: true, health: true });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastSentLink, setLastSentLink] = useState<string | null>(null);
@@ -323,7 +323,7 @@ function SendRequestCard() {
     setErr(null);
     setBusy(true);
     try {
-      const req = await sendFollowRequest(email, scope);
+      const req = await sendFollowRequest(email, CALENDAR_ONLY_SCOPE);
       const link = buildInviteLink(req.id);
       setLastSentLink(link);
       setLastSentEmail(req.toEmail);
@@ -342,8 +342,10 @@ function SendRequestCard() {
         이메일로 팔로우 신청
       </h3>
       <p className="text-[11px] text-slate-400">
-        상대가 수락하면 그 사람의 기록을 내가 볼 수 있어요. (인스타그램 팔로우와 같은 방식 ·
-        <span className="text-slate-300"> Gmail 주소만 가능</span>)
+        상대가 수락하면 그 사람의 <strong className="text-slate-200">식단(달력) 기록</strong>을 볼 수 있어요.
+        <span className="mt-1 block text-slate-500">
+          건강 정보는 민감 정보라 앱 전체에서 친구와 공유되지 않아요. · Gmail 주소만 가능
+        </span>
       </p>
       <input
         type="email"
@@ -360,18 +362,12 @@ function SendRequestCard() {
           Gmail 주소(@gmail.com)만 신청할 수 있어요.
         </p>
       )}
-      <div className="flex flex-col gap-2">
-        <p className="text-xs text-slate-400">이 친구의 어떤 기록을 보고 싶나요?</p>
-        <ScopeCheckboxes value={scope} onChange={setScope} />
+      <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2 text-[11px] text-slate-400">
+        공개 범위: <strong className="text-slate-200">식단(달력)</strong> · 건강 기록은 공유되지 않습니다.
       </div>
       <button
         onClick={submit}
-        disabled={
-          busy ||
-          !trimmed ||
-          gmailInvalid ||
-          (!scope.calendar && !scope.health)
-        }
+        disabled={busy || !trimmed || gmailInvalid}
         className="btn-primary w-full py-2.5 text-sm disabled:opacity-60"
       >
         {busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
@@ -386,63 +382,6 @@ function SendRequestCard() {
         <InviteLinkBlock email={lastSentEmail} link={lastSentLink} />
       )}
     </section>
-  );
-}
-
-function ScopeCheckboxes({
-  value,
-  onChange,
-}: {
-  value: ShareScope;
-  onChange: (v: ShareScope) => void;
-}) {
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      <ScopeCheckbox
-        label="달력 (식사)"
-        icon={<CalendarDays size={14} />}
-        checked={value.calendar}
-        onChange={(b) => onChange({ ...value, calendar: b })}
-      />
-      <ScopeCheckbox
-        label="건강"
-        icon={<HeartPulse size={14} />}
-        checked={value.health}
-        onChange={(b) => onChange({ ...value, health: b })}
-      />
-    </div>
-  );
-}
-
-function ScopeCheckbox({
-  label,
-  icon,
-  checked,
-  onChange,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label
-      className={cls(
-        "flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs",
-        checked
-          ? "border-brand-500/60 bg-brand-500/15 text-brand-100"
-          : "border-slate-800 bg-slate-900/40 text-slate-300",
-      )}
-    >
-      <input
-        type="checkbox"
-        className="h-4 w-4 accent-brand-500"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      {icon}
-      <span>{label}</span>
-    </label>
   );
 }
 
@@ -490,26 +429,19 @@ function InviteLinkBlock({ email, link }: { email: string; link: string }) {
 function FriendCard({ row, myUid }: { row: FriendRow; myUid: string }) {
   const { otherUid, name, email, photo, outgoing, incoming } = row;
   const mutual = !!outgoing && !!incoming;
-  const [editing, setEditing] = useState(false);
-  const [next, setNext] = useState<ShareScope>(
-    outgoing?.scope ?? { calendar: true, health: true },
-  );
-  const [busy, setBusy] = useState<"save" | "stopOut" | "stopIn" | "follow" | null>(null);
+  const [busy, setBusy] = useState<"stopOut" | "stopIn" | "follow" | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [followSent, setFollowSent] = useState(false);
 
-  async function save() {
-    setErr(null);
-    setBusy("save");
-    try {
-      await updateOutgoingScope(otherUid, next);
-      setEditing(false);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
+  // 기존 사용자가 scope.health=true 로 저장된 share 가 있을 수 있다.
+  // 앱은 더 이상 건강을 공유하지 않으므로, 공개 중이라면 달력 전용으로 강제 재저장.
+  useEffect(() => {
+    if (outgoing && outgoing.scope.health) {
+      void updateOutgoingScope(otherUid, { calendar: true, health: false }).catch((e) => {
+        console.warn("[friends] 강제 calendar-only 전환 실패", e);
+      });
     }
-  }
+  }, [outgoing?.id, outgoing?.scope.health, otherUid]);
 
   async function stopOutgoing() {
     if (!outgoing) return;
@@ -541,7 +473,7 @@ function FriendCard({ row, myUid }: { row: FriendRow; myUid: string }) {
     setErr(null);
     setBusy("follow");
     try {
-      await sendFollowRequest(email, { calendar: true, health: true });
+      await sendFollowRequest(email, CALENDAR_ONLY_SCOPE);
       setFollowSent(true);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -578,8 +510,8 @@ function FriendCard({ row, myUid }: { row: FriendRow; myUid: string }) {
           </div>
           <p className="truncate text-xs text-slate-500">{email}</p>
           <div className="mt-1 flex flex-wrap gap-1">
-            <ScopeBadge prefix="내가 공개" scope={outgoing?.scope} tone="brand" />
-            <ScopeBadge prefix="내가 보는 범위" scope={incoming?.scope} tone="slate" />
+            <RoleBadge prefix="내가 공개" active={!!outgoing} tone="brand" />
+            <RoleBadge prefix="내가 보는 범위" active={!!incoming} tone="slate" />
           </div>
         </div>
         <ChevronRight size={18} className="shrink-0 text-slate-500" />
@@ -590,56 +522,20 @@ function FriendCard({ row, myUid }: { row: FriendRow; myUid: string }) {
             {err}
           </p>
         )}
-        {editing && outgoing ? (
-          <div className="space-y-2">
-            <p className="text-[11px] text-slate-400">내가 공개할 범위</p>
-            <ScopeCheckboxes value={next} onChange={setNext} />
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  setEditing(false);
-                  setNext(outgoing.scope);
-                }}
-                className="btn-secondary flex-1 py-1.5 text-xs"
-              >
-                취소
-              </button>
-              <button
-                onClick={save}
-                disabled={busy !== null || (!next.calendar && !next.health)}
-                className="btn-primary flex-1 py-1.5 text-xs"
-              >
-                {busy === "save" ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                저장
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
             {outgoing && (
-              <>
-                <button
-                  onClick={() => {
-                    setNext(outgoing.scope);
-                    setEditing(true);
-                  }}
-                  className="btn-secondary flex-1 py-1.5 text-xs"
-                >
-                  내 공개 범위 변경
-                </button>
-                <button
-                  onClick={stopOutgoing}
-                  disabled={busy !== null}
-                  className="btn-secondary flex-1 py-1.5 text-xs text-rose-300 disabled:opacity-60"
-                >
-                  {busy === "stopOut" ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={12} />
-                  )}
-                  공개 중단
-                </button>
-              </>
+              <button
+                onClick={stopOutgoing}
+                disabled={busy !== null}
+                className="btn-secondary flex-1 py-1.5 text-xs text-rose-300 disabled:opacity-60"
+              >
+                {busy === "stopOut" ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Trash2 size={12} />
+                )}
+                공개 중단
+              </button>
             )}
             {incoming && (
               <button
@@ -674,26 +570,21 @@ function FriendCard({ row, myUid }: { row: FriendRow; myUid: string }) {
                 팔로우 신청을 보냈어요. 보낸 신청 탭에서 확인하세요.
               </span>
             )}
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );
 }
 
-function ScopeBadge({
+function RoleBadge({
   prefix,
-  scope,
+  active,
   tone,
 }: {
   prefix: string;
-  scope?: ShareScope;
+  active: boolean;
   tone: "brand" | "slate";
 }) {
-  const parts: string[] = [];
-  if (scope?.calendar) parts.push("달력");
-  if (scope?.health) parts.push("건강");
-  const text = scope ? (parts.length ? parts.join(", ") : "없음") : "—";
   return (
     <span
       className={cls(
@@ -703,7 +594,7 @@ function ScopeBadge({
           : "bg-slate-800 text-slate-300",
       )}
     >
-      {prefix}: {text}
+      {prefix}: {active ? "달력(식사)" : "없음"}
     </span>
   );
 }
@@ -754,10 +645,6 @@ function IncomingTab({
 }
 
 function IncomingCard({ req }: { req: FollowRequest }) {
-  // 기본은 "요청대로 공개". 사용자가 토글하면 직접 선택 모드.
-  const [mode, setMode] = useState<"asis" | "custom">("asis");
-  const [custom, setCustom] = useState<ShareScope>(req.requestedScope);
-  const finalScope = mode === "asis" ? req.requestedScope : custom;
   const [busy, setBusy] = useState<"accept" | "reject" | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -765,7 +652,8 @@ function IncomingCard({ req }: { req: FollowRequest }) {
     setErr(null);
     setBusy("accept");
     try {
-      await acceptFollowRequest(req.id, finalScope);
+      // 건강 기록은 앱 정책상 공유 불가 — scope 는 항상 calendar 만.
+      await acceptFollowRequest(req.id, CALENDAR_ONLY_SCOPE);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -793,29 +681,13 @@ function IncomingCard({ req }: { req: FollowRequest }) {
           <p className="truncate text-xs text-slate-500">{req.fromEmail}</p>
         </div>
       </div>
-      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-        <p className="text-[11px] text-slate-400">
+      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-[11px] text-slate-400">
+        <p>
           <Eye size={11} className="mb-0.5 mr-1 inline" />
-          상대가 보고 싶은 범위
+          수락하면 내 <strong className="text-slate-200">식단(달력) 기록</strong>만 공개돼요.
         </p>
-        <p className="mt-0.5 text-xs font-medium text-slate-100">
-          {scopeText(req.requestedScope)}
-        </p>
+        <p className="mt-1 text-slate-500">건강 기록은 앱 전체에서 친구에게 공유되지 않아요.</p>
       </div>
-      <div className="flex gap-1 rounded-lg bg-slate-900/40 p-1 text-[11px]">
-        <ModeBtn active={mode === "asis"} onClick={() => setMode("asis")}>
-          요청대로 공개
-        </ModeBtn>
-        <ModeBtn active={mode === "custom"} onClick={() => setMode("custom")}>
-          직접 선택
-        </ModeBtn>
-      </div>
-      {mode === "custom" && (
-        <div>
-          <p className="mb-2 text-[11px] text-slate-400">내가 공개할 범위</p>
-          <ScopeCheckboxes value={custom} onChange={setCustom} />
-        </div>
-      )}
       {err && (
         <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
           {err}
@@ -836,7 +708,7 @@ function IncomingCard({ req }: { req: FollowRequest }) {
         </button>
         <button
           onClick={onAccept}
-          disabled={busy !== null || (!finalScope.calendar && !finalScope.health)}
+          disabled={busy !== null}
           className="btn-primary flex-1 py-2 text-xs disabled:opacity-60"
         >
           {busy === "accept" ? (
@@ -848,31 +720,6 @@ function IncomingCard({ req }: { req: FollowRequest }) {
         </button>
       </div>
     </div>
-  );
-}
-
-function ModeBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cls(
-        "flex-1 rounded-md px-2 py-1.5 transition-colors",
-        active
-          ? "bg-brand-500/20 text-brand-100"
-          : "text-slate-400 hover:text-slate-200",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -933,11 +780,8 @@ function OutgoingCard({ req }: { req: FollowRequest }) {
         <p className="text-xs text-slate-400">대상 이메일</p>
         <p className="truncate text-sm font-medium text-slate-100">{req.toEmail}</p>
       </div>
-      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-        <p className="text-[11px] text-slate-400">내가 보고 싶은 범위</p>
-        <p className="mt-0.5 text-xs font-medium text-slate-100">
-          {scopeText(req.requestedScope)}
-        </p>
+      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-[11px] text-slate-400">
+        수락되면 상대의 <strong className="text-slate-200">식단(달력) 기록</strong>을 볼 수 있어요.
       </div>
       <div className="flex gap-2">
         <button onClick={copy} className="btn-secondary flex-1 py-2 text-xs">
@@ -955,11 +799,4 @@ function OutgoingCard({ req }: { req: FollowRequest }) {
       </div>
     </div>
   );
-}
-
-function scopeText(s: ShareScope): string {
-  const parts: string[] = [];
-  if (s.calendar) parts.push("달력");
-  if (s.health) parts.push("건강");
-  return parts.length ? parts.join(", ") : "없음";
 }

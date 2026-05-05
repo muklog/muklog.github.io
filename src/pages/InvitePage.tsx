@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { CalendarDays, Check, HeartPulse, Loader2, LogIn, UserPlus, X } from "lucide-react";
+import { Check, Loader2, LogIn, UserPlus, X } from "lucide-react";
 import { doc, getDoc } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
 import { getFirestoreDb } from "../lib/firebaseApp";
@@ -10,7 +10,15 @@ import {
   rejectFollowRequest,
 } from "../lib/friends";
 import type { FollowRequest, ShareScope } from "../types";
-import { cls } from "../lib/utils";
+
+/**
+ * 팔로우 신청 링크 수락 페이지.
+ *
+ * 앱 정책상 공유 범위는 항상 달력(식단) 전용이다 — 건강 기록은 민감 정보라
+ * 친구에게 공유되지 않는다. 과거에는 사용자가 scope 를 직접 고를 수 있었지만,
+ * 이제 선택지가 하나뿐이라 UI 를 없앴다.
+ */
+const CALENDAR_ONLY_SCOPE: ShareScope = { calendar: true, health: false };
 
 export default function InvitePage() {
   const { reqId = "" } = useParams();
@@ -19,9 +27,6 @@ export default function InvitePage() {
 
   const [req, setReq] = useState<FollowRequest | null | "missing">(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
-  // 기본은 "요청대로". 토글로 직접 선택할 수 있도록.
-  const [mode, setMode] = useState<"asis" | "custom">("asis");
-  const [custom, setCustom] = useState<ShareScope>({ calendar: true, health: true });
   const [busy, setBusy] = useState<"accept" | "reject" | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [done, setDone] = useState<"accepted" | "rejected" | null>(null);
@@ -37,9 +42,7 @@ export default function InvitePage() {
         if (!snap.exists()) {
           setReq("missing");
         } else {
-          const data = { ...(snap.data() as FollowRequest), id: snap.id };
-          setReq(data);
-          setCustom(data.requestedScope);
+          setReq({ ...(snap.data() as FollowRequest), id: snap.id });
         }
       } catch (e) {
         if (!cancelled) {
@@ -155,7 +158,7 @@ export default function InvitePage() {
     return (
       <Shell>
         <p className="text-sm text-emerald-200">
-          수락했어요. 이제 {req.fromName}님이 내 기록을 볼 수 있어요.
+          수락했어요. 이제 {req.fromName}님이 내 식단 기록을 볼 수 있어요.
         </p>
         <Link to="/friends" className="btn-primary block w-full py-2 text-center text-sm">
           친구 탭으로
@@ -178,14 +181,12 @@ export default function InvitePage() {
     );
   }
 
-  const finalScope = mode === "asis" ? req.requestedScope : custom;
-
   async function onAccept() {
     if (!req || req === "missing") return;
     setActionErr(null);
     setBusy("accept");
     try {
-      await acceptFollowRequest(req.id, finalScope);
+      await acceptFollowRequest(req.id, CALENDAR_ONLY_SCOPE);
       setDone("accepted");
     } catch (e) {
       setActionErr(e instanceof Error ? e.message : String(e));
@@ -221,41 +222,15 @@ export default function InvitePage() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-        <p className="text-[11px] text-slate-400">상대가 보고 싶은 범위</p>
-        <p className="mt-0.5 text-xs font-medium text-slate-100">
-          {scopeText(req.requestedScope)}
+      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-[11px] text-slate-400">
+        <p>
+          수락하면 내 <strong className="text-slate-200">식단(달력) 기록</strong>이 {req.fromName}님에게
+          공개돼요.
+        </p>
+        <p className="mt-1 text-slate-500">
+          건강 기록은 앱 전체에서 친구에게 공유되지 않아요.
         </p>
       </div>
-
-      <div className="flex gap-1 rounded-lg bg-slate-900/40 p-1 text-[11px]">
-        <ModeBtn active={mode === "asis"} onClick={() => setMode("asis")}>
-          요청대로 공개
-        </ModeBtn>
-        <ModeBtn active={mode === "custom"} onClick={() => setMode("custom")}>
-          직접 선택
-        </ModeBtn>
-      </div>
-
-      {mode === "custom" && (
-        <div>
-          <p className="mb-2 text-[11px] text-slate-400">내가 공개할 범위</p>
-          <div className="grid grid-cols-2 gap-2">
-            <ScopeBtn
-              label="달력 (식사)"
-              icon={<CalendarDays size={14} />}
-              checked={custom.calendar}
-              onChange={(b) => setCustom({ ...custom, calendar: b })}
-            />
-            <ScopeBtn
-              label="건강"
-              icon={<HeartPulse size={14} />}
-              checked={custom.health}
-              onChange={(b) => setCustom({ ...custom, health: b })}
-            />
-          </div>
-        </div>
-      )}
 
       {actionErr && (
         <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
@@ -274,7 +249,7 @@ export default function InvitePage() {
         </button>
         <button
           onClick={onAccept}
-          disabled={busy !== null || (!finalScope.calendar && !finalScope.health)}
+          disabled={busy !== null}
           className="btn-primary flex-1 py-2 text-xs disabled:opacity-60"
         >
           {busy === "accept" ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
@@ -298,63 +273,6 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ModeBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cls(
-        "flex-1 rounded-md px-2 py-1.5 transition-colors",
-        active
-          ? "bg-brand-500/20 text-brand-100"
-          : "text-slate-400 hover:text-slate-200",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function ScopeBtn({
-  label,
-  icon,
-  checked,
-  onChange,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label
-      className={cls(
-        "flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs",
-        checked
-          ? "border-brand-500/60 bg-brand-500/15 text-brand-100"
-          : "border-slate-800 bg-slate-900/40 text-slate-300",
-      )}
-    >
-      <input
-        type="checkbox"
-        className="h-4 w-4 accent-brand-500"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      {icon}
-      <span>{label}</span>
-    </label>
-  );
-}
-
 function Avatar({ name, photoURL }: { name: string; photoURL?: string }) {
   if (photoURL) {
     return (
@@ -371,11 +289,4 @@ function Avatar({ name, photoURL }: { name: string; photoURL?: string }) {
       {initial}
     </div>
   );
-}
-
-function scopeText(s: ShareScope): string {
-  const parts: string[] = [];
-  if (s.calendar) parts.push("달력");
-  if (s.health) parts.push("건강");
-  return parts.length ? parts.join(", ") : "없음";
 }

@@ -4,7 +4,9 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   onSnapshot,
+  orderBy,
   query,
   setDoc,
   updateDoc,
@@ -437,6 +439,62 @@ export function subscribeFriendMealsInRange(
     },
     (err) => {
       console.error("[friends] meals subscribe", err);
+      onErr?.(err);
+    },
+  );
+}
+
+/**
+ * 특정 친구의 "최근 N 개 식사 기록" 을 실시간 구독한다 — 피드 탭용.
+ *
+ * orderBy("updatedAt", "desc") + limit 를 써서 가장 최근 수정된 것부터 가져온다.
+ * 친구가 AI 분석을 끝내거나 수동 수정 시 updatedAt 이 갱신되므로 자연스럽게
+ * 피드 맨 위로 올라온다.
+ *
+ * 인덱스: 단일 필드 orderBy 는 Firestore 가 자동 인덱스를 제공하므로 추가
+ * 설정 불필요.
+ */
+export function subscribeFriendLatestMeals(
+  ownerUid: string,
+  max: number,
+  cb: (rows: Meal[]) => void,
+  onErr?: (e: unknown) => void,
+): Unsubscribe {
+  const fs = getFirestoreDb();
+  const q = query(
+    collection(fs, "users", ownerUid, "meals"),
+    orderBy("updatedAt", "desc"),
+    limit(max),
+  );
+  const cache = new Map<string, { updatedAt: number; meal: Meal }>();
+  return onSnapshot(
+    q,
+    async (snap) => {
+      try {
+        const rows = await Promise.all(
+          snap.docs.map(async (d) => {
+            const data = { ...(d.data() as MealStored), id: d.id };
+            const cached = cache.get(d.id);
+            if (cached && cached.updatedAt === data.updatedAt) {
+              return cached.meal;
+            }
+            const meal = await storedToMeal(data);
+            cache.set(d.id, { updatedAt: data.updatedAt, meal });
+            return meal;
+          }),
+        );
+        const alive = new Set(snap.docs.map((d) => d.id));
+        for (const id of [...cache.keys()]) if (!alive.has(id)) cache.delete(id);
+        cb(rows);
+      } catch (e) {
+        console.error("[friends] latest meals snapshot decode", e);
+        onErr?.(e);
+      }
+    },
+    (err) => {
+      // updatedAt 필드가 존재하지 않는 아주 오래된(v1 이전) 레코드만 있는
+      // owner 에 대해서는 orderBy 결과가 비어 있을 수 있지만 에러는 아니다.
+      console.error("[friends] latest meals subscribe", err);
       onErr?.(err);
     },
   );

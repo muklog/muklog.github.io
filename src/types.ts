@@ -48,15 +48,54 @@ export interface User {
   color: string;
   /** 생년월일 (선택) */
   birthYear?: number;
+  /** 생년월일 YYYY-MM-DD (선택) — AI 분석에 나이 반영용 */
+  birthDate?: string;
   /** 성별 (선택) */
   gender?: "male" | "female" | "other";
   /** 키 cm (선택) */
   heightCm?: number;
+  /** 현재 체중 kg (선택) */
+  weightKg?: number;
   /** 목표 체중 kg (선택) */
   targetWeightKg?: number;
+  /**
+   * 사용자가 중점적으로 관리하고 싶은 건강 컨디션 라벨 (예: "혈당", "요산", "혈압").
+   * 민감 정보이므로 AI 분석 응답엔 병명을 직접 언급하지 않고,
+   * 식품/영양소 관점의 조언을 유도하는 용도로만 쓴다.
+   */
+  focusConditions?: string[];
   createdAt: number;
   /** 클라우드 병합용 (없으면 createdAt 으로 간주) */
   updatedAt?: number;
+}
+
+/**
+ * 끼니(Meal)의 개별 음식 항목.
+ *
+ * 한 끼니에 여러 번 먹는 경우(리필/추가 주문/코스 등) 를 자연스럽게 담기 위해
+ * Meal 은 items 배열을 가진다. 각 item 이 자기만의 사진·분석·수동 수정을
+ * 갖는다.
+ */
+export interface MealItem {
+  id: string;
+  photo?: Blob;
+  thumbnail?: Blob;
+  menuText?: string;
+  rating?: number;
+  aiComment?: string;
+  nutrition?: {
+    calories?: number;
+    protein?: number;
+    carbs?: number;
+    fat?: number;
+    healthTags?: string[];
+  };
+  analysisStatus: "pending" | "analyzing" | "done" | "error" | "skipped";
+  analysisError?: string;
+  /** 사용자가 분석 결과를 수동으로 수정했는지 — UI 에 '수정됨' 배지 표시용. */
+  manuallyEdited?: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface Meal {
@@ -65,27 +104,8 @@ export interface Meal {
   /** YYYY-MM-DD */
   date: string;
   slot: MealSlot;
-  /** 사진 (Blob, IndexedDB 저장) */
-  photo?: Blob;
-  /** 사진 썸네일 (Blob) - 빠른 표시용 */
-  thumbnail?: Blob;
-  /** AI 가 분석한 메뉴 텍스트 */
-  menuText?: string;
-  /** AI 별점 (1~5) */
-  rating?: number;
-  /** AI 한 줄 평 / 코멘트 */
-  aiComment?: string;
-  /** 상세 영양 분석 결과 */
-  nutrition?: {
-    calories?: number;
-    protein?: number;
-    carbs?: number;
-    fat?: number;
-    healthTags?: string[];
-  };
-  /** AI 분석 상태 */
-  analysisStatus: "pending" | "analyzing" | "done" | "error" | "skipped";
-  analysisError?: string;
+  /** 한 끼니의 여러 음식 항목 (최소 0개). 신규 버전에서는 항상 이 필드를 사용. */
+  items: MealItem[];
   createdAt: number;
   updatedAt: number;
 }
@@ -161,7 +181,11 @@ export interface AppSettings {
 export interface ShareScope {
   /** 식사·달력 기록 공개 */
   calendar: boolean;
-  /** 건강 기록 공개 */
+  /**
+   * 건강 기록 공개 (deprecated — 민감 정보 보호를 위해 앱에서는 항상 false 로 강제).
+   * 기존 사용자 데이터 호환을 위해 필드 자체는 유지하되, UI 에서 선택할 수 없고
+   * Firestore 규칙에서도 viewer 가 /health 를 읽을 수 없도록 막는다.
+   */
   health: boolean;
 }
 
@@ -219,6 +243,8 @@ export interface MealComment {
   authorName: string;
   authorPhotoURL?: string;
   text: string;
+  /** 대댓글인 경우 부모 댓글 id. 최상위 댓글이면 undefined. */
+  parentCommentId?: string;
   createdAt: number;
   updatedAt: number;
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { MealAnalysisBlock, MealPhotoBlock } from "../components/MealCard";
+import { MealItemCard } from "../components/MealCard";
 import MealSocialBlock from "../components/MealSocialBlock";
 import {
   getMyViewerShare,
@@ -161,19 +161,23 @@ function SlotSection({
   meal?: Meal;
   ownerUid: string;
 }) {
+  const items = meal?.items ?? [];
   return (
     <section className="card overflow-hidden">
       <header className="flex items-center gap-2 border-b border-slate-800 px-4 py-3">
         <span className="text-xl">{MEAL_SLOT_EMOJI[slot]}</span>
         <h3 className="text-base font-semibold">{MEAL_SLOT_LABELS[slot]}</h3>
+        {items.length > 1 && (
+          <span className="ml-auto text-[11px] text-slate-400">사진 {items.length}장</span>
+        )}
       </header>
       <div className="space-y-3 p-4">
-        {meal?.photo ? (
-          <MealPhotoBlock meal={meal} readOnly />
-        ) : meal ? (
-          <MealAnalysisBlock meal={meal} readOnly />
-        ) : (
+        {items.length === 0 ? (
           <p className="text-xs text-slate-500">기록 없음</p>
+        ) : (
+          items.map((it, idx) => (
+            <MealItemCard key={it.id} item={it} index={idx} readOnly />
+          ))
         )}
         {meal && <MealSocialBlock ownerUid={ownerUid} mealId={meal.id} />}
       </div>

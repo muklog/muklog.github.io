@@ -44,6 +44,20 @@ function commentsCol(ownerUid: string, mealId: string) {
   return collection(fs, "users", ownerUid, "meals", mealId, "comments");
 }
 
+function commentLikesCol(ownerUid: string, mealId: string, commentId: string) {
+  const fs = getFirestoreDb();
+  return collection(
+    fs,
+    "users",
+    ownerUid,
+    "meals",
+    mealId,
+    "comments",
+    commentId,
+    "likes",
+  );
+}
+
 /** 식단의 좋아요 누른 uid 목록을 실시간 구독. */
 export function subscribeLikes(
   ownerUid: string,
@@ -104,6 +118,7 @@ export async function addComment(
   ownerUid: string,
   mealId: string,
   text: string,
+  parentCommentId?: string,
 ): Promise<MealComment> {
   const trimmed = text.trim();
   if (!trimmed) throw new Error("댓글을 입력해 주세요.");
@@ -119,11 +134,13 @@ export async function addComment(
     authorName: me.name,
     authorPhotoURL: me.photoURL,
     text: trimmed,
+    parentCommentId,
     createdAt: now,
     updatedAt: now,
   };
   const clean: Record<string, unknown> = { ...data };
   if (clean.authorPhotoURL === undefined) delete clean.authorPhotoURL;
+  if (clean.parentCommentId === undefined) delete clean.parentCommentId;
   await setDoc(doc(commentsCol(ownerUid, mealId), id), clean);
   return data;
 }
@@ -148,7 +165,47 @@ export async function deleteComment(
   mealId: string,
   commentId: string,
 ): Promise<void> {
+  // 대댓글/좋아요가 붙어 있으면 best-effort 로 같이 정리한다.
+  // (Firestore 클라이언트 SDK 는 서브컬렉션을 자동 정리하지 않음)
+  await Promise.allSettled([
+    bestEffortDeleteCollection(commentLikesCol(ownerUid, mealId, commentId)),
+  ]);
   await deleteDoc(doc(commentsCol(ownerUid, mealId), commentId));
+}
+
+// ---- 댓글 좋아요 + 대댓글 -------------------------------------------------
+
+/** 특정 댓글의 좋아요를 누른 viewerUid 목록을 실시간 구독. */
+export function subscribeCommentLikes(
+  ownerUid: string,
+  mealId: string,
+  commentId: string,
+  cb: (likedUids: string[]) => void,
+  onErr?: (e: unknown) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(commentLikesCol(ownerUid, mealId, commentId)),
+    (snap) => cb(snap.docs.map((d) => d.id)),
+    (err) => {
+      console.warn("[social] comment likes subscribe", err);
+      onErr?.(err);
+    },
+  );
+}
+
+export async function setMyCommentLike(
+  ownerUid: string,
+  mealId: string,
+  commentId: string,
+  liked: boolean,
+): Promise<void> {
+  const me = requireAuthor();
+  const ref = doc(commentLikesCol(ownerUid, mealId, commentId), me.uid);
+  if (liked) {
+    await setDoc(ref, { viewerUid: me.uid, createdAt: Date.now() });
+  } else {
+    await deleteDoc(ref);
+  }
 }
 
 // ---- meal 삭제 시 정리 -------------------------------------------------
@@ -168,11 +225,22 @@ async function bestEffortDeleteCollection(colRef: ReturnType<typeof collection>)
   }
 }
 
-/** 식단 본인 삭제 시 호출 — 좋아요·댓글 서브컬렉션을 같이 비웁니다. */
+/** 식단 본인 삭제 시 호출 — 좋아요·댓글(및 그 하위 좋아요) 서브컬렉션을 같이 비웁니다. */
 export async function cleanupMealSocial(
   ownerUid: string,
   mealId: string,
 ): Promise<void> {
+  // 댓글 각 문서의 likes 서브컬렉션까지 지워야 해서 먼저 댓글을 훑는다.
+  try {
+    const snap = await getDocs(commentsCol(ownerUid, mealId));
+    await Promise.allSettled(
+      snap.docs.map((d) =>
+        bestEffortDeleteCollection(commentLikesCol(ownerUid, mealId, d.id)),
+      ),
+    );
+  } catch (e) {
+    console.warn("[social] cleanup comments likes", e);
+  }
   await Promise.allSettled([
     bestEffortDeleteCollection(likesCol(ownerUid, mealId)),
     bestEffortDeleteCollection(commentsCol(ownerUid, mealId)),

@@ -12,7 +12,9 @@ import {
   addComment,
   deleteComment,
   editComment,
+  setMyCommentLike,
   setMyLike,
+  subscribeCommentLikes,
   subscribeComments,
   subscribeLikes,
 } from "../lib/social";
@@ -29,6 +31,7 @@ interface Props {
  *
  * - Firebase 가 ready 이고 로그인된 경우에만 렌더하세요.
  * - viewer 는 share 가 있어야 read 가 가능 (rules 가 통제). 권한 오류는 조용히 무시.
+ * - 대댓글은 1단계만 지원(대댓글의 대댓글은 허용하지 않음) — UI 단순화와 트리 깊이 과다 방지.
  */
 export default function MealSocialBlock({ ownerUid, mealId }: Props) {
   const { user } = useAuth();
@@ -71,6 +74,24 @@ export default function MealSocialBlock({ ownerUid, mealId }: Props) {
     [likedUids, myUid],
   );
 
+  // parentCommentId === undefined → 최상위 댓글. 나머지는 대댓글.
+  const { topLevel, repliesByParent, total } = useMemo(() => {
+    const top: MealComment[] = [];
+    const map = new Map<string, MealComment[]>();
+    if (comments) {
+      for (const c of comments) {
+        if (c.parentCommentId) {
+          const list = map.get(c.parentCommentId) ?? [];
+          list.push(c);
+          map.set(c.parentCommentId, list);
+        } else {
+          top.push(c);
+        }
+      }
+    }
+    return { topLevel: top, repliesByParent: map, total: comments?.length ?? 0 };
+  }, [comments]);
+
   if (!myUid || accessErr) return null;
 
   return (
@@ -82,13 +103,28 @@ export default function MealSocialBlock({ ownerUid, mealId }: Props) {
         likeCount={likedUids?.length ?? 0}
         loading={likedUids === null}
       />
-      <CommentsSection
-        ownerUid={ownerUid}
-        mealId={mealId}
-        comments={comments}
-        myUid={myUid}
-        isOwner={isOwner}
-      />
+      <div className="space-y-2">
+        <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+          <MessageCircle size={12} />
+          <span>댓글 {total}</span>
+        </div>
+        {comments === null ? (
+          <p className="text-[11px] text-slate-500">불러오는 중…</p>
+        ) : (
+          topLevel.map((c) => (
+            <ThreadItem
+              key={c.id}
+              comment={c}
+              replies={repliesByParent.get(c.id) ?? []}
+              myUid={myUid}
+              isOwner={isOwner}
+              ownerUid={ownerUid}
+              mealId={mealId}
+            />
+          ))
+        )}
+        <NewCommentInput ownerUid={ownerUid} mealId={mealId} />
+      </div>
     </div>
   );
 }
@@ -107,7 +143,6 @@ function LikeRow({
   loading: boolean;
 }) {
   const [busy, setBusy] = useState(false);
-  // optimistic 토글: 응답이 늦어도 즉시 반영.
   const [pendingLiked, setPendingLiked] = useState<boolean | null>(null);
   const effectiveLiked = pendingLiked ?? liked;
 
@@ -142,13 +177,8 @@ function LikeRow({
         )}
         aria-pressed={effectiveLiked}
       >
-        <Heart
-          size={14}
-          className={cls(effectiveLiked && "fill-current")}
-        />
-        <span className="text-xs font-medium">
-          {loading ? "—" : likeCount}
-        </span>
+        <Heart size={14} className={cls(effectiveLiked && "fill-current")} />
+        <span className="text-xs font-medium">{loading ? "—" : likeCount}</span>
       </button>
       <span className="text-[11px] text-slate-500">
         {effectiveLiked ? "좋아요 취소하기" : "좋아요"}
@@ -157,40 +187,62 @@ function LikeRow({
   );
 }
 
-function CommentsSection({
-  ownerUid,
-  mealId,
-  comments,
+// ---- 스레드 (최상위 댓글 + 그 아래 대댓글 목록) --------------------------
+
+function ThreadItem({
+  comment,
+  replies,
   myUid,
   isOwner,
+  ownerUid,
+  mealId,
 }: {
-  ownerUid: string;
-  mealId: string;
-  comments: MealComment[] | null;
+  comment: MealComment;
+  replies: MealComment[];
   myUid: string;
   isOwner: boolean;
+  ownerUid: string;
+  mealId: string;
 }) {
+  const [replying, setReplying] = useState(false);
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-        <MessageCircle size={12} />
-        <span>댓글 {comments?.length ?? 0}</span>
-      </div>
-      {comments === null ? (
-        <p className="text-[11px] text-slate-500">불러오는 중…</p>
-      ) : (
-        comments.map((c) => (
-          <CommentRow
-            key={c.id}
-            comment={c}
-            myUid={myUid}
-            isOwner={isOwner}
+      <CommentRow
+        comment={comment}
+        myUid={myUid}
+        isOwner={isOwner}
+        ownerUid={ownerUid}
+        mealId={mealId}
+        onReplyClick={() => setReplying((v) => !v)}
+        replying={replying}
+      />
+      {replies.length > 0 && (
+        <div className="ml-6 space-y-2 border-l border-slate-800 pl-3">
+          {replies.map((r) => (
+            <CommentRow
+              key={r.id}
+              comment={r}
+              myUid={myUid}
+              isOwner={isOwner}
+              ownerUid={ownerUid}
+              mealId={mealId}
+              isReply
+            />
+          ))}
+        </div>
+      )}
+      {replying && (
+        <div className="ml-6 border-l border-slate-800 pl-3">
+          <NewCommentInput
             ownerUid={ownerUid}
             mealId={mealId}
+            parentCommentId={comment.id}
+            placeholder={`${comment.authorName}님에게 답글…`}
+            onSent={() => setReplying(false)}
+            onCancel={() => setReplying(false)}
           />
-        ))
+        </div>
       )}
-      <NewCommentInput ownerUid={ownerUid} mealId={mealId} />
     </div>
   );
 }
@@ -201,12 +253,18 @@ function CommentRow({
   isOwner,
   ownerUid,
   mealId,
+  onReplyClick,
+  replying,
+  isReply,
 }: {
   comment: MealComment;
   myUid: string;
   isOwner: boolean;
   ownerUid: string;
   mealId: string;
+  onReplyClick?: () => void;
+  replying?: boolean;
+  isReply?: boolean;
 }) {
   const isMine = comment.authorUid === myUid;
   const canEdit = isMine;
@@ -215,9 +273,39 @@ function CommentRow({
   const [draft, setDraft] = useState(comment.text);
   const [busy, setBusy] = useState<"save" | "delete" | null>(null);
 
+  // 댓글 좋아요
+  const [likeUids, setLikeUids] = useState<string[] | null>(null);
+  useEffect(() => {
+    const unsub = subscribeCommentLikes(
+      ownerUid,
+      mealId,
+      comment.id,
+      (uids) => setLikeUids(uids),
+      () => setLikeUids([]),
+    );
+    return () => unsub();
+  }, [ownerUid, mealId, comment.id]);
+  const liked = !!likeUids && likeUids.includes(myUid);
+  const [pendingLike, setPendingLike] = useState<boolean | null>(null);
+  const effectiveLiked = pendingLike ?? liked;
+
+  useEffect(() => {
+    setPendingLike(null);
+  }, [liked]);
+
   useEffect(() => {
     setDraft(comment.text);
   }, [comment.text]);
+
+  async function toggleLike() {
+    setPendingLike(!effectiveLiked);
+    try {
+      await setMyCommentLike(ownerUid, mealId, comment.id, !effectiveLiked);
+    } catch (e) {
+      setPendingLike(null);
+      alert(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   async function save() {
     setBusy("save");
@@ -244,7 +332,12 @@ function CommentRow({
   }
 
   return (
-    <div className="rounded-lg bg-slate-900/40 p-2.5 text-xs">
+    <div
+      className={cls(
+        "rounded-lg bg-slate-900/40 p-2.5 text-xs",
+        isReply && "bg-slate-900/25",
+      )}
+    >
       <div className="flex items-start gap-2">
         <CommentAvatar name={comment.authorName} photoURL={comment.authorPhotoURL} />
         <div className="min-w-0 flex-1">
@@ -272,6 +365,26 @@ function CommentRow({
             <p className="mt-0.5 break-words text-[12px] leading-relaxed text-slate-200 whitespace-pre-wrap">
               {comment.text}
             </p>
+          )}
+          {!editing && (
+            <div className="mt-1.5 flex items-center gap-3 text-[11px] text-slate-500">
+              <CommentLikeButton
+                effectiveLiked={effectiveLiked}
+                likedOnServer={liked}
+                serverCount={likeUids?.length ?? null}
+                onToggle={() => void toggleLike()}
+              />
+              {!isReply && onReplyClick && (
+                <button
+                  type="button"
+                  onClick={onReplyClick}
+                  className="inline-flex items-center gap-1 hover:text-slate-300"
+                >
+                  <MessageCircle size={11} />
+                  {replying ? "취소" : "답글"}
+                </button>
+              )}
+            </div>
           )}
         </div>
         {!editing && (canEdit || canDelete) && (
@@ -303,6 +416,37 @@ function CommentRow({
         )}
       </div>
     </div>
+  );
+}
+
+function CommentLikeButton({
+  effectiveLiked,
+  likedOnServer,
+  serverCount,
+  onToggle,
+}: {
+  effectiveLiked: boolean;
+  likedOnServer: boolean;
+  serverCount: number | null;
+  onToggle: () => void;
+}) {
+  const display =
+    serverCount === null
+      ? null
+      : serverCount + (effectiveLiked ? 1 : 0) - (likedOnServer ? 1 : 0);
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={cls(
+        "inline-flex items-center gap-1 transition-colors",
+        effectiveLiked ? "text-rose-300" : "hover:text-slate-300",
+      )}
+      aria-pressed={effectiveLiked}
+    >
+      <Heart size={11} className={cls(effectiveLiked && "fill-current")} />
+      <span className="tabular-nums">{display === null ? "—" : Math.max(0, display)}</span>
+    </button>
   );
 }
 
@@ -341,10 +485,7 @@ function CommentEditForm({
         autoFocus
       />
       <div className="flex gap-1.5">
-        <button
-          onClick={onCancel}
-          className="btn-secondary flex-1 py-1 text-[11px]"
-        >
+        <button onClick={onCancel} className="btn-secondary flex-1 py-1 text-[11px]">
           취소
         </button>
         <button
@@ -363,9 +504,17 @@ function CommentEditForm({
 function NewCommentInput({
   ownerUid,
   mealId,
+  parentCommentId,
+  placeholder,
+  onSent,
+  onCancel,
 }: {
   ownerUid: string;
   mealId: string;
+  parentCommentId?: string;
+  placeholder?: string;
+  onSent?: () => void;
+  onCancel?: () => void;
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -378,9 +527,10 @@ function NewCommentInput({
     setErr(null);
     setBusy(true);
     try {
-      await addComment(ownerUid, mealId, text);
+      await addComment(ownerUid, mealId, text, parentCommentId);
       setText("");
-      taRef.current?.focus();
+      onSent?.();
+      if (!parentCommentId) taRef.current?.focus();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -398,11 +548,14 @@ function NewCommentInput({
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             void submit();
+          } else if (e.key === "Escape" && onCancel) {
+            onCancel();
           }
         }}
         rows={1}
-        placeholder="댓글 달기…"
+        placeholder={placeholder ?? "댓글 달기…"}
         className="input min-w-0 flex-1 resize-none text-xs leading-relaxed"
+        autoFocus={!!parentCommentId}
       />
       <button
         type="button"
@@ -424,9 +577,7 @@ function NewCommentInput({
           <X size={14} />
         </button>
       )}
-      {err && (
-        <p className="basis-full text-[11px] text-rose-300">{err}</p>
-      )}
+      {err && <p className="basis-full text-[11px] text-rose-300">{err}</p>}
     </div>
   );
 }
@@ -449,11 +600,6 @@ function CommentAvatar({ name, photoURL }: { name: string; photoURL?: string }) 
   );
 }
 
-/**
- * textarea 가 입력 길이에 맞춰 자동으로 늘어나도록 하는 훅.
- * - rows 속성보다 직관적이고, 모바일에서 한 줄 댓글이 잘리지 않도록 한다.
- * - 최대 높이는 maxPx (기본 7줄 정도) 까지만, 그 이상이면 내부 스크롤.
- */
 function useAutoGrow(
   ref: RefObject<HTMLTextAreaElement>,
   value: string,

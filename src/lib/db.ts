@@ -1,5 +1,77 @@
 import Dexie, { type Table } from "dexie";
-import type { AppSettings, HealthRecord, Meal, User } from "../types";
+import type { AppSettings, HealthRecord, Meal, MealItem, User } from "../types";
+
+/**
+ * v1 시절의 Meal 구조 — top-level 에 photo/menuText/rating/... 이 있고 items 가 없다.
+ * upgrade 에서만 쓰기 때문에 여기에 로컬 타입으로 둔다.
+ */
+interface LegacyMealV1 {
+  id: string;
+  userId: string;
+  date: string;
+  slot: string;
+  photo?: Blob;
+  thumbnail?: Blob;
+  menuText?: string;
+  rating?: number;
+  aiComment?: string;
+  nutrition?: MealItem["nutrition"];
+  analysisStatus?: MealItem["analysisStatus"];
+  analysisError?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+function legacyMealToItems(m: LegacyMealV1): MealItem[] {
+  const hasPayload =
+    !!m.photo || !!m.thumbnail || !!m.menuText || !!m.rating || !!m.aiComment || !!m.nutrition;
+  if (!hasPayload) return [];
+  return [
+    {
+      id: `${m.id}__i0`,
+      photo: m.photo,
+      thumbnail: m.thumbnail,
+      menuText: m.menuText,
+      rating: m.rating,
+      aiComment: m.aiComment,
+      nutrition: m.nutrition,
+      analysisStatus: m.analysisStatus ?? (m.menuText ? "done" : "skipped"),
+      analysisError: m.analysisError,
+      createdAt: m.createdAt,
+      updatedAt: m.updatedAt,
+    },
+  ];
+}
+
+/**
+ * 방어적 정규화: items 가 없거나 레거시 top-level 사진/메뉴가 있는 Meal 을
+ * 새 구조(items[]) 로 바꾼다. 클라우드에서 레거시 문서가 내려오는 상황 등
+ * 런타임에서 바로 교정해야 하는 경로에서 사용.
+ */
+export function normalizeMeal(m: Meal | (LegacyMealV1 & { items?: MealItem[] })): Meal {
+  const maybe = m as Meal & Partial<LegacyMealV1>;
+  if (Array.isArray(maybe.items) && maybe.items.length > 0) {
+    return {
+      id: maybe.id,
+      userId: maybe.userId,
+      date: maybe.date,
+      slot: maybe.slot as Meal["slot"],
+      items: maybe.items,
+      createdAt: maybe.createdAt,
+      updatedAt: maybe.updatedAt,
+    };
+  }
+  const items = legacyMealToItems(maybe as LegacyMealV1);
+  return {
+    id: maybe.id,
+    userId: maybe.userId,
+    date: maybe.date,
+    slot: maybe.slot as Meal["slot"],
+    items,
+    createdAt: maybe.createdAt,
+    updatedAt: maybe.updatedAt,
+  };
+}
 
 class HealthHealthDB extends Dexie {
   users!: Table<User, string>;
@@ -11,11 +83,34 @@ class HealthHealthDB extends Dexie {
     super("healthhealth");
     this.version(1).stores({
       users: "id, name, createdAt",
-      // 복합 인덱스로 [userId+date], [date+slot] 조회 최적화
       meals: "id, userId, date, slot, [userId+date], [date+slot], createdAt",
       health: "id, userId, type, recordDate, createdAt",
       settings: "id",
     });
+    // v2: Meal 을 items[] 구조로 바꾸면서 기존 레코드를 정규화한다.
+    this.version(2)
+      .stores({
+        users: "id, name, createdAt",
+        meals: "id, userId, date, slot, [userId+date], [date+slot], createdAt, updatedAt",
+        health: "id, userId, type, recordDate, createdAt",
+        settings: "id",
+      })
+      .upgrade(async (tx) => {
+        const table = tx.table<LegacyMealV1>("meals");
+        await table.toCollection().modify((rec) => {
+          const current = rec as LegacyMealV1 & { items?: MealItem[] };
+          if (Array.isArray(current.items)) return;
+          current.items = legacyMealToItems(current);
+          delete current.photo;
+          delete current.thumbnail;
+          delete current.menuText;
+          delete current.rating;
+          delete current.aiComment;
+          delete current.nutrition;
+          delete current.analysisStatus;
+          delete current.analysisError;
+        });
+      });
   }
 }
 
@@ -101,4 +196,52 @@ export async function registerCloudDelete(
   id: string,
 ): Promise<void> {
   await registerCloudDeletes({ [kind]: [id] });
+}
+
+/**
+ * AI 분석에 넘길 사용자 프로필을 로컬 Dexie 에서 조립한다.
+ *
+ * 로그인 전이거나 프로필이 없는 경우 undefined 반환. 나이는 YYYY-MM-DD 로
+ * 저장된 birthDate 로부터 현재 시점 기준으로 계산한다 (birthYear 만 있는
+ * 기존 사용자는 1월 1일 기준 근사).
+ */
+export async function getAnalysisProfileForUser(
+  userId: string | undefined,
+): Promise<
+  | {
+      heightCm?: number;
+      weightKg?: number;
+      ageYears?: number;
+      gender?: User["gender"];
+      focusConditions?: string[];
+    }
+  | undefined
+> {
+  if (!userId) return undefined;
+  const u = await db.users.get(userId);
+  if (!u) return undefined;
+  let ageYears: number | undefined;
+  if (u.birthDate && /^\d{4}-\d{2}-\d{2}$/.test(u.birthDate)) {
+    const [y, m, d] = u.birthDate.split("-").map((x) => Number(x));
+    const now = new Date();
+    let age = now.getFullYear() - y;
+    const passed =
+      now.getMonth() + 1 > m ||
+      (now.getMonth() + 1 === m && now.getDate() >= d);
+    if (!passed) age -= 1;
+    ageYears = age >= 0 && age < 130 ? age : undefined;
+  } else if (typeof u.birthYear === "number") {
+    const age = new Date().getFullYear() - u.birthYear;
+    ageYears = age >= 0 && age < 130 ? age : undefined;
+  }
+  return {
+    heightCm: typeof u.heightCm === "number" ? u.heightCm : undefined,
+    weightKg: typeof u.weightKg === "number" ? u.weightKg : undefined,
+    ageYears,
+    gender: u.gender,
+    focusConditions:
+      Array.isArray(u.focusConditions) && u.focusConditions.length > 0
+        ? u.focusConditions
+        : undefined,
+  };
 }

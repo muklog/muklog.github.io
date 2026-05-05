@@ -87,6 +87,10 @@ export default function HomePage() {
         <ul className="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {MEAL_SLOTS.map((slot) => {
             const m = dayMeals?.find((x) => x.slot === slot);
+            const items = m?.items ?? [];
+            const ratings = items.map((it) => it.rating).filter((r): r is number => typeof r === "number");
+            const avg =
+              ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : undefined;
             return (
               <li key={slot}>
                 <button
@@ -99,9 +103,9 @@ export default function HomePage() {
                   <span className="text-[11px] text-slate-300">
                     {MEAL_SLOT_LABELS[slot]}
                   </span>
-                  {m ? (
+                  {items.length > 0 ? (
                     <span className="text-[10px] font-bold text-amber-400">
-                      ★ {m.rating ?? "-"}
+                      {items.length > 1 ? `★ ${avg?.toFixed(1) ?? "-"} · ${items.length}개` : `★ ${avg?.toFixed(0) ?? "-"}`}
                     </span>
                   ) : (
                     <span className="text-[10px] text-slate-600">미기록</span>

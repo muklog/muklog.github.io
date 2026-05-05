@@ -28,7 +28,9 @@ service cloud.firestore {
       allow write: if signedIn() && me() == userId;
     }
     match /users/{userId}/health/{docId} {
-      allow read:  if signedIn() && (me() == userId || isViewerWithScope(userId, 'health'));
+      // 건강 기록은 민감 정보라 친구와 공유하지 않는다 — 오직 본인만 read/write.
+      // (이전에는 viewer 에게 scope 'health' 공개가 가능했으나, 앱 정책상 제거)
+      allow read:  if signedIn() && me() == userId;
       allow write: if signedIn() && me() == userId;
     }
 
@@ -44,6 +46,7 @@ service cloud.firestore {
 
     // 식단 댓글 — 식단을 볼 수 있는 사람만 read/create.
     // update 는 작성자만, delete 는 작성자 또는 식단 소유자.
+    // parentCommentId (대댓글용) 필드는 선택이며 create 시 값이 오면 1단계 깊이만 허용한다.
     match /users/{ownerUid}/meals/{mealId}/comments/{cid} {
       allow read: if signedIn()
         && (me() == ownerUid || isViewerWithScope(ownerUid, 'calendar'));
@@ -60,6 +63,16 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if signedIn()
         && (resource.data.authorUid == me() || me() == ownerUid);
+    }
+
+    // 댓글 좋아요 — 식단을 볼 수 있는 사람만 read/create/delete.
+    // 한 사람당 한 문서 (id == viewerUid) 로 unique.
+    match /users/{ownerUid}/meals/{mealId}/comments/{cid}/likes/{viewerUid} {
+      allow read: if signedIn()
+        && (me() == ownerUid || isViewerWithScope(ownerUid, 'calendar'));
+      allow create, delete: if signedIn()
+        && me() == viewerUid
+        && (me() == ownerUid || isViewerWithScope(ownerUid, 'calendar'));
     }
 
     match /users/{userId}/{document=**} {

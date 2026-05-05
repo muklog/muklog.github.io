@@ -1,30 +1,50 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   Loader2,
+  Pencil,
   RefreshCw,
   Sparkles,
   Star,
+  Trash2,
   TriangleAlert,
+  X,
 } from "lucide-react";
-import type { Meal } from "../types";
+import type { MealItem } from "../types";
 import { blobUrl } from "../lib/image";
 import { cls } from "../lib/utils";
 
-interface PhotoBlockProps {
-  meal: Meal;
+/**
+ * 끼니 안의 한 "음식 항목" 카드.
+ *
+ * 한 끼니에 여러 번 먹거나 여러 음식이 있을 때 각 사진을 개별 카드로 표시한다.
+ * 친구 페이지에서는 readOnly 로, 내 페이지에서는 재분석/수정/삭제 버튼이 표시된다.
+ */
+interface ItemCardProps {
+  item: MealItem;
+  index: number;
   readOnly?: boolean;
   canAnalyze?: boolean;
   onReanalyze?: () => void;
+  onEdit?: () => void;
+  onRemove?: () => void;
 }
 
-/** 식사 사진 + 분석 결과 블록. 사진은 인스타그램처럼 정사각형으로 표시합니다. */
-export function MealPhotoBlock({ meal, readOnly = false, canAnalyze = false, onReanalyze }: PhotoBlockProps) {
-  const url = blobUrl(meal.photo || meal.thumbnail);
+export function MealItemCard({
+  item,
+  index,
+  readOnly = false,
+  canAnalyze = false,
+  onReanalyze,
+  onEdit,
+  onRemove,
+}: ItemCardProps) {
+  const url = blobUrl(item.photo || item.thumbnail);
 
   return (
-    <div className="space-y-3">
-      <div className="block w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
-        {url && (
+    <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/30 p-2">
+      <div className="relative overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+        {url ? (
           <img
             src={url}
             alt="식사 사진"
@@ -32,28 +52,52 @@ export function MealPhotoBlock({ meal, readOnly = false, canAnalyze = false, onR
             decoding="async"
             className="aspect-square w-full object-cover"
           />
+        ) : (
+          <div className="flex aspect-square w-full items-center justify-center text-xs text-slate-500">
+            사진 없음
+          </div>
+        )}
+        <span className="absolute left-2 top-2 rounded-full bg-slate-950/70 px-2 py-0.5 text-[10px] font-semibold text-slate-200 backdrop-blur">
+          #{index + 1}
+        </span>
+        {!readOnly && onRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="absolute right-2 top-2 rounded-full bg-slate-950/70 p-1.5 text-slate-200 backdrop-blur hover:text-rose-300"
+            aria-label="이 사진 삭제"
+          >
+            <Trash2 size={14} />
+          </button>
         )}
       </div>
-
-      <MealAnalysisBlock
-        meal={meal}
+      <ItemAnalysisBlock
+        item={item}
         readOnly={readOnly}
         canAnalyze={canAnalyze}
         onReanalyze={onReanalyze}
+        onEdit={onEdit}
       />
     </div>
   );
 }
 
 interface AnalysisProps {
-  meal: Meal;
+  item: MealItem;
   readOnly?: boolean;
   canAnalyze?: boolean;
   onReanalyze?: () => void;
+  onEdit?: () => void;
 }
 
-export function MealAnalysisBlock({ meal, readOnly = false, canAnalyze = false, onReanalyze }: AnalysisProps) {
-  if (meal.analysisStatus === "analyzing") {
+export function ItemAnalysisBlock({
+  item,
+  readOnly = false,
+  canAnalyze = false,
+  onReanalyze,
+  onEdit,
+}: AnalysisProps) {
+  if (item.analysisStatus === "analyzing") {
     return (
       <div className="flex items-center gap-2 rounded-xl bg-slate-800/50 px-3 py-2.5 text-sm text-slate-300">
         <Loader2 size={16} className="animate-spin text-brand-400" />
@@ -61,31 +105,48 @@ export function MealAnalysisBlock({ meal, readOnly = false, canAnalyze = false, 
       </div>
     );
   }
-  if (meal.analysisStatus === "error") {
+  if (item.analysisStatus === "error") {
     return (
       <div className="space-y-2 rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2.5">
         <div className="flex items-start gap-2 text-sm text-rose-300">
           <TriangleAlert size={16} className="mt-0.5 shrink-0" />
-          <span className="break-all">{meal.analysisError ?? "분석 실패"}</span>
+          <span className="break-all">{item.analysisError ?? "분석 실패"}</span>
         </div>
-        {!readOnly && canAnalyze && onReanalyze && (
-          <button onClick={onReanalyze} className="btn-secondary w-full py-2 text-sm">
-            <RefreshCw size={14} /> 다시 시도
-          </button>
+        {!readOnly && (
+          <div className="flex gap-1.5">
+            {canAnalyze && onReanalyze && (
+              <button onClick={onReanalyze} className="btn-secondary flex-1 py-2 text-sm">
+                <RefreshCw size={14} /> 다시 시도
+              </button>
+            )}
+            {onEdit && (
+              <button onClick={onEdit} className="btn-secondary flex-1 py-2 text-sm">
+                <Pencil size={14} /> 직접 입력
+              </button>
+            )}
+          </div>
         )}
       </div>
     );
   }
-  if (meal.analysisStatus === "skipped" || !meal.menuText) {
+  const hasAnalysis = !!item.menuText;
+  if (!hasAnalysis) {
     if (readOnly) {
-      return <p className="text-xs text-slate-500">AI 분석 결과가 없어요.</p>;
+      return <p className="text-xs text-slate-500">분석 결과가 없어요.</p>;
     }
-    return canAnalyze && onReanalyze ? (
-      <button onClick={onReanalyze} className="btn-secondary w-full py-2 text-sm">
-        <Sparkles size={14} /> AI 분석 시작
-      </button>
-    ) : (
-      <p className="text-xs text-slate-500">설정에서 키를 저장해 두면 여기서도 분석이 돼요.</p>
+    return (
+      <div className="flex gap-1.5">
+        {canAnalyze && onReanalyze && (
+          <button onClick={onReanalyze} className="btn-secondary flex-1 py-2 text-sm">
+            <Sparkles size={14} /> AI 분석 시작
+          </button>
+        )}
+        {onEdit && (
+          <button onClick={onEdit} className="btn-secondary flex-1 py-2 text-sm">
+            <Pencil size={14} /> 직접 입력
+          </button>
+        )}
+      </div>
     );
   }
 
@@ -93,7 +154,7 @@ export function MealAnalysisBlock({ meal, readOnly = false, canAnalyze = false, 
     <div className="space-y-3 rounded-xl bg-slate-800/40 p-3">
       <div className="flex items-start justify-between gap-2">
         <p className="min-w-0 flex-1 break-words text-sm font-medium leading-relaxed text-slate-100">
-          {meal.menuText}
+          {item.menuText}
         </p>
         <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-2 py-1 text-xs font-bold text-amber-300">
           {[1, 2, 3, 4, 5].map((i) => (
@@ -101,64 +162,349 @@ export function MealAnalysisBlock({ meal, readOnly = false, canAnalyze = false, 
               key={i}
               size={12}
               className={cls(
-                i <= (meal.rating ?? 0)
+                i <= (item.rating ?? 0)
                   ? "fill-amber-300 text-amber-300"
                   : "text-amber-300/30",
               )}
             />
           ))}
-          <span className="ml-0.5">{meal.rating}</span>
+          <span className="ml-0.5">{item.rating ?? "-"}</span>
         </span>
       </div>
-      {meal.aiComment && (
+      {item.aiComment && (
         <p className="break-words text-xs leading-relaxed text-slate-400 whitespace-pre-wrap">
           <Sparkles size={11} className="mb-0.5 mr-1 inline text-brand-400" />
-          {meal.aiComment}
+          {item.aiComment}
         </p>
       )}
-      {meal.nutrition && (
+      {item.nutrition && (
         <div className="flex flex-wrap gap-1.5">
-          {meal.nutrition.calories !== undefined && (
+          {item.nutrition.calories !== undefined && (
             <span className="chip bg-slate-700/60 text-slate-200">
-              🔥 {meal.nutrition.calories}kcal
+              🔥 {item.nutrition.calories}kcal
             </span>
           )}
-          {meal.nutrition.protein !== undefined && (
+          {item.nutrition.protein !== undefined && (
             <span className="chip bg-slate-700/60 text-slate-200">
-              💪 단백질 {meal.nutrition.protein}g
+              💪 단백질 {item.nutrition.protein}g
             </span>
           )}
-          {meal.nutrition.carbs !== undefined && (
+          {item.nutrition.carbs !== undefined && (
             <span className="chip bg-slate-700/60 text-slate-200">
-              🌾 탄수 {meal.nutrition.carbs}g
+              🌾 탄수 {item.nutrition.carbs}g
             </span>
           )}
-          {meal.nutrition.fat !== undefined && (
+          {item.nutrition.fat !== undefined && (
             <span className="chip bg-slate-700/60 text-slate-200">
-              🥑 지방 {meal.nutrition.fat}g
+              🥑 지방 {item.nutrition.fat}g
             </span>
           )}
-          {meal.nutrition.healthTags?.map((t) => (
+          {item.nutrition.healthTags?.map((t) => (
             <span key={t} className="chip bg-brand-500/15 text-brand-300">
               #{t}
             </span>
           ))}
         </div>
       )}
-      {!readOnly && canAnalyze && onReanalyze && (
+      {!readOnly && (
         <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
           <span className="inline-flex items-center gap-1">
-            <CheckCircle2 size={11} /> AI 분석 완료
+            {item.manuallyEdited ? (
+              <>
+                <Pencil size={11} /> 직접 수정됨
+              </>
+            ) : (
+              <>
+                <CheckCircle2 size={11} /> AI 분석 완료
+              </>
+            )}
           </span>
-          <button
-            onClick={onReanalyze}
-            className="inline-flex items-center gap-1 hover:text-slate-300"
-          >
-            <RefreshCw size={11} /> 다시 분석
-          </button>
+          <div className="flex items-center gap-3">
+            {onEdit && (
+              <button onClick={onEdit} className="inline-flex items-center gap-1 hover:text-slate-300">
+                <Pencil size={11} /> 수정
+              </button>
+            )}
+            {canAnalyze && onReanalyze && (
+              <button onClick={onReanalyze} className="inline-flex items-center gap-1 hover:text-slate-300">
+                <RefreshCw size={11} /> 다시 분석
+              </button>
+            )}
+          </div>
         </div>
+      )}
+      {readOnly && item.manuallyEdited && (
+        <p className="pt-1 text-[10px] text-slate-500">
+          <Pencil size={10} className="mb-0.5 mr-1 inline" /> 작성자가 직접 수정한 결과예요.
+        </p>
       )}
     </div>
   );
 }
 
+// ---------------- 수동 수정 다이얼로그 -----------------
+
+export interface MealItemPatch {
+  menuText: string;
+  rating: number;
+  aiComment?: string;
+  nutrition?: MealItem["nutrition"];
+}
+
+interface EditDialogProps {
+  item: MealItem;
+  onClose: () => void;
+  onSave: (patch: MealItemPatch) => Promise<void> | void;
+}
+
+export function MealItemEditDialog({ item, onClose, onSave }: EditDialogProps) {
+  const [menu, setMenu] = useState(item.menuText ?? "");
+  const [rating, setRating] = useState(item.rating ?? 3);
+  const [comment, setComment] = useState(item.aiComment ?? "");
+  const [cal, setCal] = useState<string>(numToStr(item.nutrition?.calories));
+  const [pro, setPro] = useState<string>(numToStr(item.nutrition?.protein));
+  const [carb, setCarb] = useState<string>(numToStr(item.nutrition?.carbs));
+  const [fat, setFat] = useState<string>(numToStr(item.nutrition?.fat));
+  const [tagInput, setTagInput] = useState("");
+  const [tags, setTags] = useState<string[]>(item.nutrition?.healthTags ?? []);
+  const [busy, setBusy] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const imgUrl = useMemo(() => blobUrl(item.thumbnail ?? item.photo), [item]);
+
+  async function handleSave() {
+    if (!menu.trim()) {
+      alert("메뉴 이름을 입력해 주세요.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const nutrition: MealItem["nutrition"] = {
+        calories: strToNum(cal),
+        protein: strToNum(pro),
+        carbs: strToNum(carb),
+        fat: strToNum(fat),
+        healthTags: tags.length ? tags : undefined,
+      };
+      // 완전히 빈 객체는 undefined 로.
+      const hasAny =
+        nutrition.calories !== undefined ||
+        nutrition.protein !== undefined ||
+        nutrition.carbs !== undefined ||
+        nutrition.fat !== undefined ||
+        (nutrition.healthTags && nutrition.healthTags.length > 0);
+      await onSave({
+        menuText: menu.trim(),
+        rating: clampRating(rating),
+        aiComment: comment.trim() || undefined,
+        nutrition: hasAny ? nutrition : undefined,
+      });
+      onClose();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function addTag() {
+    const t = tagInput.trim().replace(/^#/, "");
+    if (!t) return;
+    if (tags.includes(t)) {
+      setTagInput("");
+      return;
+    }
+    setTags([...tags, t]);
+    setTagInput("");
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-slate-800 bg-slate-950 p-4 shadow-xl sm:rounded-2xl"
+      >
+        <header className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-bold text-slate-100">AI 분석 결과 수정</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 hover:text-slate-100"
+            aria-label="닫기"
+          >
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="mb-3 flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/50 p-2">
+          {imgUrl ? (
+            <img src={imgUrl} alt="" className="h-16 w-16 rounded-lg border border-slate-800 object-cover" />
+          ) : (
+            <div className="h-16 w-16 rounded-lg border border-slate-800 bg-slate-900 text-center text-[10px] leading-[4rem] text-slate-500">
+              사진 없음
+            </div>
+          )}
+          <p className="text-[11px] text-slate-400">
+            AI 분석이 사실과 다르면 직접 고쳐 주세요. 친구에게 공유되는 내용도 같이 바뀝니다.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <Field label="메뉴">
+            <input
+              value={menu}
+              onChange={(e) => setMenu(e.target.value)}
+              placeholder="예: 김치찌개, 공깃밥"
+              className="input"
+            />
+          </Field>
+
+          <Field label={`별점 (${clampRating(rating)}/5)`}>
+            <div className="flex items-center gap-1.5">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setRating(n)}
+                  className="p-1"
+                  aria-label={`${n}점`}
+                >
+                  <Star
+                    size={22}
+                    className={cls(
+                      n <= clampRating(rating)
+                        ? "fill-amber-300 text-amber-300"
+                        : "text-amber-300/25",
+                    )}
+                  />
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <Field label="한 줄 평 (선택)">
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              rows={2}
+              placeholder="예: 나트륨 조금 과했어요."
+              className="input resize-none text-sm"
+            />
+          </Field>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="칼로리 (kcal)">
+              <input inputMode="numeric" value={cal} onChange={(e) => setCal(e.target.value)} className="input" />
+            </Field>
+            <Field label="단백질 (g)">
+              <input inputMode="numeric" value={pro} onChange={(e) => setPro(e.target.value)} className="input" />
+            </Field>
+            <Field label="탄수화물 (g)">
+              <input inputMode="numeric" value={carb} onChange={(e) => setCarb(e.target.value)} className="input" />
+            </Field>
+            <Field label="지방 (g)">
+              <input inputMode="numeric" value={fat} onChange={(e) => setFat(e.target.value)} className="input" />
+            </Field>
+          </div>
+
+          <Field label="태그">
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((t) => (
+                  <span
+                    key={t}
+                    className="inline-flex items-center gap-1 rounded-full bg-brand-500/15 px-2 py-1 text-xs text-brand-200"
+                  >
+                    #{t}
+                    <button
+                      type="button"
+                      onClick={() => setTags(tags.filter((x) => x !== t))}
+                      className="text-brand-200/70 hover:text-rose-300"
+                      aria-label="태그 제거"
+                    >
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+                {tags.length === 0 && (
+                  <span className="text-[11px] text-slate-500">예: 고단백, 균형잡힘</span>
+                )}
+              </div>
+              <div className="flex gap-1.5">
+                <input
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === ",") {
+                      e.preventDefault();
+                      addTag();
+                    }
+                  }}
+                  placeholder="태그 입력 후 Enter"
+                  className="input text-xs"
+                />
+                <button type="button" onClick={addTag} className="btn-secondary px-3 py-2 text-xs">
+                  추가
+                </button>
+              </div>
+            </div>
+          </Field>
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <button type="button" onClick={onClose} className="btn-secondary flex-1 py-2 text-sm">
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={busy || !menu.trim()}
+            className="btn-primary flex-1 py-2 text-sm disabled:opacity-60"
+          >
+            {busy && <Loader2 size={14} className="animate-spin" />}
+            저장
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block space-y-1 text-xs text-slate-400">
+      <span className="font-medium text-slate-300">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function clampRating(n: number): number {
+  const v = Math.round(Number(n) || 0);
+  return Math.max(1, Math.min(5, v));
+}
+
+function numToStr(n: number | undefined): string {
+  return n === undefined || Number.isNaN(n) ? "" : String(n);
+}
+
+function strToNum(s: string): number | undefined {
+  const t = s.trim();
+  if (!t) return undefined;
+  const n = Number(t);
+  if (!Number.isFinite(n)) return undefined;
+  return n;
+}

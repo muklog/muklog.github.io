@@ -56,9 +56,13 @@ export default function Calendar({ cursor, setCursor, selected, onPick, userId, 
     const map = new Map<string, DayCount>();
     for (const m of meals) {
       if (userId && m.userId !== userId) continue;
+      const items = m.items ?? [];
+      if (items.length === 0) continue;
       const cur = map.get(m.date) ?? { total: 0, ratings: [] };
       cur.total += 1;
-      if (typeof m.rating === "number") cur.ratings.push(m.rating);
+      for (const it of items) {
+        if (typeof it.rating === "number") cur.ratings.push(it.rating);
+      }
       map.set(m.date, cur);
     }
     return map;
