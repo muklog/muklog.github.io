@@ -11,7 +11,8 @@
     "lint": "tsc -b --noEmit",
     "test:gemini": "node scripts/test-gemini.mjs",
     "test:auth": "vite --host --open /auth-test.html",
-    "deploy:firestore-rules": "npx --yes firebase-tools deploy --only firestore:rules"
+    "deploy:firestore-rules": "npx --yes firebase-tools deploy --only firestore:rules",
+    "deploy:firestore": "npx --yes firebase-tools deploy --only firestore"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

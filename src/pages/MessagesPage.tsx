@@ -11,6 +11,7 @@ import {
   unreadDmThreadCount,
   verifyThreadParticipation,
 } from "../lib/dm";
+import { getFirebaseAuth } from "../lib/firebaseApp";
 import type { DmThreadDoc } from "../types";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
 
@@ -18,21 +19,35 @@ export default function MessagesPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const peerFromQuery = searchParams.get("with")?.trim();
-  const { user, firebaseReady } = useAuth();
+  const { user, firebaseReady, loading: authLoading } = useAuth();
   const [threads, setThreads] = useState<DmThreadDoc[]>([]);
   const [readMap, setReadMap] = useState<Map<string, number>>(new Map());
   const [peerNames, setPeerNames] = useState<Map<string, string>>(new Map());
   const handledPeerRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!user?.uid) return;
-    const ua = subscribeMyDmThreads(user.uid, setThreads);
-    const ub = subscribeDmReadMap(user.uid, setReadMap);
+    if (!user?.uid || authLoading) return;
+    let ua: (() => void) | undefined;
+    let ub: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await getFirebaseAuth().currentUser?.getIdToken();
+      } catch {
+        /* ignore */
+      }
+      if (cancelled) return;
+      const live = getFirebaseAuth().currentUser?.uid;
+      if (!live || live !== user.uid) return;
+      ua = subscribeMyDmThreads(user.uid, setThreads);
+      ub = subscribeDmReadMap(user.uid, setReadMap);
+    })();
     return () => {
-      ua();
-      ub();
+      cancelled = true;
+      ua?.();
+      ub?.();
     };
-  }, [user?.uid]);
+  }, [user?.uid, authLoading]);
 
   useEffect(() => {
     if (!user?.uid || threads.length === 0) return;

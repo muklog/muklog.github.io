@@ -93,6 +93,11 @@ export async function ensureDmThreadWith(peerUid: string): Promise<string> {
   return tid;
 }
 
+/**
+ * 내가 참가한 DM 스레드 구독.
+ * array-contains + orderBy 복합 쿼리는 규칙 평가와 맞지 않아 전체가 permission-denied 되는 경우가 있어,
+ * 단일 필터 쿼리 후 클라이언트에서 updatedAt 기준 정렬한다.
+ */
 export function subscribeMyDmThreads(
   myUid: string,
   cb: (threads: DmThreadDoc[]) => void,
@@ -105,23 +110,31 @@ export function subscribeMyDmThreads(
     return () => {};
   }
 
+  const FETCH_LIMIT = 100;
+  const DISPLAY_LIMIT = 40;
+
   const q = query(
     threadsCol(),
     where("participantUids", "array-contains", uid),
-    orderBy("updatedAt", "desc"),
-    limit(40),
+    limit(FETCH_LIMIT),
   );
   return onSnapshot(
     q,
     (snap) => {
-      const rows = snap.docs.map((d) => ({
-        ...(d.data() as Omit<DmThreadDoc, "id">),
-        id: d.id,
-      }));
+      const rows = snap.docs
+        .map((d) => ({
+          ...(d.data() as Omit<DmThreadDoc, "id">),
+          id: d.id,
+        }))
+        .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+        .slice(0, DISPLAY_LIMIT);
       cb(rows);
     },
     (err) => {
-      console.warn("[dm] threads subscribe", err);
+      const code = (err as { code?: string })?.code;
+      if (code !== "permission-denied") {
+        console.warn("[dm] threads subscribe", err);
+      }
       onErr?.(err);
     },
   );
