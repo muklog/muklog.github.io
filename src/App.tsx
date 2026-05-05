@@ -1,9 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, getSettings, patchSettings } from "./lib/db";
 import { applyTheme, normalizeTheme } from "./lib/theme";
 import { FeedStreamProvider } from "./contexts/FeedStreamContext";
+import {
+  usePullToRefresh,
+  PULL_TO_REFRESH_THRESHOLD_PX,
+  PULL_TO_REFRESH_PROGRESS_CAP_PX,
+} from "./hooks/usePullToRefresh";
 import FeedPage from "./pages/FeedPage";
 import HomePage from "./pages/HomePage";
 import DayPage from "./pages/DayPage";
@@ -71,6 +76,12 @@ export default function App() {
   // 친구 초대 링크는 앱을 처음 쓰는 사람이 수신하므로 온보딩 전에도 접근 허용.
   const isInviteRoute = location.pathname.startsWith("/friends/invite");
 
+  const mainRef = useRef<HTMLElement>(null);
+  const { progress: ptrProgress } = usePullToRefresh(mainRef);
+  /** 당김 거리가 임계치 이상이면 “놓으면 새로고침” */
+  const ptrReady =
+    ptrProgress >= PULL_TO_REFRESH_THRESHOLD_PX / PULL_TO_REFRESH_PROGRESS_CAP_PX;
+
   // 온보딩 페이지에서 사용자가 닉네임·아바타를 다듬고 있는 동안에는 클라우드
   // 동기화로 user/onboarded 가 채워져도 자동으로 메인으로 이탈하지 않는다.
   // (이전엔 `if (!needsOnboarding && isOnboardingRoute) { Navigate("/") }` 가
@@ -92,7 +103,18 @@ export default function App() {
           paddingBottom: "var(--safe-bottom)",
         }}
       >
-        <main className="flex-1 overflow-y-auto pb-24">
+        <main ref={mainRef} className="relative flex-1 overflow-y-auto overflow-x-hidden pb-24">
+          <div
+            className="pointer-events-none sticky top-1 z-[60] flex justify-center px-4 transition-opacity duration-150"
+            style={{
+              opacity: ptrProgress > 0.06 ? Math.min(1, ptrProgress * 1.2) : 0,
+            }}
+            aria-hidden
+          >
+            <span className="rounded-full border border-slate-700 bg-slate-900/92 px-3 py-1.5 text-[11px] font-medium text-slate-300 shadow-lg backdrop-blur-sm">
+              {ptrReady ? "놓으면 새로고침···" : "당겨서 새로고침"}
+            </span>
+          </div>
           <Routes>
             {/* 첫 화면은 피드. 기존 달력 홈은 /home 으로 이동 */}
             <Route path="/" element={<FeedPage />} />
