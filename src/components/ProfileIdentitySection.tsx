@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import { Pencil, Save } from "lucide-react";
 import AvatarPicker, { type AvatarPick } from "./AvatarPicker";
+import AvatarBubble from "./AvatarBubble";
 import { afterUserDataMutation, db } from "../lib/db";
 import type { User } from "../types";
 import { resolveDisplayName, resolveDisplayPhotoURL, syncMyIdentityToCloud } from "../lib/identity";
@@ -159,38 +160,5 @@ export default function ProfileIdentitySection({ user, authUser }: Props) {
         />
       )}
     </section>
-  );
-}
-
-function AvatarBubble({
-  photoURL,
-  name,
-  color,
-  size = 40,
-}: {
-  photoURL?: string;
-  name: string;
-  color?: string;
-  size?: number;
-}) {
-  const initial = Array.from(name.trim())[0]?.toUpperCase() ?? "?";
-  if (photoURL) {
-    return (
-      <img
-        src={photoURL}
-        alt=""
-        referrerPolicy="no-referrer"
-        style={{ width: size, height: size }}
-        className="rounded-full border border-slate-800 object-cover"
-      />
-    );
-  }
-  return (
-    <div
-      style={{ width: size, height: size, backgroundColor: color ?? "#1f2937" }}
-      className="flex items-center justify-center rounded-full border border-slate-800 text-lg font-semibold text-white"
-    >
-      {initial}
-    </div>
   );
 }

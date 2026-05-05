@@ -61,6 +61,8 @@ const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const firebaseReady = isFirebaseConfigured();
+  /** `auth.authStateReady()` 전에는 `currentUser === null` 깜빡임이 들어와도 로컬 DB 를 지우면 안 됨 */
+  const authSessionResolvedRef = useRef(false);
   const prevFirebaseUidRef = useRef<string | undefined>(undefined);
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(!firebaseReady);
@@ -118,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const nextUid = nextUser?.uid;
       const prevUid = prevFirebaseUidRef.current;
 
-      if (firebaseReady && !nextUid) {
+      if (firebaseReady && !nextUid && authSessionResolvedRef.current) {
         const hasStoredUid =
           typeof localStorage !== "undefined" && !!localStorage.getItem(LAST_FB_UID_KEY);
         const staleCloud = hasStoredUid
@@ -149,6 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubToken = onIdTokenChanged(auth, (u) => void applyAuthUser(u));
 
     void auth.authStateReady().then(() => {
+      authSessionResolvedRef.current = true;
       void applyAuthUser(auth.currentUser);
       setAuthReady(true);
     });

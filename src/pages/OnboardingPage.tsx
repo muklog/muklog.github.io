@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
+import AvatarBubble from "../components/AvatarBubble";
+import AvatarPicker, { type AvatarPick } from "../components/AvatarPicker";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
 import { afterUserDataMutation, db, getSettings, patchSettings, uid } from "../lib/db";
 import { nextColor } from "../lib/utils";
@@ -13,10 +15,15 @@ export default function OnboardingPage() {
   const [color, setColor] = useState(() => nextColor([]));
   const [apiKey, setApiKey] = useState("");
   const [useGoogleAvatar, setUseGoogleAvatar] = useState(true);
+  const [avatarKind, setAvatarKind] = useState<"upload" | "preset" | undefined>(undefined);
+  const [avatarDataUrl, setAvatarDataUrl] = useState<string | undefined>(undefined);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   // 사용자가 입력란을 만지기 시작했는지 — 일단 만지면 자동 prefill 이 더 이상
   // 덮어쓰지 않게 한다(클라우드/구글 값이 늦게 도착해도 사용자 입력 보존).
   const [touchedName, setTouchedName] = useState(false);
+  /** 아바타·체크박스·색을 건드리면 클라우드에서 늦게 온 프로필이 덮어쓰지 않게 */
+  const [profileTouched, setProfileTouched] = useState(false);
 
   // 클라우드 동기화나 1인 모드 보정으로 이미 Dexie 에 user 가 들어있으면
   // 그 정보를 가져와 입력란에 미리 채워준다 — "이미 쓰던 계정으로 재진입" 시
@@ -31,12 +38,25 @@ export default function OnboardingPage() {
   }, []);
 
   useEffect(() => {
-    if (touchedName) return;
+    if (touchedName || profileTouched) return;
     if (existingUser?.name) {
       setDisplayName(existingUser.name);
       if (existingUser.color) setColor(existingUser.color);
-      if (existingUser.avatarKind) {
-        setUseGoogleAvatar(existingUser.avatarKind === "google");
+      const k = existingUser.avatarKind;
+      if (k === "google") {
+        setUseGoogleAvatar(true);
+        setAvatarKind(undefined);
+        setAvatarDataUrl(undefined);
+      } else if (k === "preset" || k === "upload") {
+        setUseGoogleAvatar(false);
+        setAvatarKind(k);
+        setAvatarDataUrl(existingUser.avatarDataUrl);
+      } else {
+        setAvatarKind(undefined);
+        setAvatarDataUrl(undefined);
+        if (k === undefined && !authUser?.photoURL) {
+          setUseGoogleAvatar(false);
+        }
       }
       return;
     }
@@ -44,14 +64,28 @@ export default function OnboardingPage() {
       setDisplayName(authUser.displayName);
     }
   }, [
+    profileTouched,
+    touchedName,
     existingUser?.id,
     existingUser?.name,
     existingUser?.color,
     existingUser?.avatarKind,
+    existingUser?.avatarDataUrl,
     authUser?.uid,
+    authUser?.photoURL,
     authUser?.displayName,
-    touchedName,
   ]);
+
+  function computeAvatarFields(): Pick<User, "avatarKind" | "avatarDataUrl"> {
+    const googleAvatarAvailable = !!authUser?.photoURL;
+    if (googleAvatarAvailable && useGoogleAvatar) {
+      return { avatarKind: "google", avatarDataUrl: undefined };
+    }
+    if (avatarKind === "preset" || avatarKind === "upload") {
+      return { avatarKind, avatarDataUrl: avatarDataUrl };
+    }
+    return { avatarKind: undefined, avatarDataUrl: undefined };
+  }
 
   async function finish() {
     const name = displayName.trim();
@@ -62,9 +96,7 @@ export default function OnboardingPage() {
     setBusy(true);
     try {
       const now = Date.now();
-      const googleAvatarAvailable = !!authUser?.photoURL;
-      // "이미 user 가 있다" = 클라우드 동기화로 복원된 경우 또는 직접 /onboarding
-      // 으로 들어온 기존 사용자. 새 user 를 또 만들지 말고 기존 row 를 갱신한다.
+      const { avatarKind: nextKind, avatarDataUrl: nextDataUrl } = computeAvatarFields();
       const settings = await getSettings();
       const baseUserId = settings?.activeUserId || existingUser?.id;
       const baseUser = baseUserId ? await db.users.get(baseUserId) : undefined;
@@ -74,12 +106,8 @@ export default function OnboardingPage() {
           ...baseUser,
           name,
           color,
-          avatarKind:
-            googleAvatarAvailable && useGoogleAvatar
-              ? "google"
-              : baseUser.avatarKind && baseUser.avatarKind !== "google"
-                ? baseUser.avatarKind
-                : undefined,
+          avatarKind: nextKind,
+          avatarDataUrl: nextDataUrl,
           updatedAt: now,
         };
         await db.users.put(next);
@@ -95,8 +123,8 @@ export default function OnboardingPage() {
           id,
           name,
           color,
-          avatarKind:
-            googleAvatarAvailable && useGoogleAvatar ? "google" : undefined,
+          avatarKind: nextKind,
+          avatarDataUrl: nextDataUrl,
           createdAt: now,
           updatedAt: now,
         };
@@ -119,6 +147,31 @@ export default function OnboardingPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  const previewPhoto =
+    useGoogleAvatar && authUser?.photoURL
+      ? authUser.photoURL
+      : avatarKind === "preset" || avatarKind === "upload"
+        ? avatarDataUrl
+        : undefined;
+
+  async function applyAvatarPick(pick: AvatarPick) {
+    setProfileTouched(true);
+    if (pick.kind === "google") {
+      setUseGoogleAvatar(true);
+      setAvatarKind(undefined);
+      setAvatarDataUrl(undefined);
+      return;
+    }
+    setUseGoogleAvatar(false);
+    if (pick.kind === "preset") {
+      setAvatarKind("preset");
+      setAvatarDataUrl(pick.dataUrl);
+      return;
+    }
+    setAvatarKind("upload");
+    setAvatarDataUrl(pick.dataUrl);
   }
 
   return (
@@ -151,29 +204,48 @@ export default function OnboardingPage() {
       <section className="mb-6">
         <h2 className="mb-3 text-sm font-semibold text-slate-300">프로필</h2>
         <div className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-2">
-          {authUser?.photoURL && useGoogleAvatar ? (
-            <img
-              src={authUser.photoURL}
-              alt=""
-              referrerPolicy="no-referrer"
-              className="h-11 w-11 rounded-xl border border-slate-800 object-cover"
-            />
-          ) : (
-            <label className="relative cursor-pointer">
-              <span
-                className="flex h-11 w-11 items-center justify-center rounded-xl text-base font-bold text-white"
-                style={{ backgroundColor: color }}
-              >
-                {displayName.trim().slice(0, 1) || "?"}
-              </span>
-              <input
-                type="color"
-                value={color}
-                onChange={(e) => setColor(e.target.value)}
-                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="shrink-0 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500/40"
+            aria-label="프로필 사진·아이콘 선택"
+          >
+            {useGoogleAvatar && authUser?.photoURL ? (
+              <img
+                src={authUser.photoURL}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="h-11 w-11 rounded-xl border border-slate-800 object-cover"
               />
-            </label>
-          )}
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-slate-800">
+                <AvatarBubble
+                  photoURL={previewPhoto}
+                  name={displayName.trim() || "?"}
+                  color={color}
+                  size={44}
+                />
+              </div>
+            )}
+          </button>
+          <label
+            className="relative flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-slate-700 bg-slate-900/80"
+            title="이니셜·강조 색"
+          >
+            <span
+              className="h-7 w-7 rounded-lg border border-slate-600"
+              style={{ backgroundColor: color }}
+            />
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => {
+                setProfileTouched(true);
+                setColor(e.target.value);
+              }}
+              className="absolute inset-0 cursor-pointer opacity-0"
+            />
+          </label>
           <input
             value={displayName}
             onChange={(e) => {
@@ -185,12 +257,23 @@ export default function OnboardingPage() {
             maxLength={16}
           />
         </div>
+        <p className="mt-2 text-[11px] text-slate-500">
+          왼쪽을 누르면{" "}
+          <span className="text-slate-400">기본 아이콘 · 사진 업로드 · 구글 사진</span> 을 고를 수 있어요.
+        </p>
         {authUser?.photoURL && (
           <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-slate-400">
             <input
               type="checkbox"
               checked={useGoogleAvatar}
-              onChange={(e) => setUseGoogleAvatar(e.target.checked)}
+              onChange={(e) => {
+                setProfileTouched(true);
+                setUseGoogleAvatar(e.target.checked);
+                if (e.target.checked) {
+                  setAvatarKind(undefined);
+                  setAvatarDataUrl(undefined);
+                }
+              }}
               className="h-4 w-4 rounded border-slate-700 bg-slate-900 accent-brand-500"
             />
             <span>구글 계정 프로필 사진을 사용할래요</span>
@@ -201,6 +284,25 @@ export default function OnboardingPage() {
           <span className="text-slate-400">건강 탭</span> 에서 언제든 바꿀 수 있어요.
         </p>
       </section>
+
+      {pickerOpen && (
+        <AvatarPicker
+          authUser={authUser ?? null}
+          currentKind={
+            useGoogleAvatar && authUser?.photoURL
+              ? "google"
+              : avatarKind === "preset"
+                ? "preset"
+                : avatarKind === "upload"
+                  ? "upload"
+                  : undefined
+          }
+          onClose={() => setPickerOpen(false)}
+          onSave={async (pick) => {
+            await applyAvatarPick(pick);
+          }}
+        />
+      )}
 
       <section className="mb-8">
         <h2 className="mb-2 text-sm font-semibold text-slate-300">
