@@ -306,6 +306,104 @@ export async function analyzeMealImage(
   return await analyzeMealImageOnce(apiKey.trim(), forApi, slot, modelName, profile);
 }
 
+// ---------- 텍스트 기반 재분석 ----------
+// 사용자가 AI 결과(메뉴/영양)를 직접 고친 뒤 그 값을 근거로 별점/한줄평을
+// 다시 받아보고 싶을 때 사용한다. 이미지가 없어도 동작한다.
+
+export interface ReanalyzeInput {
+  menuText: string;
+  nutrition?: MealAnalysis["nutrition"];
+}
+
+const REANALYZE_PROMPT_BASE = `당신은 친절한 한국인 영양사입니다. 사용자는 이미 메뉴 이름과 영양 정보(본인이 직접 입력하거나 수정한 값)를 제공합니다. 이 값을 **사실로 신뢰하고** 별점(rating)과 한 줄평(aiComment), 그리고 필요하다면 healthTags 만 다시 평가하세요.
+
+중요한 규칙:
+- menuText, nutrition.calories/protein/carbs/fat 는 사용자가 준 값을 **수정하지 말고 그대로 되돌려 주세요**. (수치가 비어 있으면 비운 채로.)
+- 평가 대상은 rating(1~5), aiComment(30자 내외 다정한 말투), healthTags(1~4개) 입니다.
+- 영양 수치가 매우 부족하거나 편향(예: 탄수 80g · 단백 3g)이면 그 점을 반영해 감점/조언하세요.
+- 끼니 맥락이 함께 주어지면 그 기준에 맞춰 평가하세요.
+
+개인정보·프라이버시 규칙:
+- 응답 어디에도 구체 질환/병명(당뇨·통풍·고혈압·고지혈증 등)이나 진단·약물명을 넣지 마세요. 영양소 관점 가이드만 쓰세요.
+
+반드시 다음 JSON 스키마만 반환:
+{
+  "menuText": string,
+  "rating": number(1~5),
+  "aiComment": string,
+  "nutrition": {
+    "calories": number?,
+    "protein": number?,
+    "carbs": number?,
+    "fat": number?,
+    "healthTags": string[]?
+  }
+}`;
+
+function buildReanalyzePrompt(
+  input: ReanalyzeInput,
+  slot?: MealSlot,
+  profile?: AnalysisProfile,
+): string {
+  const slotCtx = slot
+    ? `\n\n이번 끼니 맥락 — "${MEAL_SLOT_CONTEXT[slot].label}":\n${MEAL_SLOT_CONTEXT[slot].guide}`
+    : "";
+  const userBlock = `\n\n사용자가 직접 입력·수정한 값:\n${JSON.stringify(
+    {
+      menuText: input.menuText,
+      nutrition: input.nutrition ?? {},
+    },
+    null,
+    2,
+  )}`;
+  return `${REANALYZE_PROMPT_BASE}${slotCtx}${buildProfileBlock(profile)}${buildFocusBlock(
+    profile?.focusConditions,
+  )}${userBlock}`;
+}
+
+export async function reanalyzeMealFromText(
+  apiKey: string,
+  input: ReanalyzeInput,
+  slot?: MealSlot,
+  modelName?: string,
+  profile?: AnalysisProfile,
+): Promise<MealAnalysis> {
+  if (!apiKey.trim()) {
+    throw new AIError("Gemini API 키가 설정되지 않았습니다. 설정 화면에서 입력해주세요.");
+  }
+  const menuText = (input.menuText ?? "").trim();
+  if (!menuText) {
+    throw new AIError("메뉴 이름을 먼저 입력해 주세요.");
+  }
+  const model = getModel(apiKey.trim(), modelName);
+  try {
+    const res = await model.generateContent(
+      buildReanalyzePrompt(input, slot, profile),
+    );
+    const text = res.response.text();
+    const parsed = safeParseJson<MealAnalysis>(text);
+    parsed.rating = Math.max(1, Math.min(5, Math.round(Number(parsed.rating) || 3)));
+    // 사용자 수치를 우선한다 — 모델이 바꾸더라도 되돌림.
+    parsed.menuText = menuText;
+    parsed.aiComment = String(parsed.aiComment ?? "");
+    const userN = input.nutrition ?? {};
+    const modelN = parsed.nutrition ?? {};
+    parsed.nutrition = {
+      calories: userN.calories ?? modelN.calories,
+      protein: userN.protein ?? modelN.protein,
+      carbs: userN.carbs ?? modelN.carbs,
+      fat: userN.fat ?? modelN.fat,
+      healthTags: Array.isArray(modelN.healthTags)
+        ? modelN.healthTags
+        : userN.healthTags,
+    };
+    return sanitizeMealAnalysis(parsed);
+  } catch (e) {
+    if (e instanceof AIError) throw e;
+    throw new AIError(formatGeminiFailure("재분석 실패", e), e);
+  }
+}
+
 // ---------- 건강기록 분석 ----------
 
 export interface HealthAnalysis {

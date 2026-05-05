@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Home, Rss, Sparkles, UserPlus } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { db, normalizeMeal } from "../lib/db";
+import { db, getAnalysisProfileForUser, getSettings, normalizeMeal } from "../lib/db";
 import {
   subscribeFriendLatestMeals,
   subscribeOutgoingShares,
@@ -12,13 +12,20 @@ import {
   MEAL_SLOT_EMOJI,
   MEAL_SLOT_LABELS,
   type Meal,
+  type MealItem,
   type Share,
 } from "../types";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
-import { MealItemCard } from "../components/MealCard";
+import { MealItemCard, MealItemEditDialog } from "../components/MealCard";
 import MealSocialBlock from "../components/MealSocialBlock";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
 import { formatKoDate } from "../lib/utils";
+import {
+  deleteMealItem,
+  saveMealItemPatch,
+  updateMealItem,
+} from "../lib/mealItems";
+import { analyzeMealImage } from "../lib/ai";
 
 /**
  * 피드 탭 — 인스타그램 피드처럼 나와 친구들의 식단 카드를 최신순으로.
@@ -50,6 +57,8 @@ export default function FeedPage() {
   const { user, firebaseReady } = useAuth();
   const myUid = firebaseReady ? user?.uid : undefined;
   const myUserId = usePrimaryUserId();
+  const settings = useLiveQuery(() => getSettings(), []);
+  const apiKey = settings?.geminiApiKey;
 
   const myProfile = useLiveQuery(
     async () => (myUserId ? await db.users.get(myUserId) : undefined),
@@ -205,6 +214,8 @@ export default function FeedPage() {
             key={`${e.author.uid}_${e.meal.id}`}
             entry={e}
             showSocial={!!myUid}
+            myUserId={myUserId}
+            myApiKey={apiKey}
           />
         ))}
       </div>
@@ -212,9 +223,20 @@ export default function FeedPage() {
   );
 }
 
-function FeedCard({ entry, showSocial }: { entry: FeedEntry; showSocial: boolean }) {
+interface FeedCardProps {
+  entry: FeedEntry;
+  showSocial: boolean;
+  /** 내 local Dexie userId — "내 게시물" 수정/재분석에 필요 */
+  myUserId: string | undefined;
+  myApiKey: string | undefined;
+}
+
+function FeedCard({ entry, showSocial, myUserId, myApiKey }: FeedCardProps) {
   const { author, meal, isMine } = entry;
   const items = meal.items ?? [];
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const editingItem = items.find((it) => it.id === editingItemId) ?? null;
+
   const totalCalories = useMemo(
     () =>
       items.reduce(
@@ -230,6 +252,48 @@ function FeedCard({ entry, showSocial }: { entry: FeedEntry; showSocial: boolean
     if (rs.length === 0) return undefined;
     return rs.reduce((a, b) => a + b, 0) / rs.length;
   }, [items]);
+
+  async function handleReanalyzeByImage(item: MealItem) {
+    if (!isMine || !myApiKey || !item.photo || !myUserId) return;
+    await updateMealItem(meal.id, item.id, (it) => ({
+      ...it,
+      analysisStatus: "analyzing",
+      analysisError: undefined,
+      manuallyEdited: false,
+    }));
+    try {
+      const profile = await getAnalysisProfileForUser(myUserId);
+      const result = await analyzeMealImage(
+        myApiKey,
+        item.photo,
+        meal.slot,
+        undefined,
+        profile,
+      );
+      await updateMealItem(meal.id, item.id, (it) => ({
+        ...it,
+        menuText: result.menuText,
+        rating: result.rating,
+        aiComment: result.aiComment,
+        nutrition: result.nutrition,
+        analysisStatus: "done",
+        analysisError: undefined,
+        manuallyEdited: false,
+      }));
+    } catch (e) {
+      await updateMealItem(meal.id, item.id, (it) => ({
+        ...it,
+        analysisStatus: "error",
+        analysisError: e instanceof Error ? e.message : String(e),
+      }));
+    }
+  }
+
+  async function handleRemoveItem(item: MealItem) {
+    if (!isMine) return;
+    if (!confirm("이 사진을 삭제할까요?")) return;
+    await deleteMealItem(meal.id, item.id, { ownerUid: author.uid });
+  }
 
   return (
     <article className="card overflow-hidden">
@@ -266,15 +330,22 @@ function FeedCard({ entry, showSocial }: { entry: FeedEntry; showSocial: boolean
       </header>
 
       <div className="space-y-3 p-3">
-        {items.length === 1 ? (
-          <MealItemCard item={items[0]} index={0} readOnly />
-        ) : (
-          <div className="space-y-3">
-            {items.map((it, idx) => (
-              <MealItemCard key={it.id} item={it} index={idx} readOnly />
-            ))}
-          </div>
-        )}
+        <div className="space-y-3">
+          {items.map((it, idx) => (
+            <MealItemCard
+              key={it.id}
+              item={it}
+              index={idx}
+              readOnly={!isMine}
+              canAnalyze={isMine && !!myApiKey}
+              onEdit={isMine ? () => setEditingItemId(it.id) : undefined}
+              onReanalyze={
+                isMine && it.photo ? () => void handleReanalyzeByImage(it) : undefined
+              }
+              onRemove={isMine ? () => void handleRemoveItem(it) : undefined}
+            />
+          ))}
+        </div>
         {(avgRating !== undefined || totalCalories > 0) && (
           <div className="flex flex-wrap gap-2 text-[11px] text-slate-400">
             {avgRating !== undefined && (
@@ -296,6 +367,22 @@ function FeedCard({ entry, showSocial }: { entry: FeedEntry; showSocial: boolean
         )}
         {showSocial && <MealSocialBlock ownerUid={author.uid} mealId={meal.id} />}
       </div>
+
+      {isMine && editingItem && myUserId && (
+        <MealItemEditDialog
+          item={editingItem}
+          canReanalyze={!!myApiKey}
+          onClose={() => setEditingItemId(null)}
+          onSave={async (patch, opts) => {
+            const res = await saveMealItemPatch(meal.id, editingItem.id, patch, opts, {
+              userId: myUserId,
+              slot: meal.slot,
+              apiKey: myApiKey,
+            });
+            if (opts.reanalyze && !res.reanalyzed && res.error) alert(res.error);
+          }}
+        />
+      )}
     </article>
   );
 }

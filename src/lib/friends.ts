@@ -18,19 +18,13 @@ import {
 import type { User as FirebaseUser } from "firebase/auth";
 import type {
   FollowRequest,
-  HealthRecord,
   Meal,
   PublicProfile,
   Share,
   ShareScope,
 } from "../types";
 import { getFirebaseAuth, getFirestoreDb } from "./firebaseApp";
-import {
-  storedToHealth,
-  storedToMeal,
-  type HealthStored,
-  type MealStored,
-} from "./cloudSync";
+import { storedToMeal, type MealStored } from "./cloudSync";
 
 export function normalizeEmail(s: string): string {
   return s.trim().toLowerCase();
@@ -342,61 +336,13 @@ export async function getMyViewerShare(ownerUid: string): Promise<Share | null> 
   return { ...(snap.data() as Share), id: snap.id };
 }
 
-// ---- 친구 데이터 읽기 (로컬 캐시 없음) -----------------------------------
-
-/** 친구의 특정 날짜 구간 식사 기록. 월 단위 등으로 호출하는 것을 권장. */
-export async function pullFriendMealsInRange(
-  ownerUid: string,
-  startDateKey: string,
-  endDateKey: string,
-): Promise<Meal[]> {
-  const fs = getFirestoreDb();
-  const q = query(
-    collection(fs, "users", ownerUid, "meals"),
-    where("date", ">=", startDateKey),
-    where("date", "<=", endDateKey),
-  );
-  const snap = await getDocs(q);
-  const rows = await Promise.all(
-    snap.docs.map(async (d) =>
-      storedToMeal({ ...(d.data() as MealStored), id: d.id }),
-    ),
-  );
-  return rows;
-}
-
-export async function pullFriendMealsForDate(
-  ownerUid: string,
-  dateKey: string,
-): Promise<Meal[]> {
-  return pullFriendMealsInRange(ownerUid, dateKey, dateKey);
-}
-
-export async function pullFriendHealth(
-  ownerUid: string,
-): Promise<HealthRecord[]> {
-  const fs = getFirestoreDb();
-  const snap = await getDocs(collection(fs, "users", ownerUid, "health"));
-  const rows = await Promise.all(
-    snap.docs.map(async (d) =>
-      storedToHealth({ ...(d.data() as HealthStored), id: d.id }),
-    ),
-  );
-  rows.sort((a, b) => {
-    const d = b.recordDate.localeCompare(a.recordDate);
-    if (d !== 0) return d;
-    return (b.createdAt ?? 0) - (a.createdAt ?? 0);
-  });
-  return rows;
-}
-
 // ---- 친구 데이터 실시간 구독 ---------------------------------------------
 // 친구 기기에서 AI 분석이 완료돼 Firestore 가 갱신될 때 내 화면도 곧바로
 // 반영되도록 onSnapshot 으로 구독한다. getDocs 일회성 호출만 쓰면
 // "analyzing" 상태 그대로 멈춰 있는 문제가 발생한다.
 //
 // base64 사진을 Blob 으로 디코딩하는 작업이 비싸므로, 문서별 updatedAt 이
-// 이전과 같으면 기존에 만들어 둔 Meal/HealthRecord 를 재사용한다.
+// 이전과 같으면 기존에 만들어 둔 Meal 을 재사용한다.
 
 /** 친구 meals 를 date 범위로 실시간 구독 */
 export function subscribeFriendMealsInRange(
@@ -510,49 +456,9 @@ export function subscribeFriendMealsForDate(
   return subscribeFriendMealsInRange(ownerUid, dateKey, dateKey, cb, onErr);
 }
 
-/** 친구 health 전체 실시간 구독 */
-export function subscribeFriendHealth(
-  ownerUid: string,
-  cb: (rows: HealthRecord[]) => void,
-  onErr?: (e: unknown) => void,
-): Unsubscribe {
-  const fs = getFirestoreDb();
-  const cache = new Map<string, { updatedAt: number; rec: HealthRecord }>();
-  return onSnapshot(
-    collection(fs, "users", ownerUid, "health"),
-    async (snap) => {
-      try {
-        const rows = await Promise.all(
-          snap.docs.map(async (d) => {
-            const data = { ...(d.data() as HealthStored), id: d.id };
-            const cached = cache.get(d.id);
-            if (cached && cached.updatedAt === data.updatedAt) {
-              return cached.rec;
-            }
-            const rec = await storedToHealth(data);
-            cache.set(d.id, { updatedAt: data.updatedAt, rec });
-            return rec;
-          }),
-        );
-        const alive = new Set(snap.docs.map((d) => d.id));
-        for (const id of [...cache.keys()]) if (!alive.has(id)) cache.delete(id);
-        rows.sort((a, b) => {
-          const d = b.recordDate.localeCompare(a.recordDate);
-          if (d !== 0) return d;
-          return (b.createdAt ?? 0) - (a.createdAt ?? 0);
-        });
-        cb(rows);
-      } catch (e) {
-        console.error("[friends] health snapshot decode", e);
-        onErr?.(e);
-      }
-    },
-    (err) => {
-      console.error("[friends] health subscribe", err);
-      onErr?.(err);
-    },
-  );
-}
+// 친구의 건강 기록은 앱 정책상 공유되지 않는다 — firestore.rules 에서도
+// viewer 가 /users/{uid}/health 를 read 하지 못하도록 막혀 있으므로 관련
+// subscribe/pull 헬퍼를 제거했다.
 
 // ---- 편의 함수 ----------------------------------------------------------
 

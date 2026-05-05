@@ -8,11 +8,15 @@ import {
   Star,
   Trash2,
   TriangleAlert,
+  Wand2,
   X,
 } from "lucide-react";
 import type { MealItem } from "../types";
 import { blobUrl } from "../lib/image";
 import { cls } from "../lib/utils";
+import type { MealItemPatch } from "../lib/mealItems";
+
+export type { MealItemPatch } from "../lib/mealItems";
 
 /**
  * 끼니 안의 한 "음식 항목" 카드.
@@ -243,23 +247,23 @@ export function ItemAnalysisBlock({
 }
 
 // ---------------- 수동 수정 다이얼로그 -----------------
-
-export interface MealItemPatch {
-  menuText: string;
-  rating: number;
-  aiComment?: string;
-  nutrition?: MealItem["nutrition"];
-}
+// MealItemPatch 타입은 lib/mealItems 에 정의되어 있고 파일 상단에서 import/re-export 함.
 
 interface EditDialogProps {
   item: MealItem;
+  /** 저장 후 AI 에게 별점·한줄평 재분석 요청 (텍스트 기반). 구현되어 있지 않으면 버튼 숨김. */
+  canReanalyze?: boolean;
   onClose: () => void;
-  onSave: (patch: MealItemPatch) => Promise<void> | void;
+  onSave: (patch: MealItemPatch, opts: { reanalyze: boolean }) => Promise<void> | void;
 }
 
-export function MealItemEditDialog({ item, onClose, onSave }: EditDialogProps) {
+export function MealItemEditDialog({
+  item,
+  canReanalyze = false,
+  onClose,
+  onSave,
+}: EditDialogProps) {
   const [menu, setMenu] = useState(item.menuText ?? "");
-  const [rating, setRating] = useState(item.rating ?? 3);
   const [comment, setComment] = useState(item.aiComment ?? "");
   const [cal, setCal] = useState<string>(numToStr(item.nutrition?.calories));
   const [pro, setPro] = useState<string>(numToStr(item.nutrition?.protein));
@@ -267,7 +271,7 @@ export function MealItemEditDialog({ item, onClose, onSave }: EditDialogProps) {
   const [fat, setFat] = useState<string>(numToStr(item.nutrition?.fat));
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>(item.nutrition?.healthTags ?? []);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<null | "save" | "reanalyze">(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -280,12 +284,12 @@ export function MealItemEditDialog({ item, onClose, onSave }: EditDialogProps) {
 
   const imgUrl = useMemo(() => blobUrl(item.thumbnail ?? item.photo), [item]);
 
-  async function handleSave() {
+  async function doSave(reanalyze: boolean) {
     if (!menu.trim()) {
       alert("메뉴 이름을 입력해 주세요.");
       return;
     }
-    setBusy(true);
+    setBusy(reanalyze ? "reanalyze" : "save");
     try {
       const nutrition: MealItem["nutrition"] = {
         calories: strToNum(cal),
@@ -294,24 +298,25 @@ export function MealItemEditDialog({ item, onClose, onSave }: EditDialogProps) {
         fat: strToNum(fat),
         healthTags: tags.length ? tags : undefined,
       };
-      // 완전히 빈 객체는 undefined 로.
       const hasAny =
         nutrition.calories !== undefined ||
         nutrition.protein !== undefined ||
         nutrition.carbs !== undefined ||
         nutrition.fat !== undefined ||
         (nutrition.healthTags && nutrition.healthTags.length > 0);
-      await onSave({
-        menuText: menu.trim(),
-        rating: clampRating(rating),
-        aiComment: comment.trim() || undefined,
-        nutrition: hasAny ? nutrition : undefined,
-      });
+      await onSave(
+        {
+          menuText: menu.trim(),
+          aiComment: comment.trim() || undefined,
+          nutrition: hasAny ? nutrition : undefined,
+        },
+        { reanalyze },
+      );
       onClose();
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -357,9 +362,18 @@ export function MealItemEditDialog({ item, onClose, onSave }: EditDialogProps) {
               사진 없음
             </div>
           )}
-          <p className="text-[11px] text-slate-400">
-            AI 분석이 사실과 다르면 직접 고쳐 주세요. 친구에게 공유되는 내용도 같이 바뀝니다.
-          </p>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] text-slate-400">
+              메뉴·영양 정보를 직접 고치고 원하면 그 값으로 AI 별점을 다시 받을 수 있어요.
+            </p>
+            {typeof item.rating === "number" && (
+              <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-amber-300">
+                <Star size={11} className="fill-amber-300 text-amber-300" />
+                현재 AI 별점 {item.rating}/5
+                <span className="text-slate-500">· 별점은 AI 만 수정해요</span>
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="space-y-3">
@@ -370,29 +384,6 @@ export function MealItemEditDialog({ item, onClose, onSave }: EditDialogProps) {
               placeholder="예: 김치찌개, 공깃밥"
               className="input"
             />
-          </Field>
-
-          <Field label={`별점 (${clampRating(rating)}/5)`}>
-            <div className="flex items-center gap-1.5">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setRating(n)}
-                  className="p-1"
-                  aria-label={`${n}점`}
-                >
-                  <Star
-                    size={22}
-                    className={cls(
-                      n <= clampRating(rating)
-                        ? "fill-amber-300 text-amber-300"
-                        : "text-amber-300/25",
-                    )}
-                  />
-                </button>
-              ))}
-            </div>
           </Field>
 
           <Field label="한 줄 평 (선택)">
@@ -464,19 +455,44 @@ export function MealItemEditDialog({ item, onClose, onSave }: EditDialogProps) {
           </Field>
         </div>
 
-        <div className="mt-4 flex gap-2">
-          <button type="button" onClick={onClose} className="btn-secondary flex-1 py-2 text-sm">
-            취소
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={busy || !menu.trim()}
-            className="btn-primary flex-1 py-2 text-sm disabled:opacity-60"
-          >
-            {busy && <Loader2 size={14} className="animate-spin" />}
-            저장
-          </button>
+        <div className="mt-4 space-y-2">
+          {canReanalyze && (
+            <button
+              type="button"
+              onClick={() => void doSave(true)}
+              disabled={busy !== null || !menu.trim()}
+              className="btn-primary w-full py-2 text-sm disabled:opacity-60"
+            >
+              {busy === "reanalyze" ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Wand2 size={14} />
+              )}
+              저장하고 이 내용으로 AI 재분석
+            </button>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={busy !== null}
+              className="btn-secondary flex-1 py-2 text-sm"
+            >
+              취소
+            </button>
+            <button
+              type="button"
+              onClick={() => void doSave(false)}
+              disabled={busy !== null || !menu.trim()}
+              className={cls(
+                "flex-1 py-2 text-sm disabled:opacity-60",
+                canReanalyze ? "btn-secondary" : "btn-primary",
+              )}
+            >
+              {busy === "save" && <Loader2 size={14} className="animate-spin" />}
+              저장만
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -490,11 +506,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </label>
   );
-}
-
-function clampRating(n: number): number {
-  const v = Math.round(Number(n) || 0);
-  return Math.max(1, Math.min(5, v));
 }
 
 function numToStr(n: number | undefined): string {

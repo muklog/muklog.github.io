@@ -165,8 +165,23 @@ export async function deleteComment(
   mealId: string,
   commentId: string,
 ): Promise<void> {
-  // 대댓글/좋아요가 붙어 있으면 best-effort 로 같이 정리한다.
-  // (Firestore 클라이언트 SDK 는 서브컬렉션을 자동 정리하지 않음)
+  // 이 댓글의 좋아요 서브컬렉션과, 이 댓글을 parent 로 하는 자식(대댓글)을
+  // 같이 정리한다. Firestore 클라이언트 SDK 는 서브컬렉션을 자동 정리하지
+  // 않아 고아가 남을 수 있다.
+  try {
+    const all = await getDocs(commentsCol(ownerUid, mealId));
+    const children = all.docs.filter(
+      (d) => (d.data() as MealComment).parentCommentId === commentId,
+    );
+    await Promise.allSettled(
+      children.map(async (d) => {
+        await bestEffortDeleteCollection(commentLikesCol(ownerUid, mealId, d.id));
+        await deleteDoc(d.ref);
+      }),
+    );
+  } catch (e) {
+    console.warn("[social] delete child replies", e);
+  }
   await Promise.allSettled([
     bestEffortDeleteCollection(commentLikesCol(ownerUid, mealId, commentId)),
   ]);
