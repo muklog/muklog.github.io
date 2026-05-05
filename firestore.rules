@@ -96,30 +96,28 @@ service cloud.firestore {
       allow get: if signedIn();
       allow list: if signedIn() && resource.data.fromUid == me();
 
-      // 토큰에 email 이 없거나 일부 환경에서 클레임이 비어 있는 경우(create / accept 허용)
-      function inviteIssuerEmailMatches() {
-        let c = request.auth.token.email == null || request.auth.token.email == '';
+      // 본문 fromEmail은 앱에서 소문자 정규화되는데 JWT email 은 대소문자 혼합일 수 있어
+      // 토큰과 문자열 일치를 요구하지 않는다(fromUid/me() 로 이미 본인 확인).
+      function inviteFromEmailFieldOk() {
         return request.resource.data.fromEmail is string
           && request.resource.data.fromEmail.size() > 0
-          && request.resource.data.fromEmail.size() <= 320
-          && (c || request.resource.data.fromEmail == request.auth.token.email);
+          && request.resource.data.fromEmail.size() <= 320;
       }
-      function inviteAcceptorEmailMatches() {
-        let c = request.auth.token.email == null || request.auth.token.email == '';
+      function inviteUsedByEmailFieldOk() {
         return request.resource.data.usedByEmail is string
           && request.resource.data.usedByEmail.size() > 0
-          && (c || request.resource.data.usedByEmail == request.auth.token.email);
+          && request.resource.data.usedByEmail.size() <= 320;
       }
 
       allow create: if signedIn()
         && codeId == request.resource.data.id
         && request.resource.data.fromUid == me()
-        && inviteIssuerEmailMatches()
+        && inviteFromEmailFieldOk()
         && request.resource.data.fromName is string
         && request.resource.data.fromName.size() > 0
         && request.resource.data.fromName.size() <= 80
         && request.resource.data.requestedScope.calendar == true
-        && request.resource.data.requestedScope.health == false
+        && request.resource.data.requestedScope.health != true
         && request.resource.data.status == 'pending'
         && request.resource.data.createdAt is number
         && request.resource.data.expiresAt is number
@@ -150,7 +148,7 @@ service cloud.firestore {
             request.resource.data.status == 'used'
             && me() != resource.data.fromUid
             && request.resource.data.usedByUid == me()
-            && inviteAcceptorEmailMatches()
+            && inviteUsedByEmailFieldOk()
             && request.resource.data.usedAt is number
           )
           || (
