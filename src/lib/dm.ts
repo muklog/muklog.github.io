@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import type { DmMessageDoc, DmThreadDoc } from "../types";
 import { getFirebaseAuth, getFirestoreDb } from "./firebaseApp";
-import { isCalendarConnectedPair } from "./friends";
+import { isCalendarConnectedPair, permissionDeniedMessage } from "./friends";
 
 /** threadId 규약: uid 문자열 순서 오름차순 [a,b] 일 때 `${a}_${b}` */
 export function dmThreadIdForPair(uidA: string, uidB: string): string {
@@ -148,7 +148,11 @@ export async function sendDmMessage(threadId: string, rawText: string): Promise<
     updatedAt: now,
   });
   batch.set(dmReadDoc(me, threadId), { threadId, lastReadAt: now }, { merge: true });
-  await batch.commit();
+  try {
+    await batch.commit();
+  } catch (e) {
+    throw new Error(permissionDeniedMessage(e));
+  }
 }
 
 /** 대화 목록 또는 방에서 읽음 시각 갱신 (상대에게는 unread 로 보이게 두고, 내 배지만 줄임) */

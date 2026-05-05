@@ -9,6 +9,7 @@ import {
   PULL_TO_REFRESH_THRESHOLD_PX,
   PULL_TO_REFRESH_PROGRESS_CAP_PX,
 } from "./hooks/usePullToRefresh";
+import { RefreshCw } from "lucide-react";
 import FeedPage from "./pages/FeedPage";
 import HomePage from "./pages/HomePage";
 import DayPage from "./pages/DayPage";
@@ -127,7 +128,16 @@ export default function App() {
             }}
             aria-hidden
           >
-            <span className="rounded-full border border-slate-700 bg-slate-900/92 px-3 py-1.5 text-[11px] font-medium text-slate-300 shadow-lg backdrop-blur-sm">
+            <span className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/92 px-3 py-1.5 text-[11px] font-medium text-slate-300 shadow-lg backdrop-blur-sm">
+              <RefreshCw
+                size={14}
+                className="shrink-0 text-brand-400"
+                style={{
+                  transform: `rotate(${ptrProgress * 270}deg)`,
+                  opacity: ptrReady ? 1 : 0.65 + ptrProgress * 0.35,
+                }}
+                aria-hidden
+              />
               {ptrReady ? "놓으면 새로고침···" : "당겨서 새로고침"}
             </span>
           </div>

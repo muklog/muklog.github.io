@@ -22,13 +22,20 @@ service cloud.firestore {
         && s.scope[scope] == true;
     }
 
+    /** scope 필드가 없거나, null/비맵, calendar 미지정·true 일 때 허용 — 클라이언트 shareDocAllowsDmConnection 과 동일 */
+    function calendarShareAllows(scope) {
+      return scope == null
+        || !(scope is map)
+        || !('calendar' in scope)
+        || scope.calendar == true;
+    }
+
     /** owner 가 viewer 에게 달력 공유 허용(shared 문서 존재 + calendar 가 명시적으로 false 가 아님) */
     function calendarShareToward(ownerUid, viewerUid) {
       let p = /databases/$(database)/documents/shares/$(ownerUid + '_' + viewerUid);
       return exists(p) && (
         !('scope' in get(p).data)
-        || !('calendar' in get(p).data.scope)
-        || get(p).data.scope.calendar == true
+        || calendarShareAllows(get(p).data.scope)
       );
     }
     /** 한쪽이라도 위 조건이면 DM·알림(같은 경로) 허용 — 레거시 scope 누락 문서와 맞춤 */
@@ -127,6 +134,11 @@ service cloud.firestore {
           !('commentId' in request.resource.data)
           || request.resource.data.commentId is string
         );
+    }
+
+    // DM 읽음 상태 — 본인 서브컬렉션만 (catch-all 과 동일하지만 경로를 명시해 규칙 평가를 분명히 함)
+    match /users/{userId}/dmReadState/{docId} {
+      allow read, write: if signedIn() && me() == userId;
     }
 
     match /users/{userId}/{document=**} {

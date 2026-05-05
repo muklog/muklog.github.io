@@ -95,7 +95,13 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
             return next;
           });
         },
-        () => {},
+        () => {
+          setFriendMealsByOwner((prev) => {
+            const next = new Map(prev);
+            next.set(s.ownerUid, []);
+            return next;
+          });
+        },
       );
       unsubs.push(unsub);
     }
@@ -157,8 +163,17 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
     void patchSettings({ feedLastSeenMaxUpdatedAt: v });
   }, []);
 
+  /** 친구 공유 목록은 왔는데 각 owner 의 meals 스냅샷 전이면 빈 피드 카드가 깜빡임 → 키가 들어올 때까지 로딩 */
+  const awaitingFriendMealSnapshots =
+    firebaseReady &&
+    myUid !== undefined &&
+    (friendShares?.length ?? 0) > 0 &&
+    (friendShares ?? []).some((s) => !friendMealsByOwner.has(s.ownerUid));
+
   const loading =
-    myMeals === undefined || (firebaseReady && myUid !== undefined && friendShares === null);
+    myMeals === undefined ||
+    (firebaseReady && myUid !== undefined && friendShares === null) ||
+    awaitingFriendMealSnapshots;
 
   const value = useMemo<Ctx>(
     () => ({
