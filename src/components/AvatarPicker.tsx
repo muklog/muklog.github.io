@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Camera, Check, Image as ImageIcon, Loader2, Sparkles, X } from "lucide-react";
 import type { User as FirebaseUser } from "firebase/auth";
 import { AVATAR_PRESETS, blobToAvatarDataUrl, renderPresetAvatarDataUrl, type AvatarPreset } from "../lib/avatar";
@@ -33,6 +33,14 @@ export default function AvatarPicker({ authUser, currentKind, onClose, onSave }:
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
 
   const canUseGoogle = !!authUser?.photoURL;
 
@@ -90,12 +98,17 @@ export default function AvatarPicker({ authUser, currentKind, onClose, onSave }:
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/60 backdrop-blur-sm"
       onClick={(ev) => {
         if (ev.target === ev.currentTarget) onClose();
       }}
     >
-      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-slate-800 bg-slate-950 p-4 shadow-xl sm:rounded-2xl">
+      {/* min-h 와 패딩으로 상단 헤더/노치에 가려지지 않게 */}
+      <div className="flex min-h-[100dvh] items-end justify-center px-4 py-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1rem,env(safe-area-inset-bottom,0px))] sm:items-center sm:py-8">
+        <div
+          className="max-h-[min(85dvh,640px)] w-full max-w-md overflow-y-auto rounded-t-2xl border border-slate-800 bg-slate-950 p-4 shadow-xl sm:max-h-[min(90vh,680px)] sm:rounded-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
         <header className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-bold text-slate-100">프로필 사진 변경</h2>
           <button
@@ -217,6 +230,7 @@ export default function AvatarPicker({ authUser, currentKind, onClose, onSave }:
             <Loader2 size={14} className="animate-spin" /> 저장 중…
           </div>
         )}
+      </div>
       </div>
     </div>
   );

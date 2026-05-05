@@ -240,6 +240,28 @@ export interface FollowRequest {
   updatedAt: number;
 }
 
+/** /friendInviteCodes/{codeId} — 링크 초대용 1회(또는 만료까지) 가능한 토큰 */
+export type FriendInviteStatus = "pending" | "used" | "revoked";
+
+export interface FriendInviteCode {
+  /** 문서 id 와 동일한 비밀 토큰(추측 어렵게 충분히 길게) */
+  id: string;
+  fromUid: string;
+  /** 소문자 정규화 Gmail */
+  fromEmail: string;
+  fromName: string;
+  fromPhotoURL?: string;
+  requestedScope: ShareScope;
+  status: FriendInviteStatus;
+  createdAt: number;
+  expiresAt: number;
+  /** 수락 시 채워짐 */
+  usedByUid?: string;
+  usedByEmail?: string;
+  usedAt?: number;
+  revokedAt?: number;
+}
+
 /**
  * /users/{ownerUid}/meals/{mealId}/comments/{commentId}
  *

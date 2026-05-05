@@ -8,6 +8,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   setDoc,
   updateDoc,
   where,
@@ -18,6 +19,7 @@ import {
 import type { User as FirebaseUser } from "firebase/auth";
 import type {
   FollowRequest,
+  FriendInviteCode,
   Meal,
   PublicProfile,
   Share,
@@ -223,6 +225,156 @@ export async function acceptFollowRequest(
   await batch.commit();
 
   return share;
+}
+
+/** 링크 초대 코드 유효 시간 (72시간) */
+export const FRIEND_INVITE_TTL_MS = 72 * 60 * 60 * 1000;
+
+const INVITE_CODE_BYTES = 16;
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** 추측 어려운 초대 토큰 (문서 id 와 동일) */
+export function secureRandomInviteId(): string {
+  const bytes = new Uint8Array(INVITE_CODE_BYTES);
+  crypto.getRandomValues(bytes);
+  return bytesToBase64Url(bytes);
+}
+
+/**
+ * 1회용(또는 만료 전까지) 초대 문서 생성 — `/friendInviteCodes/{id}`.
+ * 수락 시 수락자가 owner, 발급자가 viewer 가 되는 share 가 생깁니다.
+ */
+export async function createFriendInviteCode(
+  localUser?: User | null,
+  requestedScope: ShareScope = { calendar: true, health: false },
+): Promise<FriendInviteCode> {
+  const me = requireUser();
+  const myEmail = requireEmail(me);
+  if (!requestedScope.calendar || requestedScope.health) {
+    throw new Error("링크 초대는 식단(달력) 공개만 가능해요.");
+  }
+
+  const fs = getFirestoreDb();
+  const id = secureRandomInviteId();
+  const now = Date.now();
+  const myName = resolveDisplayName(localUser, me) || myEmail;
+  const myPhoto = resolveDisplayPhotoURL(localUser, me.photoURL);
+
+  const data: FriendInviteCode = {
+    id,
+    fromUid: me.uid,
+    fromEmail: myEmail,
+    fromName: myName,
+    fromPhotoURL: myPhoto,
+    requestedScope,
+    status: "pending",
+    createdAt: now,
+    expiresAt: now + FRIEND_INVITE_TTL_MS,
+  };
+
+  const clean: Record<string, unknown> = { ...data };
+  if (clean.fromPhotoURL === undefined) delete clean.fromPhotoURL;
+
+  await setDoc(doc(fs, "friendInviteCodes", id), clean);
+  return data;
+}
+
+/**
+ * 초대 링크를 수락 — 트랜잭션으로 invite 사용 처리 + share 생성(또는 기존 share 유지).
+ */
+export async function acceptFriendInviteCode(
+  codeId: string,
+  finalScope: ShareScope,
+  localUser?: User | null,
+): Promise<Share> {
+  const me = requireUser();
+  const myEmail = requireEmail(me);
+  if (isEmptyScope(finalScope)) {
+    throw new Error("공개할 범위를 하나 이상 선택해 주세요.");
+  }
+  if (!finalScope.calendar || finalScope.health) {
+    throw new Error("링크 초대 수락은 식단(달력) 공개만 가능해요.");
+  }
+
+  const fs = getFirestoreDb();
+  const inviteRef = doc(fs, "friendInviteCodes", codeId);
+  let outSid = "";
+
+  await runTransaction(fs, async (transaction) => {
+    const inviteSnap = await transaction.get(inviteRef);
+    if (!inviteSnap.exists()) throw new Error("초대 링크를 찾을 수 없어요.");
+    const inv = { ...(inviteSnap.data() as Omit<FriendInviteCode, "id">), id: inviteSnap.id };
+
+    if (inv.status !== "pending") throw new Error("이미 사용되었거나 취소된 초대예요.");
+    if (Date.now() > inv.expiresAt) throw new Error("초대 링크가 만료됐어요.");
+    if (inv.fromUid === me.uid) throw new Error("본인이 만든 초대는 수락할 수 없어요.");
+
+    outSid = shareIdFor(me.uid, inv.fromUid);
+    const shareRef = doc(fs, "shares", outSid);
+    const shareSnap = await transaction.get(shareRef);
+    const now = Date.now();
+    const myName = resolveDisplayName(localUser, me) || myEmail;
+    const myPhoto = resolveDisplayPhotoURL(localUser, me.photoURL);
+
+    if (!shareSnap.exists()) {
+      const share: Share = {
+        id: outSid,
+        ownerUid: me.uid,
+        viewerUid: inv.fromUid,
+        scope: finalScope,
+        ownerEmail: myEmail,
+        ownerName: myName,
+        ownerPhotoURL: myPhoto,
+        viewerEmail: inv.fromEmail,
+        viewerName: inv.fromName,
+        viewerPhotoURL: inv.fromPhotoURL,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const clean: Record<string, unknown> = { ...share };
+      if (clean.ownerPhotoURL === undefined) delete clean.ownerPhotoURL;
+      if (clean.viewerPhotoURL === undefined) delete clean.viewerPhotoURL;
+      transaction.set(shareRef, clean);
+    } else {
+      const ex = shareSnap.data() as Share;
+      if (ex.ownerUid !== me.uid || ex.viewerUid !== inv.fromUid) {
+        throw new Error("이 초대와 맞지 않는 공유 설정이 이미 있어요.");
+      }
+      const patch: Record<string, unknown> = {
+        scope: finalScope,
+        ownerEmail: myEmail,
+        ownerName: myName,
+        viewerEmail: inv.fromEmail,
+        viewerName: inv.fromName,
+        updatedAt: now,
+      };
+      if (myPhoto !== undefined) patch.ownerPhotoURL = myPhoto;
+      if (inv.fromPhotoURL !== undefined) patch.viewerPhotoURL = inv.fromPhotoURL;
+      transaction.update(shareRef, patch);
+    }
+
+    transaction.update(inviteRef, {
+      status: "used",
+      usedByUid: me.uid,
+      usedByEmail: myEmail,
+      usedAt: now,
+    });
+  });
+
+  const s = await getDoc(doc(fs, "shares", outSid));
+  if (!s.exists()) throw new Error("공유 문서를 만들지 못했어요.");
+  return { ...(s.data() as Share), id: s.id };
+}
+
+/** HashRouter 기준 절대 초대 URL (카카오톡 등 공유용) */
+export function buildFriendInviteLink(inviteCode: string): string {
+  const base = import.meta.env.BASE_URL || "/";
+  return `${location.origin}${base}#/friends/invite/c/${inviteCode}`;
 }
 
 // ---- 실시간 구독 --------------------------------------------------------

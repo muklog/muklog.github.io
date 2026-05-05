@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Home, Rss, Sparkles, UserPlus } from "lucide-react";
@@ -53,6 +53,8 @@ interface FeedEntry {
 
 const MAX_PER_FRIEND = 15;
 const MAX_MINE = 30;
+/** 최초·추가로 그릴 피드 카드 개수 (무한 스크롤 단계) */
+const FEED_PAGE_SIZE = 8;
 
 export default function FeedPage() {
   const { user, firebaseReady } = useAuth();
@@ -159,6 +161,35 @@ export default function FeedPage() {
     return out;
   }, [myMeals, friendShares, friendMealsByOwner, myProfile, user?.displayName, user?.photoURL, myUid]);
 
+  const [visibleCount, setVisibleCount] = useState(FEED_PAGE_SIZE);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setVisibleCount((n) => Math.min(Math.max(n, FEED_PAGE_SIZE), entries.length));
+  }, [entries.length]);
+
+  const visibleEntries =
+    entries.length <= visibleCount ? entries : entries.slice(0, visibleCount);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || visibleCount >= entries.length) return;
+
+    const obs = new IntersectionObserver(
+      (records) => {
+        if (records.some((r) => r.isIntersecting)) {
+          setVisibleCount((prev) =>
+            prev >= entries.length ? prev : Math.min(prev + FEED_PAGE_SIZE, entries.length),
+          );
+        }
+      },
+      { root: null, rootMargin: "240px", threshold: 0 },
+    );
+
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [visibleCount, entries.length]);
+
   const hasFriends = (friendShares?.length ?? 0) > 0;
   const loading =
     myMeals === undefined ||
@@ -210,7 +241,7 @@ export default function FeedPage() {
       )}
 
       <div className="space-y-4">
-        {entries.map((e) => (
+        {visibleEntries.map((e) => (
           <FeedCard
             key={`${e.author.uid}_${e.meal.id}`}
             entry={e}
@@ -220,6 +251,12 @@ export default function FeedPage() {
           />
         ))}
       </div>
+
+      {!loading && visibleCount < entries.length && (
+        <div ref={sentinelRef} className="flex justify-center py-6" aria-hidden>
+          <span className="text-xs text-slate-500">더 불러오는 중…</span>
+        </div>
+      )}
     </div>
   );
 }

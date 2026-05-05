@@ -90,6 +90,62 @@ service cloud.firestore {
       allow delete: if signedIn() && me() == uid;
     }
 
+    // ----- 링크 초대 코드 (1회용 토큰) -----
+    // /friendInviteCodes/{codeId} — 발급자(fromUid)가 링크를 공유하고, 수락자가 share 를 만든다.
+    match /friendInviteCodes/{codeId} {
+      allow get: if signedIn();
+      allow list: if signedIn() && resource.data.fromUid == me();
+
+      allow create: if signedIn()
+        && codeId == request.resource.data.id
+        && request.resource.data.fromUid == me()
+        && request.resource.data.fromEmail == myEmail()
+        && request.resource.data.fromName is string
+        && request.resource.data.fromName.size() > 0
+        && request.resource.data.fromName.size() <= 80
+        && request.resource.data.requestedScope.calendar == true
+        && request.resource.data.requestedScope.health == false
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt is int
+        && request.resource.data.expiresAt is int
+        && request.resource.data.expiresAt > request.resource.data.createdAt
+        && request.resource.data.expiresAt
+             <= request.resource.data.createdAt + duration.value(72, 'h');
+
+      allow delete: if signedIn() && resource.data.fromUid == me();
+
+      function invitePhotoUnchanged() {
+        return (!('fromPhotoURL' in resource.data) && !('fromPhotoURL' in request.resource.data))
+          || request.resource.data.fromPhotoURL == resource.data.fromPhotoURL;
+      }
+
+      allow update: if signedIn()
+        && resource.data.status == 'pending'
+        && request.time.toMillis() < resource.data.expiresAt
+        && invitePhotoUnchanged()
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.fromUid == resource.data.fromUid
+        && request.resource.data.fromEmail == resource.data.fromEmail
+        && request.resource.data.fromName == resource.data.fromName
+        && request.resource.data.requestedScope == resource.data.requestedScope
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.expiresAt == resource.data.expiresAt
+        && (
+          (
+            request.resource.data.status == 'used'
+            && me() != resource.data.fromUid
+            && request.resource.data.usedByUid == me()
+            && request.resource.data.usedByEmail == myEmail()
+            && request.resource.data.usedAt is int
+          )
+          || (
+            request.resource.data.status == 'revoked'
+            && me() == resource.data.fromUid
+            && request.resource.data.revokedAt is int
+          )
+        );
+    }
+
     // ----- follow 신청 -----
     // 신청자(fromUid)가 수신자(toEmail/toUid)에게 보고 싶은 범위(requestedScope)를 보냄.
     // 수락은 수신자만 가능 (acceptedScope 는 수신자가 결정 후 shares 문서를 함께 만든다).

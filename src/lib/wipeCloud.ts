@@ -7,6 +7,7 @@
  *   2) /publicProfiles/{me}
  *   3) /shares 중 ownerUid === me 또는 viewerUid === me
  *   4) /followRequests 중 fromUid === me 또는 toEmail === myEmail
+ *   5) /friendInviteCodes 중 fromUid === me (내가 발급한 초대 토큰)
  *
  * Firestore 클라이언트 SDK 는 서브컬렉션을 자동으로 정리하지 않으므로 트리를
  * 명시적으로 순회한다. 일부 문서가 실패해도 나머지는 계속 시도(best-effort).
@@ -34,6 +35,7 @@ interface WipeReport {
     members: number;
     shares: number;
     followRequests: number;
+    friendInviteCodes: number;
   };
 }
 
@@ -82,6 +84,7 @@ export async function wipeMyCloudData(
       members: 0,
       shares: 0,
       followRequests: 0,
+      friendInviteCodes: 0,
     },
   };
 
@@ -240,6 +243,28 @@ export async function wipeMyCloudData(
       await safe("followReq.commit", () => batch.commit(), report);
       report.counts.followRequests += used;
     }
+  }
+
+  // ---- 8) friendInviteCodes (issued by me) ----
+  const inviteSnap = await safe(
+    "friendInviteCodes.from.list",
+    () =>
+      getDocs(
+        query(
+          collection(fs, "friendInviteCodes"),
+          where("fromUid", "==", uid),
+        ),
+      ),
+    report,
+  );
+  if (inviteSnap && !inviteSnap.empty) {
+    const inviteDocs = inviteSnap.docs;
+    for (let i = 0; i < inviteDocs.length; i += 400) {
+      const batch = writeBatch(fs);
+      inviteDocs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      await safe("friendInviteCodes.commit", () => batch.commit(), report);
+    }
+    report.counts.friendInviteCodes = inviteDocs.length;
   }
 
   return report;
