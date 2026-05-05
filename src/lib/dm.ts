@@ -41,14 +41,14 @@ function dmReadDoc(myUid: string, threadId: string) {
 /** 상대방과 대화 시작 — 스레드 문서가 없으면 만든다 */
 export async function ensureDmThreadWith(peerUid: string): Promise<string> {
   const me = requireUser();
-  if (!peerUid || peerUid === me) throw new Error("쪽지 상대 정보가 필요합니다.");
+  if (!peerUid || peerUid === me) throw new Error("DM 상대 정보가 필요합니다.");
   const tid = dmThreadIdForPair(me, peerUid);
   const ref = doc(getFirestoreDb(), "dmThreads", tid);
   const s = await getDoc(ref);
   if (!s.exists()) {
     const linked = await isCalendarConnectedPair(me, peerUid);
     if (!linked) {
-      throw new Error("서로 달력을 공유한 친구끼리만 쪽지를 보낼 수 있어요.");
+      throw new Error("서로 친구로 연결된 경우에만 DM을 보낼 수 있어요.");
     }
     const now = Date.now();
     const p = participantsTuple(me, peerUid);
@@ -136,7 +136,7 @@ export async function sendDmMessage(threadId: string, rawText: string): Promise<
     throw new Error("이 대화에 참가할 수 없습니다.");
   }
   const linked = await isCalendarConnectedPair(p[0], p[1]);
-  if (!linked) throw new Error("달력 공유가 끊겨 새 쪽지를 보낼 수 없어요.");
+  if (!linked) throw new Error("달력 공유가 끊겨 새 DM을 보낼 수 없어요.");
 
   const msgRef = doc(collection(fs, "dmThreads", threadId, "messages"));
   const now = Date.now();

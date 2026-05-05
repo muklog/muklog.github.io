@@ -126,7 +126,7 @@ export default function DmChatPage() {
         </button>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-slate-100">{peerLabel}</p>
-          <p className="text-[11px] text-slate-500">쪽지</p>
+          <p className="text-[11px] text-slate-500">DM</p>
         </div>
       </header>
 
@@ -142,7 +142,7 @@ export default function DmChatPage() {
       <div className="mt-auto flex shrink-0 flex-col gap-1 border-t border-slate-800 pt-3">
         {!canSend && (
           <p className="text-[11px] text-amber-400/90">
-            서로 달력을 공유 중일 때만 새 쪽지를 보낼 수 있어요. 이전 메시지는 계속 볼 수 있어요.
+            서로 달력을 공유 중일 때만 새 DM을 보낼 수 있어요. 이전 메시지는 계속 볼 수 있어요.
           </p>
         )}
         <div className="flex gap-2">
@@ -194,7 +194,7 @@ function HeaderSkeleton() {
   return (
     <header className="flex items-center gap-2">
       <ArrowLeft size={20} className="opacity-40" />
-      <h1 className="text-lg font-bold text-slate-500">쪽지</h1>
+      <h1 className="text-lg font-bold text-slate-500">DM</h1>
     </header>
   );
 }

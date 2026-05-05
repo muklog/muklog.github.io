@@ -10,32 +10,33 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import Calendar, { type DayCount } from "../components/Calendar";
 import {
-  getMyViewerShare,
+  getFriendConnection,
   permissionDeniedMessage,
   subscribeFriendMealsInRange,
 } from "../lib/friends";
-import type { Share } from "../types";
 import { dateKey, formatKoDate } from "../lib/utils";
 
 export default function FriendProfilePage() {
   const { uid: friendUid = "" } = useParams();
   const navigate = useNavigate();
   const { user, firebaseReady } = useAuth();
-  // null = 로딩, "missing" = 권한 없음(=share 문서 없음)
-  const [share, setShare] = useState<Share | null | "missing">(null);
+  // null = 로딩, "missing" = 양방향 share 없음 또는 DM 연결 불가
+  const [connection, setConnection] = useState<
+    Awaited<ReturnType<typeof getFriendConnection>> | "missing" | null
+  >(null);
 
   useEffect(() => {
     if (!user || !friendUid) return;
     let cancelled = false;
     (async () => {
       try {
-        const s = await getMyViewerShare(friendUid);
+        const c = await getFriendConnection(friendUid);
         if (cancelled) return;
-        setShare(s ?? "missing");
+        setConnection(c ?? "missing");
       } catch (e) {
         if (!cancelled) {
           console.warn("[friend profile] share fetch", e);
-          setShare("missing");
+          setConnection("missing");
         }
       }
     })();
@@ -46,19 +47,19 @@ export default function FriendProfilePage() {
 
   if (!firebaseReady) return <Shell>Firebase 연동이 필요해요.</Shell>;
   if (!user) return <Shell>로그인이 필요해요.</Shell>;
-  if (share === null) {
+  if (connection === null) {
     return (
       <Shell>
         <Loader2 size={16} className="mr-1 inline animate-spin" /> 불러오는 중…
       </Shell>
     );
   }
-  if (share === "missing") {
+  if (connection === "missing") {
     return (
       <Shell>
         <p className="mb-3">
-          이 친구가 공개한 기록이 없어요. 친구 탭에서 <strong className="text-slate-200">초대 링크</strong>를 보내 받은 뒤
-          수락하면 볼 수 있어요.
+          연결된 친구가 아니에요. 친구 탭에서 <strong className="text-slate-200">초대 링크</strong>로 맞추거나, 상대가 보낸 링크로
+          수락해 주세요.
         </p>
         <div className="flex gap-2">
           <button
@@ -72,8 +73,7 @@ export default function FriendProfilePage() {
     );
   }
 
-  const name = share.ownerName || "친구";
-  const canCalendar = share.scope.calendar;
+  const name = connection.displayName;
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-4">
@@ -94,18 +94,18 @@ export default function FriendProfilePage() {
         <Link
           to={`/messages?with=${encodeURIComponent(friendUid)}`}
           className="btn-secondary flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2 text-sm"
-          aria-label="쪽지 보내기"
+          aria-label="DM 보내기"
         >
           <MessageCircle size={18} strokeWidth={2} />
-          쪽지
+          DM
         </Link>
       </header>
 
-      {canCalendar ? (
+      {connection.canViewFriendCalendar ? (
         <FriendCalendarTab friendUid={friendUid} />
       ) : (
         <div className="card p-4 text-center text-sm text-slate-400">
-          이 친구가 공개한 기록이 없어요.
+          이 친구의 식단 달력은 아직 볼 수 없어요. 상대가 나에게 달력을 공개하면 여기에 표시돼요.
         </div>
       )}
     </div>

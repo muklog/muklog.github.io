@@ -22,12 +22,16 @@ service cloud.firestore {
         && s.scope[scope] == true;
     }
 
-    /** owner 가 viewer 에게 달력 공유(shares.scope.calendar) */
+    /** owner 가 viewer 에게 달력 공유 허용(shared 문서 존재 + calendar 가 명시적으로 false 가 아님) */
     function calendarShareToward(ownerUid, viewerUid) {
-      return exists(/databases/$(database)/documents/shares/$(ownerUid + '_' + viewerUid))
-        && get(/databases/$(database)/documents/shares/$(ownerUid + '_' + viewerUid)).data.scope.calendar == true;
+      let p = /databases/$(database)/documents/shares/$(ownerUid + '_' + viewerUid);
+      return exists(p) && (
+        !('scope' in get(p).data)
+        || !('calendar' in get(p).data.scope)
+        || get(p).data.scope.calendar == true
+      );
     }
-    /** 한쪽이라도 서로에게 달력 공유가 열려 있는지 — DM 신규·쪽지 작성·일부 알림 검증용 */
+    /** 한쪽이라도 위 조건이면 DM·알림(같은 경로) 허용 — 레거시 scope 누락 문서와 맞춤 */
     function dmCalendarConnected(a, b) {
       return calendarShareToward(a, b) || calendarShareToward(b, a);
     }
@@ -129,7 +133,7 @@ service cloud.firestore {
       allow read, write: if signedIn() && me() == userId;
     }
 
-    // ----- 1:1 쪽지 -----
+    // ----- 1:1 DM -----
     function dmPairOk(p) {
       return p is list
         && p.size() == 2

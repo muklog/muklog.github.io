@@ -114,7 +114,7 @@ export default function MessagesPage() {
 
       {threads.length === 0 ? (
         <p className="card p-8 text-center text-sm text-slate-400">
-          아직 대화가 없어요. 친구 프로필에서 「쪽지」로 인사해 보세요.
+          아직 대화가 없어요. 친구 탭 또는 피드에서 친구 이름을 눌러 DM을 보내 보세요.
         </p>
       ) : (
         <ul className="space-y-2">
@@ -153,7 +153,7 @@ function TitleBlock({ dmUnread }: { dmUnread: number }) {
       <p className="text-xs text-slate-400">직접 메시지</p>
       <h1 className="flex items-center gap-2 text-xl font-bold">
         <MessageCircle size={18} className="text-brand-400" />
-        쪽지
+        DM
         {dmUnread > 0 && (
           <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">
             {dmUnread > 99 ? "99+" : dmUnread}

@@ -14,7 +14,7 @@ import {
   unreadDmThreadCount,
 } from "../lib/dm";
 
-/** 피드 헤더 — 활동 알림 · 쪽지 진입 및 미읽음 배지 */
+/** 피드 헤더 — 활동 알림 · DM 진입 및 미읽음 배지 */
 export default function FeedAlertsHeaderIcons() {
   const { user, firebaseReady } = useAuth();
   const myUid = user?.uid;
@@ -70,7 +70,7 @@ export default function FeedAlertsHeaderIcons() {
             ? "border-brand-400/40 bg-brand-500/15 text-brand-200"
             : "border-slate-700 bg-slate-900/50 text-slate-300 hover:bg-slate-800",
         )}
-        aria-label={`쪽지 ${dmUnread > 0 ? `미읽음 ${dmUnread}건` : ""}`}
+        aria-label={`DM ${dmUnread > 0 ? `미읽음 ${dmUnread}건` : ""}`}
       >
         <MessageCircle size={18} strokeWidth={2} />
         {dmUnread > 0 && (

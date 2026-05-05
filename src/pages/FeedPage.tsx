@@ -146,6 +146,7 @@ export default function FeedPage() {
             key={`${e.author.uid}_${e.meal.id}`}
             entry={e}
             showSocial={!!myUid}
+            myFirebaseUid={myUid}
             myUserId={myUserId}
             myApiKey={apiKey}
           />
@@ -164,12 +165,14 @@ export default function FeedPage() {
 interface FeedCardProps {
   entry: FeedEntry;
   showSocial: boolean;
+  /** Firebase uid — 로그인 시 친구 닉네임에서 DM 진입 */
+  myFirebaseUid: string | undefined;
   /** 내 local Dexie userId — "내 게시물" 수정/재분석에 필요 */
   myUserId: string | undefined;
   myApiKey: string | undefined;
 }
 
-function FeedCard({ entry, showSocial, myUserId, myApiKey }: FeedCardProps) {
+function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: FeedCardProps) {
   const { author, meal, isMine } = entry;
   const items = meal.items ?? [];
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -238,8 +241,18 @@ function FeedCard({ entry, showSocial, myUserId, myApiKey }: FeedCardProps) {
       <header className="flex items-center gap-3 border-b border-slate-800 px-4 py-3">
         <AuthorAvatar author={author} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <p className="truncate text-sm font-semibold text-slate-100">{author.name}</p>
+          <div className="flex items-center gap-1.5 min-w-0">
+            {!isMine && myFirebaseUid ? (
+              <Link
+                to={`/messages?with=${encodeURIComponent(author.uid)}`}
+                className="truncate text-sm font-semibold text-brand-200 hover:underline"
+                title="DM 보내기"
+              >
+                {author.name}
+              </Link>
+            ) : (
+              <p className="truncate text-sm font-semibold text-slate-100">{author.name}</p>
+            )}
             {isMine && (
               <span className="shrink-0 rounded-full bg-brand-500/15 px-1.5 py-0.5 text-[10px] text-brand-200">
                 나

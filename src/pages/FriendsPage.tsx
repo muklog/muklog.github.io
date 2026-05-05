@@ -7,6 +7,7 @@ import {
   Copy,
   Link2,
   Loader2,
+  MessageCircle,
   Share2,
   Trash2,
   Users,
@@ -86,12 +87,7 @@ export default function FriendsPage() {
     <div className="flex flex-col gap-4 px-4 pt-5">
       <Header />
 
-      <FriendsTab
-        outShares={outShares}
-        inShares={inShares}
-        myUid={user.uid}
-        error={errF}
-      />
+      <FriendsTab outShares={outShares} inShares={inShares} error={errF} />
     </div>
   );
 }
@@ -179,12 +175,10 @@ function combineRows(outShares: Share[], inShares: Share[]): FriendRow[] {
 function FriendsTab({
   outShares,
   inShares,
-  myUid,
   error,
 }: {
   outShares: Share[] | null;
   inShares: Share[] | null;
-  myUid: string;
   error?: string | null;
 }) {
   const rows = useMemo(() => {
@@ -206,7 +200,7 @@ function FriendsTab({
           </p>
         )}
         {rows?.map((r) => (
-          <FriendCard key={r.otherUid} row={r} myUid={myUid} />
+          <FriendCard key={r.otherUid} row={r} />
         ))}
       </section>
     </>
@@ -333,7 +327,7 @@ function LinkInviteCard() {
   );
 }
 
-function FriendCard({ row, myUid }: { row: FriendRow; myUid: string }) {
+function FriendCard({ row }: { row: FriendRow }) {
   const { otherUid, name, photo, outgoing, incoming } = row;
   const mutual = !!outgoing && !!incoming;
   const [busy, setBusy] = useState<"stopOut" | "stopIn" | null>(null);
@@ -375,39 +369,48 @@ function FriendCard({ row, myUid }: { row: FriendRow; myUid: string }) {
     }
   }
 
-  void myUid;
-
   return (
     <div className="card overflow-hidden">
-      <Link
-        to={`/friends/${otherUid}`}
-        className="flex items-center gap-3 p-3 hover:bg-slate-900/60"
-      >
-        <Avatar name={name} photoURL={photo} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="truncate text-sm font-semibold text-slate-100">{name}</p>
-            {mutual ? (
-              <span className="shrink-0 rounded-full bg-brand-500/20 px-1.5 py-0.5 text-[10px] font-medium text-brand-200">
-                맞팔
-              </span>
-            ) : incoming ? (
-              <span className="shrink-0 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-200">
-                팔로우 중
-              </span>
-            ) : (
-              <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200">
-                나를 팔로우
-              </span>
-            )}
+      <div className="flex items-stretch">
+        <Link
+          to={`/friends/${otherUid}`}
+          className="flex min-w-0 flex-1 items-center gap-3 p-3 hover:bg-slate-900/60"
+        >
+          <Avatar name={name} photoURL={photo} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="truncate text-sm font-semibold text-slate-100">{name}</p>
+              {mutual ? (
+                <span className="shrink-0 rounded-full bg-brand-500/20 px-1.5 py-0.5 text-[10px] font-medium text-brand-200">
+                  맞팔
+                </span>
+              ) : incoming ? (
+                <span className="shrink-0 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-200">
+                  팔로우 중
+                </span>
+              ) : (
+                <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200">
+                  나를 팔로우
+                </span>
+              )}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1">
+              <RoleBadge prefix="내가 공개" active={!!outgoing} tone="brand" />
+              <RoleBadge prefix="내가 보는 범위" active={!!incoming} tone="slate" />
+            </div>
           </div>
-          <div className="mt-1 flex flex-wrap gap-1">
-            <RoleBadge prefix="내가 공개" active={!!outgoing} tone="brand" />
-            <RoleBadge prefix="내가 보는 범위" active={!!incoming} tone="slate" />
-          </div>
-        </div>
-        <ChevronRight size={18} className="shrink-0 text-slate-500" />
-      </Link>
+          <ChevronRight size={18} className="shrink-0 text-slate-500" />
+        </Link>
+        <Link
+          to={`/messages?with=${encodeURIComponent(otherUid)}`}
+          title="DM"
+          aria-label={`${name}님에게 DM`}
+          className="flex shrink-0 flex-col items-center justify-center border-l border-slate-800 px-3 py-3 text-brand-400 hover:bg-slate-800/70"
+        >
+          <MessageCircle size={22} strokeWidth={2} />
+          <span className="mt-1 text-[10px] font-medium text-slate-400">DM</span>
+        </Link>
+      </div>
       <div className="space-y-2 border-t border-slate-800 px-3 py-2">
         {err && (
           <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-1.5 text-[11px] text-rose-200">

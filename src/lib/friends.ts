@@ -80,9 +80,15 @@ export function shareIdFor(ownerUid: string, viewerUid: string): string {
   return `${ownerUid}_${viewerUid}`;
 }
 
+/** shares 문서 기준으로 한쪽이라도 DM 가능한지(명시적 calendar:false 제외, scope 없으면 허용·규칙과 동일). */
+export function shareDocAllowsDmConnection(share: Share): boolean {
+  if (share.scope == null) return true;
+  return share.scope.calendar !== false;
+}
+
 /**
- * 한쪽이라도 달력 공유(shares 의 scope.calendar)가 열려 있으면 "연결됨".
- * DM은 이 관계일 때만 스레드를 만들 수 있고, 이후 새 메시지는 규칙으로도 동일 조건이다.
+ * 한쪽이라도 shares 가 있고 dm 연결이 허용되면 true.
+ * 규칙의 dmCalendarConnected 과 맞춘다.
  */
 export async function isCalendarConnectedPair(uidA: string, uidB: string): Promise<boolean> {
   if (!uidA || !uidB || uidA === uidB) return false;
@@ -94,10 +100,61 @@ export async function isCalendarConnectedPair(uidA: string, uidB: string): Promi
   for (const ref of refs) {
     const snap = await getDoc(ref);
     if (!snap.exists()) continue;
-    const scope = (snap.data() as Share).scope;
-    if (scope?.calendar === true) return true;
+    const sh = { id: snap.id, ...snap.data() } as Share;
+    if (shareDocAllowsDmConnection(sh)) return true;
   }
   return false;
+}
+
+/** 나↔peer 사이 share 를 조회. 상대 식단 보기 = incoming(owner=peer). 프로필/DM 표시용 */
+export async function getFriendConnection(peerUid: string): Promise<{
+  displayName: string;
+  photoURL?: string;
+  incoming: Share | null;
+  outgoing: Share | null;
+  canViewFriendCalendar: boolean;
+} | null> {
+  const me = requireUser();
+  if (!peerUid || peerUid === me.uid) return null;
+  const fs = getFirestoreDb();
+
+  const incSnap = await getDoc(doc(fs, "shares", shareIdFor(peerUid, me.uid)));
+  const outSnap = await getDoc(doc(fs, "shares", shareIdFor(me.uid, peerUid)));
+  const incoming = incSnap.exists()
+    ? ({ id: incSnap.id, ...incSnap.data() } as Share)
+    : null;
+  const outgoing = outSnap.exists()
+    ? ({ id: outSnap.id, ...outSnap.data() } as Share)
+    : null;
+
+  const incOk = !!(incoming && shareDocAllowsDmConnection(incoming));
+  const outOk = !!(outgoing && shareDocAllowsDmConnection(outgoing));
+
+  if (!incOk && !outOk) return null;
+
+  let displayName = "친구";
+  let photoURL: string | undefined;
+  if (incOk && incoming) {
+    displayName = incoming.ownerName || displayName;
+    photoURL = incoming.ownerPhotoURL ?? undefined;
+  } else if (outOk && outgoing) {
+    displayName = outgoing.viewerName || displayName;
+    photoURL = outgoing.viewerPhotoURL ?? undefined;
+  }
+
+  const canViewFriendCalendar = !!(
+    incOk &&
+    incoming &&
+    incoming.scope?.calendar === true
+  );
+
+  return {
+    displayName,
+    photoURL,
+    incoming: incOk ? incoming : null,
+    outgoing: outOk ? outgoing : null,
+    canViewFriendCalendar,
+  };
 }
 
 function requireUser(): FirebaseUser {
