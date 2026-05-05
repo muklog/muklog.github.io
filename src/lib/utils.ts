@@ -12,14 +12,25 @@ export function dateKey(date: Date = new Date()): string {
   return format(date, DATE_KEY_FMT);
 }
 
-/** 현재 시각 기준 오늘 끼니 슬롯 추천 (빠른 기록 진입용) */
+/**
+ * 현재 시각(로컬) 기준으로 오늘 기록 넣기에 맞는 끼니 슬롯.
+ * 버튼·링크는 매 렌더마다 호출되어 탭을 켜 둔 동안 시간이 바뀌면 다음 이동에 반영된다.
+ */
 export function suggestMealSlotForNow(now: Date = new Date()): MealSlot {
-  const t = now.getHours() + now.getMinutes() / 60;
-  if (t < 10) return "breakfast";
-  if (t < 11.5) return "morningSnack";
-  if (t < 15) return "lunch";
-  if (t < 17) return "afternoonSnack";
-  if (t < 21.5) return "dinner";
+  const m = now.getHours() * 60 + now.getMinutes();
+  // 새벽 ~ 이른 아침: 야식/간식
+  if (m < 5 * 60) return "eveningSnack";
+  // 아침 05:00–09:59
+  if (m < 10 * 60) return "breakfast";
+  // 오전 간식 10:00–10:59
+  if (m < 11 * 60) return "morningSnack";
+  // 점심 11:00–14:29
+  if (m < 14 * 60 + 30) return "lunch";
+  // 오후 간식 14:30–16:59
+  if (m < 17 * 60) return "afternoonSnack";
+  // 저녁 17:00–21:29
+  if (m < 21 * 60 + 30) return "dinner";
+  // 밤 이후 야식
   return "eveningSnack";
 }
 

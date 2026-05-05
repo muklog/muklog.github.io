@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Sparkles, ChevronRight } from "lucide-react";
+import { Sparkles, ChevronRight, Plus } from "lucide-react";
 import { db, getSettings } from "../lib/db";
 import Calendar from "../components/Calendar";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
-import { dateKey, formatKoDate } from "../lib/utils";
+import { dateKey, formatKoDate, suggestMealSlotForNow } from "../lib/utils";
 import { MEAL_SLOTS, MEAL_SLOT_EMOJI, MEAL_SLOT_LABELS } from "../types";
 
 export default function HomePage() {
@@ -41,22 +41,34 @@ export default function HomePage() {
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-5">
-      <header className="flex items-center justify-between">
-        <div>
+      <header className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <p className="text-xs text-slate-400">오늘의 식단을 기록해요</p>
           <h1 className="text-xl font-bold">
             <Sparkles size={18} className="mb-0.5 mr-1 inline text-brand-400" />
             헬스헬스
           </h1>
         </div>
-        {latestScore !== undefined && (
-          <Link
-            to="/health"
-            className="rounded-full border border-slate-800 bg-slate-900 px-3 py-1.5 text-sm font-semibold text-slate-200"
-          >
-            건강 {latestScore}점
-          </Link>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {userId && (
+            <Link
+              to={`/day/${dateKey()}?slot=${suggestMealSlotForNow()}`}
+              className="btn-primary inline-flex h-10 w-10 items-center justify-center rounded-full p-0"
+              aria-label="오늘 식단 사진 추가"
+              title="오늘 식단 기록"
+            >
+              <Plus size={22} strokeWidth={2.5} />
+            </Link>
+          )}
+          {latestScore !== undefined && (
+            <Link
+              to="/health"
+              className="rounded-full border border-slate-800 bg-slate-900 px-3 py-1.5 text-sm font-semibold text-slate-200"
+            >
+              건강 {latestScore}점
+            </Link>
+          )}
+        </div>
       </header>
 
       <Calendar

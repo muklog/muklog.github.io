@@ -114,7 +114,6 @@ interface FriendRow {
   /** 상대 uid */
   otherUid: string;
   name: string;
-  email: string;
   photo?: string;
   /** 내가 owner — 내가 상대에게 공개하는 share */
   outgoing?: Share;
@@ -146,7 +145,6 @@ function combineRows(outShares: Share[], inShares: Share[]): FriendRow[] {
     map.set(other, {
       otherUid: other,
       name: s.ownerName,
-      email: s.ownerEmail,
       photo: s.ownerPhotoURL,
       incoming: s,
     });
@@ -160,13 +158,11 @@ function combineRows(outShares: Share[], inShares: Share[]): FriendRow[] {
     if (cur) {
       cur.outgoing = s;
       cur.name = s.viewerName || cur.name;
-      cur.email = s.viewerEmail || cur.email;
       cur.photo = s.viewerPhotoURL || cur.photo;
     } else {
       map.set(other, {
         otherUid: other,
         name: s.viewerName,
-        email: s.viewerEmail,
         photo: s.viewerPhotoURL,
         outgoing: s,
       });
@@ -338,7 +334,7 @@ function LinkInviteCard() {
 }
 
 function FriendCard({ row, myUid }: { row: FriendRow; myUid: string }) {
-  const { otherUid, name, email, photo, outgoing, incoming } = row;
+  const { otherUid, name, photo, outgoing, incoming } = row;
   const mutual = !!outgoing && !!incoming;
   const [busy, setBusy] = useState<"stopOut" | "stopIn" | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -405,7 +401,6 @@ function FriendCard({ row, myUid }: { row: FriendRow; myUid: string }) {
               </span>
             )}
           </div>
-          <p className="truncate text-xs text-slate-500">{email}</p>
           <div className="mt-1 flex flex-wrap gap-1">
             <RoleBadge prefix="내가 공개" active={!!outgoing} tone="brand" />
             <RoleBadge prefix="내가 보는 범위" active={!!incoming} tone="slate" />
@@ -478,7 +473,7 @@ function RoleBadge({
           : "bg-slate-800 text-slate-300",
       )}
     >
-      {prefix}: {active ? "달력(식사)" : "없음"}
+      {prefix}: {active ? "식단" : "없음"}
     </span>
   );
 }

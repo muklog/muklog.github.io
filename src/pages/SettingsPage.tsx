@@ -237,7 +237,7 @@ export default function SettingsPage() {
             <ProfileIdentitySection user={profileUser} authUser={user} />
             <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
               <p className="mb-2 text-[11px] text-slate-500">
-                피드·달력 등에서 내 항목을 구분할 때 쓰이는 색이에요.
+                피드·식단 등에서 내 항목을 구분할 때 쓰이는 색이에요.
               </p>
               <div className="flex items-center gap-3">
                 <span className="shrink-0 text-xs text-slate-400">식별 색</span>

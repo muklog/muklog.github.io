@@ -217,7 +217,7 @@ export default function FeedPage() {
             </Link>
           )}
           <Link to="/home" className="btn-secondary whitespace-nowrap py-2 text-sm">
-            <Home size={14} /> 달력
+            <Home size={14} /> 식단
           </Link>
         </div>
       </header>

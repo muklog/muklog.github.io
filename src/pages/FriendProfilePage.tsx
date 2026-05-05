@@ -72,7 +72,6 @@ export default function FriendProfilePage() {
   }
 
   const name = share.ownerName || "친구";
-  const email = share.ownerEmail || "";
   const canCalendar = share.scope.calendar;
 
   return (
@@ -90,7 +89,6 @@ export default function FriendProfilePage() {
             <Users size={12} className="mb-0.5 mr-0.5 inline" /> 친구 프로필
           </p>
           <h1 className="truncate text-lg font-bold">{name}</h1>
-          <p className="truncate text-[11px] text-slate-500">{email}</p>
         </div>
       </header>
 

@@ -4,7 +4,7 @@ import { cls } from "../lib/utils";
 
 const items = [
   { to: "/", label: "피드", icon: Rss },
-  { to: "/home", label: "달력", icon: Calendar },
+  { to: "/home", label: "식단", icon: Calendar },
   { to: "/health", label: "건강", icon: HeartPulse },
   { to: "/friends", label: "친구", icon: Users },
   { to: "/settings", label: "설정", icon: Settings },
