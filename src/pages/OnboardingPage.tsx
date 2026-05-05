@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { useLiveQuery } from "dexie-react-hooks";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
-import { afterUserDataMutation, db, patchSettings, uid } from "../lib/db";
+import { afterUserDataMutation, db, getSettings, patchSettings, uid } from "../lib/db";
 import { nextColor } from "../lib/utils";
 import { useAuth } from "../contexts/AuthContext";
 import type { User } from "../types";
@@ -13,13 +14,44 @@ export default function OnboardingPage() {
   const [apiKey, setApiKey] = useState("");
   const [useGoogleAvatar, setUseGoogleAvatar] = useState(true);
   const [busy, setBusy] = useState(false);
+  // 사용자가 입력란을 만지기 시작했는지 — 일단 만지면 자동 prefill 이 더 이상
+  // 덮어쓰지 않게 한다(클라우드/구글 값이 늦게 도착해도 사용자 입력 보존).
+  const [touchedName, setTouchedName] = useState(false);
 
-  // 구글 로그인이 완료되면 이름 필드를 자동으로 채워 준다 — 사용자가 이미
-  // 입력하기 시작한 경우에는 덮어쓰지 않는다.
+  // 클라우드 동기화나 1인 모드 보정으로 이미 Dexie 에 user 가 들어있으면
+  // 그 정보를 가져와 입력란에 미리 채워준다 — "이미 쓰던 계정으로 재진입" 시
+  // 사용자가 굳이 다시 입력하지 않도록.
+  const existingUser = useLiveQuery(async () => {
+    const s = await getSettings();
+    if (s?.activeUserId) {
+      const u = await db.users.get(s.activeUserId);
+      if (u) return u;
+    }
+    return await db.users.orderBy("createdAt").first();
+  }, []);
+
   useEffect(() => {
-    if (!authUser) return;
-    setDisplayName((prev) => prev || authUser.displayName || "");
-  }, [authUser?.uid, authUser?.displayName]);
+    if (touchedName) return;
+    if (existingUser?.name) {
+      setDisplayName(existingUser.name);
+      if (existingUser.color) setColor(existingUser.color);
+      if (existingUser.avatarKind) {
+        setUseGoogleAvatar(existingUser.avatarKind === "google");
+      }
+      return;
+    }
+    if (authUser?.displayName) {
+      setDisplayName(authUser.displayName);
+    }
+  }, [
+    existingUser?.id,
+    existingUser?.name,
+    existingUser?.color,
+    existingUser?.avatarKind,
+    authUser?.uid,
+    authUser?.displayName,
+    touchedName,
+  ]);
 
   async function finish() {
     const name = displayName.trim();
@@ -30,26 +62,52 @@ export default function OnboardingPage() {
     setBusy(true);
     try {
       const now = Date.now();
-      const id = uid();
       const googleAvatarAvailable = !!authUser?.photoURL;
-      const newUser: User = {
-        id,
-        name,
-        color,
-        // 구글 로그인 + "구글 사진 사용" 체크 시 avatarKind="google".
-        // 체크 해제나 로그인 없이 진행 시 undefined — 이니셜 폴백.
-        avatarKind:
-          googleAvatarAvailable && useGoogleAvatar ? "google" : undefined,
-        createdAt: now,
-        updatedAt: now,
-      };
-      await db.users.bulkPut([newUser]);
-      afterUserDataMutation();
-      await patchSettings({
-        onboarded: true,
-        activeUserId: id,
-        geminiApiKey: apiKey.trim() || undefined,
-      });
+      // "이미 user 가 있다" = 클라우드 동기화로 복원된 경우 또는 직접 /onboarding
+      // 으로 들어온 기존 사용자. 새 user 를 또 만들지 말고 기존 row 를 갱신한다.
+      const settings = await getSettings();
+      const baseUserId = settings?.activeUserId || existingUser?.id;
+      const baseUser = baseUserId ? await db.users.get(baseUserId) : undefined;
+
+      if (baseUser) {
+        const next: User = {
+          ...baseUser,
+          name,
+          color,
+          avatarKind:
+            googleAvatarAvailable && useGoogleAvatar
+              ? "google"
+              : baseUser.avatarKind && baseUser.avatarKind !== "google"
+                ? baseUser.avatarKind
+                : undefined,
+          updatedAt: now,
+        };
+        await db.users.put(next);
+        afterUserDataMutation();
+        await patchSettings({
+          onboarded: true,
+          activeUserId: next.id,
+          geminiApiKey: apiKey.trim() || settings?.geminiApiKey,
+        });
+      } else {
+        const id = uid();
+        const newUser: User = {
+          id,
+          name,
+          color,
+          avatarKind:
+            googleAvatarAvailable && useGoogleAvatar ? "google" : undefined,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await db.users.bulkPut([newUser]);
+        afterUserDataMutation();
+        await patchSettings({
+          onboarded: true,
+          activeUserId: id,
+          geminiApiKey: apiKey.trim() || undefined,
+        });
+      }
       window.location.replace(`${window.location.origin}${import.meta.env.BASE_URL}#/`);
     } catch (e) {
       console.error(e);
@@ -118,7 +176,10 @@ export default function OnboardingPage() {
           )}
           <input
             value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            onChange={(e) => {
+              setDisplayName(e.target.value);
+              setTouchedName(true);
+            }}
             placeholder="표시 이름"
             className="input border-transparent bg-transparent flex-1 px-2"
             maxLength={16}

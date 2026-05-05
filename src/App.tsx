@@ -67,9 +67,12 @@ export default function App() {
   // 친구 초대 링크는 앱을 처음 쓰는 사람이 수신하므로 온보딩 전에도 접근 허용.
   const isInviteRoute = location.pathname.startsWith("/friends/invite");
 
-  if (!needsOnboarding && isOnboardingRoute) {
-    return <Navigate to="/" replace />;
-  }
+  // 온보딩 페이지에서 사용자가 닉네임·아바타를 다듬고 있는 동안에는 클라우드
+  // 동기화로 user/onboarded 가 채워져도 자동으로 메인으로 이탈하지 않는다.
+  // (이전엔 `if (!needsOnboarding && isOnboardingRoute) { Navigate("/") }` 가
+  // 있었지만, 첫 로그인 직후 클라우드에서 기존 프로필이 들어오면 사용자가
+  // 아직 입력 중인데도 페이지가 휙 넘어가는 버그를 일으켰다. 명시적으로
+  // "시작하기" 를 눌러야만 finish() 가 navigate 하도록 단순화.)
 
   // 클라우드 복원: 온보딩 전에도 설정에서 Google 로그인 가능
   if (needsOnboarding && !isOnboardingRoute && !isSettingsRoute && !isInviteRoute) {

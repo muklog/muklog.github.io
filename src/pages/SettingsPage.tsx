@@ -26,6 +26,7 @@ import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { normalizeTheme, persistTheme } from "../lib/theme";
 import { THEME_IDS, THEME_LABELS, type ThemeId, type User } from "../types";
 import { cls } from "../lib/utils";
+import { wipeMyCloudData } from "../lib/wipeCloud";
 
 export default function SettingsPage() {
   const {
@@ -100,24 +101,45 @@ export default function SettingsPage() {
   }
 
   async function wipeAll() {
-    if (
-      !confirm(
-        "⚠ 이 기기의 모든 데이터를 삭제합니다.\n\n" +
-          "클라우드 동기화를 멈추기 위해 자동으로 로그아웃됩니다. " +
-          "같은 Google 계정으로 다시 로그인하면 클라우드에 남은 기록이 복원될 수 있어요. " +
-          "클라우드까지 영구 삭제하려면 친구 페이지에서 친구를 모두 해제하고, " +
-          "다른 기기에서도 동일하게 진행해 주세요.",
-      )
-    )
-      return;
-    if (!confirm("정말로 확실한가요?")) return;
-    // 먼저 로그아웃 — 이후 자동 동기화가 currentUser 없음으로 즉시 종료되어,
-    // 로컬을 비우는 사이에 클라우드 데이터가 다시 들어오는 race 를 막는다.
+    const loggedIn = !!user;
+    const confirmMsg = loggedIn
+      ? "⚠ 이 기기와 클라우드의 내 데이터를 모두 삭제합니다.\n\n" +
+        "• 식단·건강기록·프로필\n" +
+        "• 친구와의 공유 관계, 받은/보낸 팔로우 신청\n" +
+        "• 다른 사람이 내 식단에 단 댓글/좋아요\n" +
+        "이 모든 것이 영구적으로 사라지며 되돌릴 수 없어요."
+      : "⚠ 이 기기의 모든 데이터를 삭제합니다.\n\n" +
+        "Google 로그인이 안 되어 있어 클라우드 데이터는 정리할 수 없어요. " +
+        "클라우드까지 함께 지우려면 먼저 로그인한 뒤 다시 시도해 주세요.";
+    if (!confirm(confirmMsg)) return;
+    if (!confirm("정말로 확실한가요? 이 작업은 되돌릴 수 없어요.")) return;
+
+    // 1) 로그아웃 전에 Firestore 내 데이터를 먼저 삭제한다 — 로그아웃 후엔 권한이
+    //    없어서 어차피 못 지운다. 실패는 best-effort 로 보고하고 진행.
+    let cloudReport: Awaited<ReturnType<typeof wipeMyCloudData>> | null = null;
+    if (loggedIn && user) {
+      try {
+        cloudReport = await wipeMyCloudData(user);
+      } catch (e) {
+        console.error("[wipeAll] cloud wipe", e);
+        if (
+          !confirm(
+            "클라우드 데이터를 일부 지우지 못했어요. 그래도 이 기기 데이터는 계속 삭제할까요?",
+          )
+        ) {
+          return;
+        }
+      }
+    }
+
+    // 2) 로그아웃해서 자동 동기화가 멈추도록.
     try {
       await signOutApp();
     } catch (e) {
       console.warn("[wipeAll] signOut", e);
     }
+
+    // 3) 로컬 Dexie 비우기.
     await db.transaction(
       "rw",
       db.users,
@@ -131,6 +153,14 @@ export default function SettingsPage() {
         await db.settings.clear();
       },
     );
+
+    if (cloudReport && cloudReport.errors.length > 0) {
+      alert(
+        "일부 클라우드 항목을 지우지 못했어요. 네트워크 문제일 수 있으니 " +
+          "다시 로그인해 한 번 더 시도해 주세요.",
+      );
+    }
+
     location.hash = "/";
     location.reload();
   }
@@ -319,8 +349,9 @@ export default function SettingsPage() {
       <section className="card p-4">
         <h2 className="mb-2 text-base font-semibold text-rose-300">위험 영역</h2>
         <p className="mb-3 text-xs text-slate-400">
-          이 기기의 식단·건강 기록과 프로필을 모두 삭제합니다. 동시에 자동 로그아웃되어 클라우드 동기화도 중단돼요.
-          같은 Google 계정으로 다시 로그인하면 클라우드에 남아 있던 기록이 복원될 수 있습니다.
+          {user
+            ? "이 기기의 모든 데이터와 함께 클라우드(Firestore) 의 내 식단·건강 기록·프로필·친구 공유 관계까지 영구 삭제합니다. 친구가 보던 내 식단도 즉시 사라지며 되돌릴 수 없어요."
+            : "이 기기의 식단·건강 기록과 프로필을 모두 삭제합니다. Google 로그인이 안 되어 있어 클라우드 데이터까지 정리하려면 먼저 로그인이 필요해요."}
         </p>
         <button
           onClick={wipeAll}

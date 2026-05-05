@@ -80,11 +80,14 @@ service cloud.firestore {
     }
 
     // ----- 공개 프로필 -----
+    // create/update 는 본인만 + 데이터 무결성 검사. delete 는 검사할 request.resource
+    // 가 없으므로 본인 여부만 확인 (전체 데이터 삭제 시 사용).
     match /publicProfiles/{uid} {
-      allow read:  if signedIn();
-      allow write: if signedIn() && me() == uid
+      allow read: if signedIn();
+      allow create, update: if signedIn() && me() == uid
         && request.resource.data.uid == uid
         && request.resource.data.email == myEmail();
+      allow delete: if signedIn() && me() == uid;
     }
 
     // ----- follow 신청 -----
