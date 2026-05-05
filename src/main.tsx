@@ -11,15 +11,17 @@ import "./index.css";
 // 정확한 값은 이후 Dexie 가 로드되면 settings.theme 로 다시 동기화됩니다.
 applyTheme(getCachedTheme());
 
-void bootstrapFirebaseAuth().finally(() => {
-  ReactDOM.createRoot(document.getElementById("root")!).render(
-    <React.StrictMode>
-      {/* GitHub Pages 호환을 위해 HashRouter 사용 */}
-      <HashRouter>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
-      </HashRouter>
-    </React.StrictMode>,
-  );
-});
+// Firebase 초기화·리다이렉트 로그인 잔여 처리 — 이걸 await 하면 그동안 #root 가 비어
+// "배경만 보이는" 빈 화면이 될 수 있어, UI 먼저 그리고 병렬로 돌린다.
+void bootstrapFirebaseAuth();
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    {/* GitHub Pages 호환을 위해 HashRouter 사용 */}
+    <HashRouter>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </HashRouter>
+  </React.StrictMode>,
+);

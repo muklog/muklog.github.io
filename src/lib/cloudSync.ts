@@ -499,6 +499,7 @@ async function pushPublicSettings(uid: string, s: AppSettings): Promise<void> {
   await setDoc(
     doc(fs, "users", uid, "config", "public"),
     { ...cleanForFirestore(docData), model: deleteField() },
+    { merge: true },
   );
 }
 
@@ -507,11 +508,15 @@ async function pushPrivateSettings(uid: string, s: AppSettings): Promise<void> {
   const updatedAt = s.geminiSettingsUpdatedAt ?? Date.now();
   const primary = s.geminiApiKey?.trim();
   // geminiApiKeyBackup 은 더 이상 사용하지 않음 — 기존 사용자의 클라우드 잔여 필드를 정리.
-  await setDoc(doc(fs, "users", uid, "config", "private"), {
-    updatedAt,
-    geminiApiKey: primary ? primary : deleteField(),
-    geminiApiKeyBackup: deleteField(),
-  });
+  await setDoc(
+    doc(fs, "users", uid, "config", "private"),
+    {
+      updatedAt,
+      geminiApiKey: primary ? primary : deleteField(),
+      geminiApiKeyBackup: deleteField(),
+    },
+    { merge: true },
+  );
 }
 
 /** Firestore 규칙 미게시 등으로 동기화가 막힐 때 사용자 안내 */

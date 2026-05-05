@@ -1,23 +1,35 @@
-import { type RefObject, useEffect, useState } from "react";
+import { type RefObject, useLayoutEffect, useState } from "react";
 
-/** 이 거리(px) 이상 당기면 손을 떼었을 때 새로고침 */
-export const PULL_TO_REFRESH_THRESHOLD_PX = 72;
-/** progress 정규화 기준(px) — 힌트 채워지는 속도용 */
-export const PULL_TO_REFRESH_PROGRESS_CAP_PX = 100;
+/** 손가락을 뗄 때 이 거리 이상이면 새로고침 */
+export const PULL_TO_REFRESH_THRESHOLD_PX = 56;
+/** 토스트 progress 정규화(px) */
+export const PULL_TO_REFRESH_PROGRESS_CAP_PX = 90;
+
+function isTouchEnvironment(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    "ontouchstart" in window ||
+    (typeof navigator !== "undefined" && (navigator.maxTouchPoints ?? 0) > 0)
+  );
+}
 
 /**
- * 스크롤이 맨 위일 때 아래 방향으로 당겼다 놓으면 `window.location.reload()`.
- * 터치 기기에서만 활성화(데스크톱 무시).
+ * 스크롤 영역 최상단에서 아래로 당겼다 떼면 `location.reload()`.
+ *
+ * `enabled`:
+ * 초기 렌더에서 `<main>` 이 없거나 곧 빠졌던 기존 이슈: effect 가 `scrollEl.current === null` 로 끝나면
+ * `scrollEl` 참조 변화 없이 재실행이 없어 폰에서 리프레시가 영원히 안 됨 → 메인이 붙을 때까지 false,
+ * 같은 조건으로 true 가 되도록 상위(App)에서 넘김.
  */
-export function usePullToRefresh(scrollEl: RefObject<HTMLElement | null>): {
-  /** 0 ~ 1, 임계치 넘으면 놓았을 때 리로드 */
-  progress: number;
-} {
+export function usePullToRefresh(
+  scrollEl: RefObject<HTMLElement | null>,
+  enabled: boolean,
+): { progress: number } {
   const [progress, setProgress] = useState(0);
 
-  useEffect(() => {
-    const el = scrollEl.current;
-    if (!el || typeof window === "undefined" || !("ontouchstart" in window)) {
+  useLayoutEffect(() => {
+    if (!enabled || !isTouchEnvironment()) {
+      setProgress(0);
       return undefined;
     }
 
@@ -25,55 +37,82 @@ export function usePullToRefresh(scrollEl: RefObject<HTMLElement | null>): {
     let startY = 0;
     let maxPull = 0;
 
-    const scrollTopAlmostTop = () => el.scrollTop <= 1;
+    const passiveOpt: AddEventListenerOptions = { passive: true };
+    const blockingOpt: AddEventListenerOptions = { passive: false };
 
-    const onTouchStart = (e: TouchEvent) => {
-      if (!scrollTopAlmostTop()) return;
-      touchActive = true;
-      startY = e.touches[0].clientY;
-      maxPull = 0;
-    };
+    const setup = (): (() => void) | undefined => {
+      const el = scrollEl.current;
+      if (!el) return undefined;
 
-    const onTouchMove = (e: TouchEvent) => {
-      if (!touchActive) return;
-      if (!scrollTopAlmostTop()) {
+      const top = () => el.scrollTop <= 2;
+
+      const onTouchStart: EventListener = (e) => {
+        const te = e as TouchEvent;
+        if (!top()) return;
+        touchActive = true;
+        startY = te.touches[0].clientY;
+        maxPull = 0;
+      };
+
+      const onTouchMove: EventListener = (e) => {
+        const te = e as TouchEvent;
+        if (!touchActive) return;
+        if (!top()) {
+          touchActive = false;
+          maxPull = 0;
+          setProgress(0);
+          return;
+        }
+        const pull = te.touches[0].clientY - startY;
+        if (pull <= 5) return;
+
+        /*
+          삼성 인터넷·크롬 안드로이드 등은 맨 위 오버스크롤 때 기본 제스처로 터치 시퀀스를 빼 가는 경우가 있음.
+          당김 중에만 선택적으로 막고, 세로 패닝은 touch-pan-y( main )로 유지.
+        */
+        if (te.cancelable && pull >= 20) {
+          te.preventDefault();
+        }
+
+        maxPull = Math.max(maxPull, pull);
+        setProgress(Math.min(1, maxPull / PULL_TO_REFRESH_PROGRESS_CAP_PX));
+      };
+
+      const onTouchEnd: EventListener = () => {
+        if (!touchActive) return;
         touchActive = false;
-        setProgress(0);
-        maxPull = 0;
-        return;
-      }
-      const pull = e.touches[0].clientY - startY;
-      if (pull <= 0) {
+        const go = top() && maxPull >= PULL_TO_REFRESH_THRESHOLD_PX;
         maxPull = 0;
         setProgress(0);
-        return;
-      }
-      maxPull = Math.max(maxPull, pull);
-      setProgress(Math.min(1, maxPull / PULL_TO_REFRESH_PROGRESS_CAP_PX));
+        if (go) window.location.reload();
+      };
+
+      el.addEventListener("touchstart", onTouchStart, passiveOpt);
+      el.addEventListener("touchmove", onTouchMove, blockingOpt);
+      el.addEventListener("touchend", onTouchEnd, passiveOpt);
+      el.addEventListener("touchcancel", onTouchEnd, passiveOpt);
+
+      return () => {
+        el.removeEventListener("touchstart", onTouchStart, passiveOpt);
+        el.removeEventListener("touchmove", onTouchMove, blockingOpt);
+        el.removeEventListener("touchend", onTouchEnd, passiveOpt);
+        el.removeEventListener("touchcancel", onTouchEnd, passiveOpt);
+      };
     };
 
-    const onTouchEnd = () => {
-      if (!touchActive) return;
-      touchActive = false;
-      const shouldReload =
-        scrollTopAlmostTop() && maxPull >= PULL_TO_REFRESH_THRESHOLD_PX;
-      maxPull = 0;
-      setProgress(0);
-      if (shouldReload) window.location.reload();
-    };
-
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: true });
-    el.addEventListener("touchend", onTouchEnd, { passive: true });
-    el.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    let cleanup = setup();
+    let raf = 0;
+    if (!cleanup) {
+      raf = requestAnimationFrame(() => {
+        cleanup = setup();
+      });
+    }
 
     return () => {
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
-      el.removeEventListener("touchcancel", onTouchEnd);
+      cancelAnimationFrame(raf);
+      cleanup?.();
     };
-  }, [scrollEl]);
+  }, [enabled, scrollEl]);
 
   return { progress };
 }

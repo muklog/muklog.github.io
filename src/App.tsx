@@ -26,6 +26,10 @@ import BottomNav from "./components/BottomNav";
 
 export default function App() {
   const location = useLocation();
+  const isOnboardingRoute = location.pathname.startsWith("/onboarding");
+  const isSettingsRoute = location.pathname.startsWith("/settings");
+  const isInviteRoute = location.pathname.startsWith("/friends/invite");
+
   // settings / userCount 를 분리 쿼리하면 커밋 직후 한 프레임만 어긋나도
   // 온보딩 직후 홈 ↔ 온보딩 리다이렉트가 꼬일 수 있어 한 스냅샷으로 읽는다.
   const gate = useLiveQuery(
@@ -35,6 +39,25 @@ export default function App() {
     }),
     [],
   );
+
+  /**
+   * 풀투새프레시: `<main>` 이 DOM 에 붙었을 때만 리스너를 붙인다.
+   * (게이트 로딩/온보딩 Navigate 시 main 없이 effect 만 돌면 이후 재부착이 안 되던 문제)
+   */
+  const pullRefreshEnabled =
+    gate !== undefined &&
+    !(
+      (!gate.settings.onboarded || gate.userCount === 0) &&
+      !isOnboardingRoute &&
+      !isSettingsRoute &&
+      !isInviteRoute
+    );
+
+  /** 게이트로 조기 return 하기 전에 호출해야 함 — 그렇지 않으면 React #310 (훅 개수 불일치) */
+  const mainRef = useRef<HTMLElement>(null);
+  const { progress: ptrProgress } = usePullToRefresh(mainRef, pullRefreshEnabled);
+  const ptrReady =
+    ptrProgress >= PULL_TO_REFRESH_THRESHOLD_PX / PULL_TO_REFRESH_PROGRESS_CAP_PX;
 
   // 활성 사용자가 사라진 경우 자동 정리
   useEffect(() => {
@@ -71,16 +94,6 @@ export default function App() {
 
   const { settings, userCount } = gate;
   const needsOnboarding = !settings.onboarded || userCount === 0;
-  const isOnboardingRoute = location.pathname.startsWith("/onboarding");
-  const isSettingsRoute = location.pathname.startsWith("/settings");
-  // 친구 초대 링크는 앱을 처음 쓰는 사람이 수신하므로 온보딩 전에도 접근 허용.
-  const isInviteRoute = location.pathname.startsWith("/friends/invite");
-
-  const mainRef = useRef<HTMLElement>(null);
-  const { progress: ptrProgress } = usePullToRefresh(mainRef);
-  /** 당김 거리가 임계치 이상이면 “놓으면 새로고침” */
-  const ptrReady =
-    ptrProgress >= PULL_TO_REFRESH_THRESHOLD_PX / PULL_TO_REFRESH_PROGRESS_CAP_PX;
 
   // 온보딩 페이지에서 사용자가 닉네임·아바타를 다듬고 있는 동안에는 클라우드
   // 동기화로 user/onboarded 가 채워져도 자동으로 메인으로 이탈하지 않는다.
@@ -97,13 +110,16 @@ export default function App() {
   return (
     <FeedStreamProvider>
       <div
-        className="app-shell mx-auto flex h-full w-full max-w-screen-sm flex-col"
+        className="app-shell mx-auto flex h-full min-h-0 w-full max-w-screen-sm flex-col"
         style={{
           paddingTop: "var(--safe-top)",
           paddingBottom: "var(--safe-bottom)",
         }}
       >
-        <main ref={mainRef} className="relative flex-1 overflow-y-auto overflow-x-hidden pb-24">
+        <main
+          ref={mainRef}
+          className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain overflow-x-hidden pb-24 [-webkit-overflow-scrolling:touch]"
+        >
           <div
             className="pointer-events-none sticky top-1 z-[60] flex justify-center px-4 transition-opacity duration-150"
             style={{
