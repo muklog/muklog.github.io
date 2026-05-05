@@ -4,11 +4,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, getSettings, patchSettings } from "./lib/db";
 import { applyTheme, normalizeTheme } from "./lib/theme";
 import { FeedStreamProvider } from "./contexts/FeedStreamContext";
-import {
-  usePullToRefresh,
-  PULL_TO_REFRESH_THRESHOLD_PX,
-  PULL_TO_REFRESH_PROGRESS_CAP_PX,
-} from "./hooks/usePullToRefresh";
+import { usePullToRefresh } from "./hooks/usePullToRefresh";
 import { RefreshCw } from "lucide-react";
 import FeedPage from "./pages/FeedPage";
 import HomePage from "./pages/HomePage";
@@ -56,12 +52,7 @@ export default function App() {
 
   /** 게이트로 조기 return 하기 전에 호출해야 함 — 그렇지 않으면 React #310 (훅 개수 불일치) */
   const mainRef = useRef<HTMLElement>(null);
-  const { progress: ptrProgress, pendingReload: ptrReloading } = usePullToRefresh(
-    mainRef,
-    pullRefreshEnabled,
-  );
-  const ptrReady =
-    ptrProgress >= PULL_TO_REFRESH_THRESHOLD_PX / PULL_TO_REFRESH_PROGRESS_CAP_PX;
+  const ptr = usePullToRefresh(mainRef, pullRefreshEnabled);
 
   // 활성 사용자가 사라진 경우 자동 정리
   useEffect(() => {
@@ -122,50 +113,69 @@ export default function App() {
       >
         <main
           ref={mainRef}
-          className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain overflow-x-hidden pb-24 [-webkit-overflow-scrolling:touch]"
+          className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain overflow-x-hidden bg-slate-950 pb-24 [-webkit-overflow-scrolling:touch]"
         >
           <div
-            className="pointer-events-none sticky top-1 z-[60] flex justify-center px-4 transition-opacity duration-300"
-            style={{
-              opacity:
-                ptrReloading || ptrProgress > 0.04 ? Math.min(1, ptrReloading ? 1 : ptrProgress * 1.25 + 0.12) : 0,
-            }}
-            aria-hidden
+            className={
+              ptr.isDragging || ptr.pendingReload
+                ? ""
+                : ptr.pullPx > 0
+                  ? "transition-[padding-top] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                  : ""
+            }
+            style={{ paddingTop: ptr.pullPx }}
           >
-            <span className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/92 px-3 py-1.5 text-[11px] font-medium text-slate-300 shadow-lg backdrop-blur-sm">
-              <RefreshCw
-                size={14}
-                className={`shrink-0 text-brand-400 ${ptrReloading ? "animate-spin" : ""}`}
-                style={
-                  ptrReloading
-                    ? undefined
-                    : {
-                        transform: `rotate(${ptrProgress * 270}deg)`,
-                        opacity: ptrReady ? 1 : 0.65 + ptrProgress * 0.35,
-                      }
-                }
-                aria-hidden
-              />
-              {ptrReloading ? "새로고침 중…" : ptrReady ? "놓으면 새로고침···" : "당겨서 새로고침"}
-            </span>
+            <div
+              className="pointer-events-none flex flex-col items-center justify-end px-4 pb-1"
+              style={{
+                marginTop: ptr.pullPx ? -ptr.pullPx : 0,
+                height: ptr.pullPx || undefined,
+                minHeight: ptr.pullPx ? undefined : 0,
+                opacity: ptr.pullPx > 3 || ptr.pendingReload ? 1 : 0,
+                transition:
+                  ptr.isDragging || ptr.pendingReload ? "none" : "opacity 220ms ease-out",
+              }}
+              aria-hidden
+            >
+              <span className="inline-flex items-center gap-2 rounded-full border border-slate-700/90 bg-slate-900/95 px-3 py-1.5 text-[11px] font-medium text-slate-300 shadow-lg backdrop-blur-sm">
+                <RefreshCw
+                  size={14}
+                  className={`shrink-0 text-brand-400 ${ptr.pendingReload ? "animate-spin" : ""}`}
+                  style={
+                    ptr.pendingReload
+                      ? undefined
+                      : {
+                          transform: `rotate(${Math.min(1, ptr.pullPx / 52) * 320}deg)`,
+                          opacity: ptr.armed ? 1 : 0.55 + Math.min(1, ptr.pullPx / 52) * 0.45,
+                        }
+                  }
+                  aria-hidden
+                />
+                {ptr.pendingReload
+                  ? "새로고침 중…"
+                  : ptr.armed
+                    ? "놓으면 새로고침"
+                    : "당겨서 새로고침"}
+              </span>
+            </div>
+            <Routes>
+              {/* 첫 화면은 피드. 기존 달력 홈은 /home 으로 이동 */}
+              <Route path="/" element={<FeedPage />} />
+              <Route path="/home" element={<HomePage />} />
+              <Route path="/day/:date" element={<DayPage />} />
+              <Route path="/health" element={<HealthPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/onboarding" element={<OnboardingPage />} />
+              <Route path="/friends" element={<FriendsPage />} />
+              <Route path="/friends/invite/c/:inviteCode" element={<InviteCodePage />} />
+              <Route path="/friends/:uid" element={<FriendProfilePage />} />
+              <Route path="/friends/:uid/day/:date" element={<FriendDayPage />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
+              <Route path="/messages" element={<MessagesPage />} />
+              <Route path="/messages/:threadId" element={<DmChatPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
           </div>
-          <Routes>
-            {/* 첫 화면은 피드. 기존 달력 홈은 /home 으로 이동 */}
-            <Route path="/" element={<FeedPage />} />
-            <Route path="/home" element={<HomePage />} />
-            <Route path="/day/:date" element={<DayPage />} />
-            <Route path="/health" element={<HealthPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/onboarding" element={<OnboardingPage />} />
-            <Route path="/friends" element={<FriendsPage />} />
-            <Route path="/friends/invite/c/:inviteCode" element={<InviteCodePage />} />
-            <Route path="/friends/:uid" element={<FriendProfilePage />} />
-            <Route path="/friends/:uid/day/:date" element={<FriendDayPage />} />
-            <Route path="/notifications" element={<NotificationsPage />} />
-            <Route path="/messages" element={<MessagesPage />} />
-            <Route path="/messages/:threadId" element={<DmChatPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
         </main>
         {!isOnboardingRoute && <BottomNav />}
       </div>

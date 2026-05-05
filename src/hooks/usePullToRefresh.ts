@@ -1,9 +1,11 @@
-import { type RefObject, useLayoutEffect, useState } from "react";
+import { type RefObject, useLayoutEffect, useRef, useState } from "react";
 
-/** 손가락을 뗄 때 이 거리 이상이면 새로고침 */
-export const PULL_TO_REFRESH_THRESHOLD_PX = 56;
-/** 토스트 progress 정규화(px) */
-export const PULL_TO_REFRESH_PROGRESS_CAP_PX = 90;
+/** 손가락 이동(px)으로 새로고침 여부 판단 — 시각적 당김은 damp 적용 */
+export const PULL_TO_REFRESH_THRESHOLD_PX = 72;
+/** 당긴 거리 → 화면에 반영되는 최대 오프셋(px) */
+export const PULL_TO_REFRESH_MAX_VISUAL_PX = 78;
+/** 손가락 거리에 곱해 고무줄 느낌 */
+const PULL_DAMPING = 0.38;
 
 function isTouchEnvironment(): boolean {
   if (typeof window === "undefined") return false;
@@ -13,31 +15,52 @@ function isTouchEnvironment(): boolean {
   );
 }
 
+function dampVisual(rawPull: number): number {
+  const d = Math.round(rawPull * PULL_DAMPING);
+  return Math.min(Math.max(0, d), PULL_TO_REFRESH_MAX_VISUAL_PX);
+}
+
+export type PullToRefreshGesture = {
+  /** 페이지 상단 패딩으로 내려 보이는 양 */
+  pullPx: number;
+  /** 손가락을 대고 있는 동안 */
+  isDragging: boolean;
+  /** 이번 제스처에서 임계값을 넘었었는지 */
+  armed: boolean;
+  /** 새로고침 직전 */
+  pendingReload: boolean;
+};
+
 /**
- * 스크롤 영역 최상단에서 아래로 당겼다 떼면 `location.reload()`.
- *
- * `enabled`:
- * 초기 렌더에서 `<main>` 이 없거나 곧 빠졌던 기존 이슈: effect 가 `scrollEl.current === null` 로 끝나면
- * `scrollEl` 참조 변화 없이 재실행이 없어 폰에서 리프레시가 영원히 안 됨 → 메인이 붙을 때까지 false,
- * 같은 조건으로 true 가 되도록 상위(App)에서 넘김.
+ * 스크롤 최상단에서 아래로 당겼다 떼면 `location.reload()`.
+ * 패딩 + 고무줄 감쇠로 제스처와 UI를 맞추고, 임계 미만이면 스프링처럼 돌아온다.
  */
 export function usePullToRefresh(
   scrollEl: RefObject<HTMLElement | null>,
   enabled: boolean,
-): { progress: number; pendingReload: boolean } {
-  const [progress, setProgress] = useState(0);
+): PullToRefreshGesture {
+  const [pullPx, setPullPx] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [armed, setArmed] = useState(false);
   const [pendingReload, setPendingReload] = useState(false);
+
+  const gestureMaxRawRef = useRef(0);
+  const settleRafRef = useRef(0);
 
   useLayoutEffect(() => {
     if (!enabled || !isTouchEnvironment()) {
-      setProgress(0);
+      gestureMaxRawRef.current = 0;
+      cancelAnimationFrame(settleRafRef.current);
+      settleRafRef.current = 0;
+      setPullPx(0);
+      setIsDragging(false);
+      setArmed(false);
       setPendingReload(false);
       return undefined;
     }
 
     let touchActive = false;
     let startY = 0;
-    let maxPull = 0;
 
     const passiveOpt: AddEventListenerOptions = { passive: true };
     const blockingOpt: AddEventListenerOptions = { passive: false };
@@ -48,12 +71,28 @@ export function usePullToRefresh(
 
       const top = () => el.scrollTop <= 2;
 
+      const settleToZero = () => {
+        cancelAnimationFrame(settleRafRef.current);
+        setIsDragging(false);
+        settleRafRef.current = requestAnimationFrame(() => {
+          settleRafRef.current = requestAnimationFrame(() => {
+            settleRafRef.current = 0;
+            setPullPx(0);
+            setArmed(false);
+          });
+        });
+      };
+
       const onTouchStart: EventListener = (e) => {
         const te = e as TouchEvent;
         if (!top()) return;
+        cancelAnimationFrame(settleRafRef.current);
+        settleRafRef.current = 0;
         touchActive = true;
         startY = te.touches[0].clientY;
-        maxPull = 0;
+        gestureMaxRawRef.current = 0;
+        setArmed(false);
+        setIsDragging(true);
       };
 
       const onTouchMove: EventListener = (e) => {
@@ -61,37 +100,38 @@ export function usePullToRefresh(
         if (!touchActive) return;
         if (!top()) {
           touchActive = false;
-          maxPull = 0;
-          setProgress(0);
+          gestureMaxRawRef.current = 0;
+          settleToZero();
           return;
         }
-        const pull = te.touches[0].clientY - startY;
-        if (pull <= 5) return;
+        const raw = te.touches[0].clientY - startY;
+        if (raw <= 4) return;
 
-        /*
-          삼성 인터넷·크롬 안드로이드 등은 맨 위 오버스크롤 때 기본 제스처로 터치 시퀀스를 빼 가는 경우가 있음.
-          당김 중에만 선택적으로 막고, 세로 패닝은 touch-pan-y( main )로 유지.
-        */
-        if (te.cancelable && pull >= 20) {
+        if (te.cancelable && raw >= 18) {
           te.preventDefault();
         }
 
-        maxPull = Math.max(maxPull, pull);
-        setProgress(Math.min(1, maxPull / PULL_TO_REFRESH_PROGRESS_CAP_PX));
+        gestureMaxRawRef.current = Math.max(gestureMaxRawRef.current, raw);
+        setPullPx(dampVisual(raw));
+        setArmed(gestureMaxRawRef.current >= PULL_TO_REFRESH_THRESHOLD_PX);
       };
 
       const onTouchEnd: EventListener = () => {
         if (!touchActive) return;
         touchActive = false;
-        const go = top() && maxPull >= PULL_TO_REFRESH_THRESHOLD_PX;
-        maxPull = 0;
+        const maxRaw = gestureMaxRawRef.current;
+        gestureMaxRawRef.current = 0;
+
+        const go = top() && maxRaw >= PULL_TO_REFRESH_THRESHOLD_PX;
+
         if (go) {
-          setProgress(1);
           setPendingReload(true);
+          setPullPx((v) => Math.max(v, 56));
           window.location.reload();
-        } else {
-          setProgress(0);
+          return;
         }
+
+        settleToZero();
       };
 
       el.addEventListener("touchstart", onTouchStart, passiveOpt);
@@ -100,6 +140,8 @@ export function usePullToRefresh(
       el.addEventListener("touchcancel", onTouchEnd, passiveOpt);
 
       return () => {
+        cancelAnimationFrame(settleRafRef.current);
+        settleRafRef.current = 0;
         el.removeEventListener("touchstart", onTouchStart, passiveOpt);
         el.removeEventListener("touchmove", onTouchMove, blockingOpt);
         el.removeEventListener("touchend", onTouchEnd, passiveOpt);
@@ -117,9 +159,11 @@ export function usePullToRefresh(
 
     return () => {
       cancelAnimationFrame(raf);
+      cancelAnimationFrame(settleRafRef.current);
+      settleRafRef.current = 0;
       cleanup?.();
     };
   }, [enabled, scrollEl]);
 
-  return { progress, pendingReload };
+  return { pullPx, isDragging, armed, pendingReload };
 }

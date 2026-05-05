@@ -175,12 +175,13 @@ service cloud.firestore {
         && request.resource.data.lastSenderUid is string
         && request.resource.data.updatedAt is int
         && request.resource.data.createdAt is int;
+      // 새 방 만들 때만 달력 연결 검사 — 기존 방에서 메시지/미리보기 갱신은 참가자면 허용
+      // (shares 규칙과 클라 캐시 불일치로 permission-denied 가 반복되는 문제 방지)
       allow update: if signedIn()
         && resource.data.participantUids is list
         && resource.data.participantUids.size() == 2
         && me() in resource.data.participantUids
-        && request.resource.data.participantUids == resource.data.participantUids
-        && dmCalendarConnected(resource.data.participantUids[0], resource.data.participantUids[1]);
+        && request.resource.data.participantUids == resource.data.participantUids;
     }
     match /dmThreads/{threadId}/messages/{mid} {
       allow read: if signedIn()
@@ -191,15 +192,11 @@ service cloud.firestore {
         && dmThreadDoc(threadId).participantUids is list
         && dmThreadDoc(threadId).participantUids.size() == 2
         && me() in dmThreadDoc(threadId).participantUids
-        && dmCalendarConnected(
-          dmThreadDoc(threadId).participantUids[0],
-          dmThreadDoc(threadId).participantUids[1]
-        )
         && request.resource.data.senderUid == me()
         && request.resource.data.text is string
         && request.resource.data.text.size() > 0
         && request.resource.data.text.size() <= 4000
-        && request.resource.data.createdAt is int;
+        && (request.resource.data.createdAt is int || request.resource.data.createdAt is float);
       allow update, delete: if false;
     }
 

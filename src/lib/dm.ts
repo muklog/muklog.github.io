@@ -135,8 +135,6 @@ export async function sendDmMessage(threadId: string, rawText: string): Promise<
   if (!Array.isArray(p) || p.length !== 2 || !p.includes(me)) {
     throw new Error("이 대화에 참가할 수 없습니다.");
   }
-  const linked = await isCalendarConnectedPairFromServer(p[0], p[1]);
-  if (!linked) throw new Error("달력 공유가 끊겨 새 DM을 보낼 수 없어요.");
 
   const msgRef = doc(collection(fs, "dmThreads", threadId, "messages"));
   const now = Date.now();
@@ -150,7 +148,12 @@ export async function sendDmMessage(threadId: string, rawText: string): Promise<
   try {
     await batch.commit();
   } catch (e) {
-    throw new Error(permissionDeniedMessage(e));
+    const code = (e as { code?: string })?.code;
+    const hint = permissionDeniedMessage(e);
+    if (code && code !== "permission-denied") {
+      throw new Error(`${hint} (${code})`);
+    }
+    throw new Error(hint);
   }
   try {
     await setDoc(dmReadDoc(me, threadId), { threadId, lastReadAt: now }, { merge: true });

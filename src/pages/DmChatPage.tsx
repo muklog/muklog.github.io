@@ -21,8 +21,9 @@ export default function DmChatPage() {
   const { user, firebaseReady } = useAuth();
   const [messages, setMessages] = useState<DmMessageDoc[]>([]);
   const [allowed, setAllowed] = useState<null | boolean>(null);
-  /** 달력 공유가 있을 때만 새 메시지 작성 가능(읽기는 기존 참가자면 유지) */
+  /** 참가자로 확인된 방에서는 메시지 전송 허용(달력 연결은 안내용) */
   const [canSend, setCanSend] = useState(false);
+  const [calendarLinked, setCalendarLinked] = useState(true);
   const [peerLabel, setPeerLabel] = useState<string>("대화");
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -43,9 +44,15 @@ export default function DmChatPage() {
       const p = (snap.data() as { participantUids?: string[] } | undefined)?.participantUids ?? [];
       const peer = p.find((x) => x !== user.uid);
       if (cancelled || !peer) return;
-      const linked = await isCalendarConnectedPairFromServer(user.uid, peer);
+      setCanSend(true);
+      let linked = true;
+      try {
+        linked = await isCalendarConnectedPairFromServer(user.uid, peer);
+      } catch {
+        linked = false;
+      }
       if (cancelled) return;
-      setCanSend(linked);
+      setCalendarLinked(linked);
       const prof = await getPublicProfile(peer);
       if (cancelled) return;
       setPeerLabel(prof?.displayName ?? peer.slice(0, 6));
@@ -140,9 +147,9 @@ export default function DmChatPage() {
       </div>
 
       <div className="mt-auto flex shrink-0 flex-col gap-1 border-t border-slate-800 pt-3">
-        {!canSend && (
+        {!calendarLinked && (
           <p className="text-[11px] text-amber-400/90">
-            서로 달력을 공유 중일 때만 새 DM을 보낼 수 있어요. 이전 메시지는 계속 볼 수 있어요.
+            달력 공유가 일시적으로 확인되지 않아요. 메시지는 보낼 수 있으며, 문제가 계속되면 친구 탭에서 공유를 확인해 주세요.
           </p>
         )}
         <div className="flex gap-2">
