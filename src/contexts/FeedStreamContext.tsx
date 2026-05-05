@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useLocation } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, getSettings, normalizeMeal, patchSettings } from "../lib/db";
 import {
@@ -45,6 +46,10 @@ type Ctx = {
 const FeedStreamContext = createContext<Ctx | null>(null);
 
 export function FeedStreamProvider({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
+  /** 피드 탭이 아닐 때 친구 식단 실시간 구독을 끄면 Firestore 읽기·동시 리스너 수가 크게 줄어든다. */
+  const feedStreamActive = pathname === "/";
+
   const { user, firebaseReady } = useAuth();
   const myUid = firebaseReady ? user?.uid : undefined;
   const myUserId = usePrimaryUserId();
@@ -69,18 +74,25 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
       setFriendShares(null);
       return;
     }
+    if (!feedStreamActive) {
+      setFriendShares(null);
+      return;
+    }
     const unsub = subscribeOutgoingShares(
       (rows) => setFriendShares(rows.filter((s) => s.scope.calendar)),
       (e) => console.warn("[feedStream] outgoing shares", e),
     );
     return () => unsub();
-  }, [myUid]);
+  }, [myUid, feedStreamActive]);
 
   const [friendMealsByOwner, setFriendMealsByOwner] = useState<Map<string, Meal[]>>(
     new Map(),
   );
   useEffect(() => {
-    if (!friendShares) return;
+    if (!friendShares || friendShares.length === 0) {
+      setFriendMealsByOwner(new Map());
+      return;
+    }
     const unsubs: (() => void)[] = [];
     const current = new Set<string>();
     for (const s of friendShares) {
@@ -165,6 +177,7 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
 
   /** 친구 공유 목록은 왔는데 각 owner 의 meals 스냅샷 전이면 빈 피드 카드가 깜빡임 → 키가 들어올 때까지 로딩 */
   const awaitingFriendMealSnapshots =
+    feedStreamActive &&
     firebaseReady &&
     myUid !== undefined &&
     (friendShares?.length ?? 0) > 0 &&
@@ -172,7 +185,10 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
 
   const loading =
     myMeals === undefined ||
-    (firebaseReady && myUid !== undefined && friendShares === null) ||
+    (feedStreamActive &&
+      firebaseReady &&
+      myUid !== undefined &&
+      friendShares === null) ||
     awaitingFriendMealSnapshots;
 
   const value = useMemo<Ctx>(
@@ -192,7 +208,7 @@ export function useFeedStream(): Ctx | null {
   return useContext(FeedStreamContext);
 }
 
-/** 피드를 벗어날 때까지 대비 안 한 배지 계산용 */
+/** 피드를 벗어날 때까지 대비 안 한 배지 계산용 — 다른 탭에 있을 때는 친구 스트림이 꺼져 있어 친구 글만 있는 배지 갱신은 피드 진입 후 반영될 수 있다. */
 export function useFeedDotVisible(): boolean {
   const fs = useFeedStream();
   const settings = useLiveQuery(() => getSettings(), []);

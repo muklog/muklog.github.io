@@ -63,7 +63,14 @@ function dmFirestoreUserMessage(e: unknown, hint?: "messageDoc" | "threadMeta"):
   if (code === "unavailable" || code === "unauthenticated") {
     return "연결 또는 로그인 상태를 확인해 주세요.";
   }
-  if (code === "deadline-exceeded" || code === "resource-exhausted") {
+  if (
+    code === "resource-exhausted" ||
+    code.endsWith("/resource-exhausted") ||
+    /quota exceeded/i.test(raw)
+  ) {
+    return "Firestore 사용 한도(일일 읽기·쓰기 할당량)에 도달했습니다. 잠시 후 다시 시도하거나 Firebase 콘솔의 사용량·요금제를 확인해 주세요. 피드·알림 화면을 닫아 두면 부하가 줄어듭니다.";
+  }
+  if (code === "deadline-exceeded") {
     return "요청이 지연됐어요. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.";
   }
   return raw.length > 160 ? `${raw.slice(0, 158)}…` : raw;
