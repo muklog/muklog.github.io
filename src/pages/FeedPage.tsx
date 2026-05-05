@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Home, Rss, Sparkles, UserPlus } from "lucide-react";
-import { useAuth } from "../contexts/AuthContext";
 import { db, getAnalysisProfileForUser, getSettings, normalizeMeal } from "../lib/db";
 import {
   subscribeFriendLatestMeals,
@@ -18,7 +18,7 @@ import {
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { MealItemCard, MealItemEditDialog } from "../components/MealCard";
 import MealSocialBlock from "../components/MealSocialBlock";
-import FirebaseLoginCard from "../components/FirebaseLoginCard";
+import FeedIntroBanner from "../components/FeedIntroBanner";
 import { formatKoDate } from "../lib/utils";
 import { resolveDisplayName, resolveDisplayPhotoURL } from "../lib/identity";
 import {
@@ -210,7 +210,17 @@ export default function FeedPage() {
         </Link>
       </header>
 
-      <FirebaseLoginCard />
+      <FeedIntroBanner />
+
+      {firebaseReady && !user && (
+        <p className="rounded-lg border border-slate-800 bg-slate-900/30 px-3 py-2 text-center text-[11px] text-slate-400">
+          친구 맞추기·동기화는{" "}
+          <Link to="/settings" className="text-brand-400 underline-offset-2 hover:underline">
+            설정
+          </Link>
+          에서 Google 로그인 후 이용할 수 있어요.
+        </p>
+      )}
 
       {!hasFriends && firebaseReady && myUid && (
         <Link
