@@ -49,8 +49,6 @@ export default function SettingsPage() {
     async () => (primaryId ? await db.users.get(primaryId) : undefined),
     [primaryId],
   );
-  const userCount = useLiveQuery(() => db.users.count(), []);
-
   const [apiKey, setApiKey] = useState("");
   const [show, setShow] = useState(false);
   const [pingState, setPingState] = useState<
@@ -234,12 +232,6 @@ export default function SettingsPage() {
         <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
           <UserRound size={16} className="text-brand-400" /> 프로필
         </h2>
-        {userCount !== undefined && userCount > 1 && (
-          <p className="mb-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/90">
-            예전 데이터에 프로필이 여러 개 남아 있을 수 있어요. 앱은 하나의 프로필만 사용합니다. 정리하려면 아래{" "}
-            <strong className="text-amber-50">모든 데이터 삭제</strong> 후 다시 시작해 주세요.
-          </p>
-        )}
         {profileUser ? (
           <div className="space-y-4">
             <ProfileIdentitySection user={profileUser} authUser={user} />
