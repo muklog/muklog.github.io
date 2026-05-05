@@ -28,12 +28,14 @@ import {
 import PhotoUpload from "../components/PhotoUpload";
 import {
   MealItemCard,
+  MealItemCardsCarousel,
   MealItemEditDialog,
 } from "../components/MealCard";
 import MealSocialBlock from "../components/MealSocialBlock";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { useAuth } from "../contexts/AuthContext";
 import { formatKoDate } from "../lib/utils";
+import { MAX_MEAL_ITEMS } from "../lib/mealLimits";
 import { cls } from "../lib/utils";
 
 export default function DayPage() {
@@ -137,6 +139,10 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
   const items = meal?.items ?? [];
 
   async function addItemWithPhoto(photo: Blob, thumbnail: Blob) {
+    if (items.length >= MAX_MEAL_ITEMS) {
+      alert(`한 끼니에는 사진을 최대 ${MAX_MEAL_ITEMS}장까지 올릴 수 있어요.`);
+      return;
+    }
     const now = Date.now();
     const itemId = uid();
     const newItem: MealItem = {
@@ -161,7 +167,12 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
         };
     await db.meals.put(nextMeal);
     afterUserDataMutation();
-    if (apiKey) void runAnalysis(mealId, itemId, photo, apiKey);
+    if (apiKey) {
+      const mid = nextMeal.id;
+      const blob = photo;
+      const key = apiKey;
+      queueMicrotask(() => void runAnalysis(mid, itemId, blob, key));
+    }
   }
 
   async function runAnalysis(mealId: string, itemId: string, photo: Blob, key: string) {
@@ -251,10 +262,10 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
       {expanded && (
         <div className="space-y-3 p-4">
           {items.length > 0 && (
-            <div className="space-y-3">
-              {items.map((it, idx) => (
+            <MealItemCardsCarousel
+              items={items}
+              renderSlide={(it, idx) => (
                 <MealItemCard
-                  key={it.id}
                   item={it}
                   index={idx}
                   canAnalyze={!!apiKey}
@@ -262,19 +273,29 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
                   onEdit={() => setEditingItemId(it.id)}
                   onRemove={() => void removeItem(it.id)}
                 />
-              ))}
-            </div>
+              )}
+            />
           )}
 
           <PhotoUpload
             label={items.length === 0 ? "사진 찍어 기록하기" : "사진 추가하기"}
             onPicked={addItemWithPhoto}
             variant={items.length === 0 ? "primary" : "ghost"}
+            disabled={items.length >= MAX_MEAL_ITEMS}
             square
           />
+          {items.length >= MAX_MEAL_ITEMS && (
+            <p className="text-center text-[11px] text-slate-500">
+              이 끼니는 사진 {MAX_MEAL_ITEMS}장까지 추가할 수 있어요.
+            </p>
+          )}
           <button
             type="button"
             onClick={() => {
+              if (items.length >= MAX_MEAL_ITEMS) {
+                alert(`한 끼니에는 항목을 최대 ${MAX_MEAL_ITEMS}개까지 추가할 수 있어요.`);
+                return;
+              }
               // 분석 없이 메뉴만 기록하고 싶을 때를 위한 빠른 진입점.
               // 빈 슬롯에서도 사진 없이 바로 기록할 수 있게 항상 노출한다.
               const now = Date.now();

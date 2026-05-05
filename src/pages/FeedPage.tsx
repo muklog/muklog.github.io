@@ -16,7 +16,7 @@ import {
   type Share,
 } from "../types";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
-import { MealItemCard, MealItemEditDialog } from "../components/MealCard";
+import { MealItemCard, MealItemCardsCarousel, MealItemEditDialog } from "../components/MealCard";
 import MealSocialBlock from "../components/MealSocialBlock";
 import FeedIntroBanner from "../components/FeedIntroBanner";
 import { dateKey, formatKoDate, suggestMealSlotForNow } from "../lib/utils";
@@ -390,10 +390,10 @@ function FeedCard({ entry, showSocial, myUserId, myApiKey }: FeedCardProps) {
       </header>
 
       <div className="space-y-3 p-3">
-        <div className="space-y-3">
-          {items.map((it, idx) => (
+        <MealItemCardsCarousel
+          items={items}
+          renderSlide={(it, idx) => (
             <MealItemCard
-              key={it.id}
               item={it}
               index={idx}
               readOnly={!isMine}
@@ -404,8 +404,8 @@ function FeedCard({ entry, showSocial, myUserId, myApiKey }: FeedCardProps) {
               }
               onRemove={isMine ? () => void handleRemoveItem(it) : undefined}
             />
-          ))}
-        </div>
+          )}
+        />
         {(avgRating !== undefined || totalCalories > 0) && (
           <div className="flex flex-wrap gap-2 text-[11px] text-slate-400">
             {avgRating !== undefined && (

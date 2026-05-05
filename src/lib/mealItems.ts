@@ -32,14 +32,29 @@ export async function updateMealItem(
   itemId: string,
   transform: (it: MealItem) => MealItem,
 ): Promise<void> {
-  const cur = await db.meals.get(mealId);
-  if (!cur) return;
-  const normalized = normalizeMeal(cur);
   const now = Date.now();
-  const nextItems = normalized.items.map((it) =>
-    it.id === itemId ? { ...transform(it), updatedAt: now } : it,
-  );
-  await db.meals.put({ ...normalized, items: nextItems, updatedAt: now });
+
+  async function attempt(): Promise<boolean> {
+    const cur = await db.meals.get(mealId);
+    if (!cur) return false;
+    const normalized = normalizeMeal(cur);
+    const hasItem = normalized.items.some((it) => it.id === itemId);
+    if (!hasItem) return false;
+    const nextItems = normalized.items.map((it) =>
+      it.id === itemId ? { ...transform(it), updatedAt: now } : it,
+    );
+    await db.meals.put({ ...normalized, items: nextItems, updatedAt: now });
+    return true;
+  }
+
+  if (!(await attempt())) {
+    // 클라우드 병합·Dexie 쓰기 직후 레이스로 항목이 아직 안 보일 수 있음
+    await new Promise((r) => setTimeout(r, 120));
+    if (!(await attempt())) {
+      console.warn("[updateMealItem] 항목을 찾지 못함", mealId, itemId);
+      return;
+    }
+  }
   afterUserDataMutation();
 }
 

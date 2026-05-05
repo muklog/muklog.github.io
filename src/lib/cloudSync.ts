@@ -123,9 +123,10 @@ async function itemStoredToItem(s: MealItemStored): Promise<MealItem> {
 
 export async function storedToMeal(s: MealStored): Promise<Meal> {
   const now = Date.now();
-  // 신규 스키마 우선 — items 배열이 있으면 그대로 매핑.
-  if (Array.isArray(s.items) && s.items.length > 0) {
-    const items = await Promise.all(s.items.map(itemStoredToItem));
+  // 신규 스키마: items 가 배열이면 길이 0 도 "빈 끼니"로 취급(레거시 top-level 과 섞이지 않도록)
+  if (Array.isArray(s.items)) {
+    const items =
+      s.items.length > 0 ? await Promise.all(s.items.map(itemStoredToItem)) : [];
     return {
       id: s.id,
       userId: s.userId,
@@ -136,7 +137,7 @@ export async function storedToMeal(s: MealStored): Promise<Meal> {
       updatedAt: s.updatedAt ?? now,
     };
   }
-  // 레거시 v1 — top-level 사진/메뉴가 있으면 items[0] 으로 변환해 읽는다.
+  // 레거시 v1 — items 배열이 없을 때 top-level 사진/메뉴가 있으면 items[0] 으로 변환해 읽는다.
   const legacyItem: MealItem | null =
     s.photoBase64 || s.menuText || s.rating || s.aiComment || s.nutrition
       ? {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   CheckCircle2,
   Loader2,
@@ -82,6 +82,77 @@ export function MealItemCard({
         onReanalyze={onReanalyze}
         onEdit={onEdit}
       />
+    </div>
+  );
+}
+
+/** 사진·AI 분석 카드가 2장 이상일 때 가로 스냅 스와이프 (한 슬라이드 = 1항목 전체) */
+export function MealItemCardsCarousel({
+  items,
+  renderSlide,
+}: {
+  items: MealItem[];
+  renderSlide: (item: MealItem, index: number) => ReactNode;
+}) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [slide, setSlide] = useState(0);
+
+  function syncSlideFromScroll() {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const w = el.clientWidth;
+    if (w <= 0) return;
+    const idx = Math.round(el.scrollLeft / w);
+    setSlide(Math.min(items.length - 1, Math.max(0, idx)));
+  }
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el || items.length <= 1) return;
+    const ro = new ResizeObserver(() => syncSlideFromScroll());
+    ro.observe(el);
+    syncSlideFromScroll();
+    return () => ro.disconnect();
+  }, [items.length]);
+
+  const itemIdsKey = useMemo(() => items.map((i) => i.id).join("|"), [items]);
+
+  useEffect(() => {
+    setSlide(0);
+    const el = scrollerRef.current;
+    if (el) el.scrollTo({ left: 0 });
+  }, [itemIdsKey]);
+
+  if (items.length === 0) return null;
+
+  if (items.length === 1) {
+    return <>{renderSlide(items[0]!, 0)}</>;
+  }
+
+  return (
+    <div className="w-full">
+      <div
+        ref={scrollerRef}
+        onScroll={() => requestAnimationFrame(syncSlideFromScroll)}
+        className="flex w-full snap-x snap-mandatory overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {items.map((it, idx) => (
+          <div key={it.id} className="w-full shrink-0 snap-center snap-always">
+            {renderSlide(it, idx)}
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-center gap-1.5 py-2" aria-hidden>
+        {items.map((_, i) => (
+          <span
+            key={i}
+            className={cls(
+              "h-1.5 w-1.5 rounded-full transition-colors",
+              i === slide ? "bg-brand-400" : "bg-slate-600",
+            )}
+          />
+        ))}
+      </div>
     </div>
   );
 }

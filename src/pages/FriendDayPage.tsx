@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { MealItemCard } from "../components/MealCard";
+import { MealItemCard, MealItemCardsCarousel } from "../components/MealCard";
 import MealSocialBlock from "../components/MealSocialBlock";
 import {
   getMyViewerShare,
@@ -175,9 +175,12 @@ function SlotSection({
         {items.length === 0 ? (
           <p className="text-xs text-slate-500">기록 없음</p>
         ) : (
-          items.map((it, idx) => (
-            <MealItemCard key={it.id} item={it} index={idx} readOnly />
-          ))
+          <MealItemCardsCarousel
+            items={items}
+            renderSlide={(it, idx) => (
+              <MealItemCard item={it} index={idx} readOnly />
+            )}
+          />
         )}
         {meal && <MealSocialBlock ownerUid={ownerUid} mealId={meal.id} />}
       </div>
