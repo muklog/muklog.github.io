@@ -137,7 +137,10 @@ export function MealItemCardsCarousel({
         className="flex w-full snap-x snap-mandatory overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {items.map((it, idx) => (
-          <div key={it.id} className="w-full shrink-0 snap-center snap-always">
+          <div
+            key={it.id}
+            className="min-w-0 w-full shrink-0 flex-[0_0_100%] snap-center snap-always"
+          >
             {renderSlide(it, idx)}
           </div>
         ))}

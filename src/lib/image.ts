@@ -190,6 +190,10 @@ export function base64ToBlob(base64: string, mimeType: string): Blob {
 const urlCache = new WeakMap<Blob, string>();
 export function blobUrl(blob: Blob | undefined): string | undefined {
   if (!blob) return undefined;
+  if (!(blob instanceof Blob)) {
+    console.warn("[image] blobUrl: Blob 이 아닌 값은 무시합니다.");
+    return undefined;
+  }
   let url = urlCache.get(blob);
   if (!url) {
     url = URL.createObjectURL(blob);

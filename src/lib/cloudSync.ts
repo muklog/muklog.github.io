@@ -197,6 +197,33 @@ function mergeUsers(local: User[], remote: User[]): User[] {
   return out;
 }
 
+function itemHasRenderableImage(it: MealItem): boolean {
+  return (it.photo?.size ?? 0) > 0 || (it.thumbnail?.size ?? 0) > 0;
+}
+
+/**
+ * 문서 단위 LWW 로 원격 Meal 이 이겼을 때, 항목은 최신이지만 photoBase64 가 빠진 채
+ * 올라온 경우(동기화 레이스·직접기록만 있는 기기 등) 로컬 IndexedDB 의 Blob 을 합쳐
+ * "사진 없음" 으로 덮이는 현상을 막는다. 이후 push 로 Firestore 에 사진이 채워진다.
+ */
+async function hydrateMealPhotosFromLocal(remote: Meal, local: Meal): Promise<Meal> {
+  const localById = new Map(local.items.map((x) => [x.id, x]));
+  const items = await Promise.all(
+    remote.items.map(async (it) => {
+      if (itemHasRenderableImage(it)) return it;
+      const loc = localById.get(it.id);
+      if (!loc || !itemHasRenderableImage(loc)) return it;
+      const photo = loc.photo?.size ? loc.photo : it.photo;
+      let thumbnail = loc.thumbnail?.size ? loc.thumbnail : it.thumbnail;
+      if (photo && photo.size > 0 && !(thumbnail?.size)) {
+        thumbnail = await makeThumbnail(photo);
+      }
+      return { ...it, photo, thumbnail };
+    }),
+  );
+  return { ...remote, items };
+}
+
 async function mergeMeals(local: Meal[], remote: MealStored[]): Promise<Meal[]> {
   const rMap = new Map(remote.map((x) => [x.id, x]));
   const lMap = new Map(local.map((x) => [x.id, normalizeMeal(x)]));
@@ -208,7 +235,7 @@ async function mergeMeals(local: Meal[], remote: MealStored[]): Promise<Meal[]> 
     if (!l) out.push(await storedToMeal(r!));
     else if (!r) out.push(l);
     else if (l.updatedAt >= r.updatedAt) out.push(l);
-    else out.push(await storedToMeal(r));
+    else out.push(await hydrateMealPhotosFromLocal(await storedToMeal(r), l));
   }
   return out;
 }
