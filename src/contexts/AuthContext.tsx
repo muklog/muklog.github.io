@@ -179,8 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSignInError(null);
     if (typeof navigator !== "undefined" && isEmbeddedBrowserLikelyBlockingGoogleOAuth()) {
       setSignInError(
-        "Google은 카카오톡·라인 등 인앱 브라우저에서 로그인을 막는 경우가 많아요. " +
-          "화면 안내에서 «기본 브라우저로 열기» 또는 주소 복사로 기본 브라우저에서 연 뒤 다시 시도해 주세요.",
+        "인앱 브라우저에서는 Google 로그인을 쓸 수 없어요. 먼저 «기본 브라우저로 열기» 또는 «주소 복사하기»로 기본 브라우저에서 이 페이지를 연 뒤 다시 시도해 주세요.",
       );
       return;
     }
