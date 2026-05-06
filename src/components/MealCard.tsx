@@ -210,6 +210,24 @@ interface AnalysisProps {
   onEdit?: () => void;
 }
 
+/** Firestore 상태 필드(analyzing)와 실제 본문이 잠깐 어긋나도 결과가 오면 받침판을 우선 표시한다. */
+function mealItemHasSyncedAnalysisPayload(item: MealItem): boolean {
+  if (item.menuText?.trim()) return true;
+  if (item.aiComment?.trim()) return true;
+  const n = item.nutrition;
+  if (
+    n &&
+    (typeof n.calories === "number" ||
+      typeof n.protein === "number" ||
+      typeof n.carbs === "number" ||
+      typeof n.fat === "number" ||
+      (n.healthTags?.length ?? 0) > 0)
+  ) {
+    return true;
+  }
+  return typeof item.rating === "number" && item.rating >= 1;
+}
+
 export function ItemAnalysisBlock({
   item,
   readOnly = false,
@@ -217,6 +235,99 @@ export function ItemAnalysisBlock({
   onReanalyze,
   onEdit,
 }: AnalysisProps) {
+  if (mealItemHasSyncedAnalysisPayload(item)) {
+    return (
+      <div className="space-y-3 rounded-xl bg-slate-800/40 p-3">
+        <div className="flex items-start justify-between gap-2">
+          <p className="min-w-0 flex-1 break-words text-sm font-medium leading-relaxed text-slate-100">
+            {item.menuText ?? "—"}
+          </p>
+          <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-2 py-1 text-xs font-bold text-amber-300">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Star
+                key={i}
+                size={12}
+                className={cls(
+                  i <= (item.rating ?? 0)
+                    ? "fill-amber-300 text-amber-300"
+                    : "text-amber-300/30",
+                )}
+              />
+            ))}
+            <span className="ml-0.5">{item.rating ?? "-"}</span>
+          </span>
+        </div>
+        {item.aiComment && (
+          <p className="break-words text-xs leading-relaxed text-slate-400 whitespace-pre-wrap">
+            <Sparkles size={11} className="mb-0.5 mr-1 inline text-brand-400" />
+            {item.aiComment}
+          </p>
+        )}
+        {item.nutrition && (
+          <div className="flex flex-wrap gap-1.5">
+            {item.nutrition.calories !== undefined && (
+              <span className="chip bg-slate-700/60 text-slate-200">
+                🔥 {item.nutrition.calories}kcal
+              </span>
+            )}
+            {item.nutrition.protein !== undefined && (
+              <span className="chip bg-slate-700/60 text-slate-200">
+                💪 단백질 {item.nutrition.protein}g
+              </span>
+            )}
+            {item.nutrition.carbs !== undefined && (
+              <span className="chip bg-slate-700/60 text-slate-200">
+                🌾 탄수 {item.nutrition.carbs}g
+              </span>
+            )}
+            {item.nutrition.fat !== undefined && (
+              <span className="chip bg-slate-700/60 text-slate-200">
+                🥑 지방 {item.nutrition.fat}g
+              </span>
+            )}
+            {item.nutrition.healthTags?.map((t) => (
+              <span key={t} className="chip bg-brand-500/15 text-brand-300">
+                #{t}
+              </span>
+            ))}
+          </div>
+        )}
+        {!readOnly && (
+          <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+            <span className="inline-flex items-center gap-1">
+              {item.manuallyEdited ? (
+                <>
+                  <Pencil size={11} /> 직접 수정됨
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 size={11} /> AI 분석 완료
+                </>
+              )}
+            </span>
+            <div className="flex items-center gap-3">
+              {onEdit && (
+                <button onClick={onEdit} className="inline-flex items-center gap-1 hover:text-slate-300">
+                  <Pencil size={11} /> 수정
+                </button>
+              )}
+              {canAnalyze && onReanalyze && (
+                <button onClick={onReanalyze} className="inline-flex items-center gap-1 hover:text-slate-300">
+                  <RefreshCw size={11} /> 다시 분석
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {readOnly && item.manuallyEdited && (
+          <p className="pt-1 text-[10px] text-slate-500">
+            <Pencil size={10} className="mb-0.5 mr-1 inline" /> 작성자가 직접 수정한 결과예요.
+          </p>
+        )}
+      </div>
+    );
+  }
+
   if (item.analysisStatus === "analyzing") {
     return (
       <div className="flex items-center gap-2 rounded-xl bg-slate-800/50 px-3 py-2.5 text-sm text-slate-300">
@@ -258,114 +369,20 @@ export function ItemAnalysisBlock({
       </div>
     );
   }
-  const hasAnalysis = !!item.menuText;
-  if (!hasAnalysis) {
-    if (readOnly) {
-      return <p className="text-xs text-slate-500">분석 결과가 없어요.</p>;
-    }
-    return (
-      <div className="flex gap-1.5">
-        {canAnalyze && onReanalyze && (
-          <button onClick={onReanalyze} className="btn-secondary flex-1 py-2 text-sm">
-            <Sparkles size={14} /> AI 분석 시작
-          </button>
-        )}
-        {onEdit && (
-          <button onClick={onEdit} className="btn-secondary flex-1 py-2 text-sm">
-            <Pencil size={14} /> 직접 입력
-          </button>
-        )}
-      </div>
-    );
+  if (readOnly) {
+    return <p className="text-xs text-slate-500">분석 결과가 없어요.</p>;
   }
-
   return (
-    <div className="space-y-3 rounded-xl bg-slate-800/40 p-3">
-      <div className="flex items-start justify-between gap-2">
-        <p className="min-w-0 flex-1 break-words text-sm font-medium leading-relaxed text-slate-100">
-          {item.menuText}
-        </p>
-        <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-2 py-1 text-xs font-bold text-amber-300">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <Star
-              key={i}
-              size={12}
-              className={cls(
-                i <= (item.rating ?? 0)
-                  ? "fill-amber-300 text-amber-300"
-                  : "text-amber-300/30",
-              )}
-            />
-          ))}
-          <span className="ml-0.5">{item.rating ?? "-"}</span>
-        </span>
-      </div>
-      {item.aiComment && (
-        <p className="break-words text-xs leading-relaxed text-slate-400 whitespace-pre-wrap">
-          <Sparkles size={11} className="mb-0.5 mr-1 inline text-brand-400" />
-          {item.aiComment}
-        </p>
+    <div className="flex gap-1.5">
+      {canAnalyze && onReanalyze && (
+        <button onClick={onReanalyze} className="btn-secondary flex-1 py-2 text-sm">
+          <Sparkles size={14} /> AI 분석 시작
+        </button>
       )}
-      {item.nutrition && (
-        <div className="flex flex-wrap gap-1.5">
-          {item.nutrition.calories !== undefined && (
-            <span className="chip bg-slate-700/60 text-slate-200">
-              🔥 {item.nutrition.calories}kcal
-            </span>
-          )}
-          {item.nutrition.protein !== undefined && (
-            <span className="chip bg-slate-700/60 text-slate-200">
-              💪 단백질 {item.nutrition.protein}g
-            </span>
-          )}
-          {item.nutrition.carbs !== undefined && (
-            <span className="chip bg-slate-700/60 text-slate-200">
-              🌾 탄수 {item.nutrition.carbs}g
-            </span>
-          )}
-          {item.nutrition.fat !== undefined && (
-            <span className="chip bg-slate-700/60 text-slate-200">
-              🥑 지방 {item.nutrition.fat}g
-            </span>
-          )}
-          {item.nutrition.healthTags?.map((t) => (
-            <span key={t} className="chip bg-brand-500/15 text-brand-300">
-              #{t}
-            </span>
-          ))}
-        </div>
-      )}
-      {!readOnly && (
-        <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
-          <span className="inline-flex items-center gap-1">
-            {item.manuallyEdited ? (
-              <>
-                <Pencil size={11} /> 직접 수정됨
-              </>
-            ) : (
-              <>
-                <CheckCircle2 size={11} /> AI 분석 완료
-              </>
-            )}
-          </span>
-          <div className="flex items-center gap-3">
-            {onEdit && (
-              <button onClick={onEdit} className="inline-flex items-center gap-1 hover:text-slate-300">
-                <Pencil size={11} /> 수정
-              </button>
-            )}
-            {canAnalyze && onReanalyze && (
-              <button onClick={onReanalyze} className="inline-flex items-center gap-1 hover:text-slate-300">
-                <RefreshCw size={11} /> 다시 분석
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-      {readOnly && item.manuallyEdited && (
-        <p className="pt-1 text-[10px] text-slate-500">
-          <Pencil size={10} className="mb-0.5 mr-1 inline" /> 작성자가 직접 수정한 결과예요.
-        </p>
+      {onEdit && (
+        <button onClick={onEdit} className="btn-secondary flex-1 py-2 text-sm">
+          <Pencil size={14} /> 직접 입력
+        </button>
       )}
     </div>
   );
