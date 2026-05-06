@@ -9,7 +9,7 @@ import {
 } from "firebase/firestore";
 
 /** Android·iPhone·iPad 등 — 강제 롱폴링·IndexedDB 로컬캐시 조합에서 리스너가 자주 깨진다는 제보 대응 */
-function isFirestoreMobileUa(): boolean {
+export function isFirestoreMobileUa(): boolean {
   if (typeof navigator === "undefined") return false;
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
     navigator.userAgent,

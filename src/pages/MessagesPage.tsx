@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Loader2, MessageCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useDmRealtime } from "../contexts/DmRealtimeContext";
@@ -13,9 +13,11 @@ import {
 } from "../lib/dm";
 import type { DmThreadDoc } from "../types";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
+import { isFirestoreMobileUa } from "../lib/firebaseApp";
 
 export default function MessagesPage() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const peerFromQuery = searchParams.get("with")?.trim();
   const { user, firebaseReady } = useAuth();
@@ -29,6 +31,27 @@ export default function MessagesPage() {
 
   const [peerNames, setPeerNames] = useState<Map<string, string>>(new Map());
   const handledPeerRef = useRef<string | null>(null);
+  /** 모바일에서 목록 대기만 길게 걸릴 때 자동 재구독(한 번만) — PC는 스킵 */
+  const listKickOnceRef = useRef(false);
+
+  useEffect(() => {
+    listKickOnceRef.current = false;
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!firebaseReady || !user?.uid) return;
+    if (pathname !== "/messages") return;
+    if (!isFirestoreMobileUa()) return;
+    if (listReady || listErr) return;
+
+    const t = window.setTimeout(() => {
+      if (listKickOnceRef.current) return;
+      listKickOnceRef.current = true;
+      retryDmList();
+    }, 8200);
+
+    return () => window.clearTimeout(t);
+  }, [firebaseReady, user?.uid, pathname, listReady, listErr, retryDmList]);
 
   useEffect(() => {
     if (!user?.uid || threads.length === 0) return;

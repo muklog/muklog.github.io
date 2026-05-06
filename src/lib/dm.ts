@@ -3,6 +3,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  getDocsFromServer,
   limit,
   onSnapshot,
   orderBy,
@@ -15,7 +16,7 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import type { DmMessageDoc, DmThreadDoc } from "../types";
-import { getFirebaseAuth, getFirestoreDb } from "./firebaseApp";
+import { getFirebaseAuth, getFirestoreDb, isFirestoreMobileUa } from "./firebaseApp";
 import { isCalendarConnectedPairFromServer } from "./friends";
 
 /** Firebase/Firestore 에서 넘어오는 메시지 문자열 (객체 래핑·커스텀 에러 대응) */
@@ -273,6 +274,9 @@ export function subscribeMyDmThreads(
     return () => {};
   }
 
+  const mobile = isFirestoreMobileUa();
+  const warmMaxAttempts = mobile ? 10 : 6;
+
   const FETCH_LIMIT = 48;
   const DISPLAY_LIMIT = 25;
   const q = query(
@@ -286,6 +290,7 @@ export function subscribeMyDmThreads(
   /** 일회 조회 또는 스냅샷으로라도 한 번 성공하면 리스너 오류는 UI에 노출하지 않음 */
   let hadSuccess = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let snapshotStallWatchdog: ReturnType<typeof setTimeout> | null = null;
   /** permission-denied / unauthenticated 일 때 토큰 갱신 후 재구독 (초기 진입·모바일 레이스 대비) */
   let authRetryCount = 0;
   const MAX_AUTH_RETRY = 7;
@@ -297,6 +302,27 @@ export function subscribeMyDmThreads(
     }
   };
 
+  const cancelSnapshotWatchdog = () => {
+    if (snapshotStallWatchdog !== null) {
+      window.clearTimeout(snapshotStallWatchdog);
+      snapshotStallWatchdog = null;
+    }
+  };
+
+  const scheduleSnapshotWatchdog = () => {
+    cancelSnapshotWatchdog();
+    const ms = mobile ? 28_000 : 18_000;
+    snapshotStallWatchdog = window.setTimeout(() => {
+      snapshotStallWatchdog = null;
+      if (stopped || hadSuccess) return;
+      console.warn("[dm] thread list — first snapshot stalled (mobile/slow net)");
+      const err = Object.assign(new Error("대화 목록 응답이 너무 늦어요. 재시도를 눌러 주세요."), {
+        code: "deadline-exceeded",
+      });
+      onErr?.(err);
+    }, ms);
+  };
+
   const scheduleSilentReconnect = () => {
     clearReconnect();
     reconnectTimer = window.setTimeout(() => {
@@ -306,21 +332,23 @@ export function subscribeMyDmThreads(
   };
 
   const deliver = (snap: QuerySnapshot) => {
+    cancelSnapshotWatchdog();
     hadSuccess = true;
     authRetryCount = 0;
     clearReconnect();
     cb(snapshotToDmThreads(snap, DISPLAY_LIMIT));
   };
 
-  /** 웜업: 일회 읽기 실패해도 스냅샷이 성공할 수 있으므로 onErr 는 호출하지 않음 */
+  /** 웜업: 캐시·일시 장애에 대비해 여러 번 getDocs 후, 서버 일회 폴백 */
   void (async () => {
-    for (let i = 0; i < 6 && !stopped; i++) {
+    for (let i = 0; i < warmMaxAttempts && !stopped; i++) {
       try {
         if (i > 0) {
           await getFirebaseAuth()
-            .currentUser?.getIdToken(i < 2 ? false : true)
+            .currentUser?.getIdToken(i < 3 ? false : true)
             .catch(() => {});
-          await new Promise((r) => setTimeout(r, 320 * i));
+          const pauseMs = mobile ? 260 + i * 240 : 320 * i;
+          await new Promise((r) => setTimeout(r, pauseMs));
         }
         const snap = await getDocs(q);
         if (stopped) return;
@@ -331,10 +359,22 @@ export function subscribeMyDmThreads(
         if (!listenerErrorMayRecover(e)) break;
       }
     }
+    if (stopped || hadSuccess) return;
+    try {
+      await getFirebaseAuth().currentUser?.getIdToken(true).catch(() => {});
+      const snap = await getDocsFromServer(q);
+      if (stopped) return;
+      deliver(snap);
+    } catch (e) {
+      if (!stopped) {
+        console.warn("[dm] getDocsFromServer thread list fallback", e);
+      }
+    }
   })();
 
   const attach = () => {
     unsub?.();
+    cancelSnapshotWatchdog();
     unsub = onSnapshot(
       q,
       (snap) => deliver(snap),
@@ -360,15 +400,18 @@ export function subscribeMyDmThreads(
         if (code !== "permission-denied" && !code.endsWith("/permission-denied")) {
           console.warn("[dm] threads subscribe", err);
         }
+        cancelSnapshotWatchdog();
         onErr?.(err);
       },
     );
+    if (!stopped && !hadSuccess) scheduleSnapshotWatchdog();
   };
 
   attach();
   return () => {
     stopped = true;
     clearReconnect();
+    cancelSnapshotWatchdog();
     unsub?.();
   };
 }
