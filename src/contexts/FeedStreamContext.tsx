@@ -14,8 +14,9 @@ import { db, getSettings, normalizeMeal, patchSettings } from "../lib/db";
 import {
   subscribeFriendLatestMeals,
   subscribeOutgoingShares,
+  getPublicProfile,
 } from "../lib/friends";
-import type { Meal, Share } from "../types";
+import type { Meal, PublicProfile, Share } from "../types";
 import { useAuth } from "./AuthContext";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { resolveDisplayName, resolveDisplayPhotoURL } from "../lib/identity";
@@ -85,6 +86,39 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
     return () => unsub();
   }, [myUid, feedStreamActive]);
 
+  const [friendPublicByUid, setFriendPublicByUid] = useState<Map<string, PublicProfile>>(
+    new Map(),
+  );
+  useEffect(() => {
+    if (!friendShares?.length) {
+      setFriendPublicByUid(new Map());
+      return;
+    }
+    let cancelled = false;
+    const uids = [...new Set(friendShares.map((s) => s.ownerUid))];
+    void (async () => {
+      const pairs = await Promise.all(
+        uids.map(async (uid) => {
+          try {
+            const p = await getPublicProfile(uid);
+            return [uid, p] as const;
+          } catch {
+            return [uid, null] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      const next = new Map<string, PublicProfile>();
+      for (const [uid, p] of pairs) {
+        if (p) next.set(uid, p);
+      }
+      setFriendPublicByUid(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [friendShares]);
+
   const [friendMealsByOwner, setFriendMealsByOwner] = useState<Map<string, Meal[]>>(
     new Map(),
   );
@@ -131,7 +165,10 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
     const out: FeedEntry[] = [];
     const myAuthor: FeedAuthor = {
       uid: myUid ?? "local-me",
-      name: resolveDisplayName(myProfile, user),
+      name:
+        myUserId && myProfile === undefined
+          ? "나"
+          : resolveDisplayName(myProfile, user),
       photoURL: resolveDisplayPhotoURL(myProfile, user?.photoURL),
       color: myProfile?.color,
     };
@@ -141,13 +178,17 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
     }
     for (const share of friendShares ?? []) {
       const rows = friendMealsByOwner.get(share.ownerUid) ?? [];
+      const pub = friendPublicByUid.get(share.ownerUid);
+      const pubName = pub?.displayName?.trim();
+      const pubPhoto = pub?.photoURL?.trim();
+      const sharePhoto = share.ownerPhotoURL?.trim();
       for (const m of rows) {
         if ((m.items ?? []).length === 0) continue;
         out.push({
           author: {
             uid: share.ownerUid,
-            name: share.ownerName,
-            photoURL: share.ownerPhotoURL,
+            name: pubName || share.ownerName,
+            photoURL: pubPhoto || sharePhoto || undefined,
           },
           meal: m,
           isMine: false,
@@ -156,7 +197,16 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
     }
     out.sort((a, b) => b.meal.updatedAt - a.meal.updatedAt);
     return out;
-  }, [myMeals, friendShares, friendMealsByOwner, myProfile, user?.displayName, user?.photoURL, myUid]);
+  }, [
+    myMeals,
+    friendShares,
+    friendMealsByOwner,
+    friendPublicByUid,
+    myProfile,
+    user,
+    myUid,
+    myUserId,
+  ]);
 
   const entriesMaxUpdatedAt = useMemo(() => {
     let m = 0;

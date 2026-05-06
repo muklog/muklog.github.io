@@ -582,22 +582,3 @@ export function unreadDmThreadCount(
   }
   return n;
 }
-
-/** 피드 헤더 DM 버튼 — 목록(/messages) 로 가지 않고 친구 탭 DM 과 동일하게 ?with 로 채팅 직입장 */
-export function feedDmIconHref(
-  threads: DmThreadDoc[],
-  readMap: Map<string, number>,
-  myUid: string,
-): "/friends" | `/messages?with=${string}` {
-  for (const t of threads) {
-    if (!isThreadUnreadForMe(t, myUid, readMap.get(t.id))) continue;
-    const p = otherParticipantUid(t, myUid);
-    if (p) return `/messages?with=${encodeURIComponent(p)}`;
-  }
-  const t0 = threads[0];
-  if (t0) {
-    const p = otherParticipantUid(t0, myUid);
-    if (p) return `/messages?with=${encodeURIComponent(p)}`;
-  }
-  return "/friends";
-}

@@ -89,6 +89,9 @@ export default function MessagesPage() {
     [threads, readMap, user?.uid],
   );
 
+  const hasStaleThreads = threads.length > 0;
+  const showFullListLoader = !listReady && !hasStaleThreads;
+
   if (!firebaseReady) return <Placeholder>Firebase 연동이 필요해요.</Placeholder>;
   if (!user) {
     return (
@@ -110,12 +113,19 @@ export default function MessagesPage() {
         </div>
       </header>
 
-      {!listReady ? (
+      {!listReady && hasStaleThreads && (
+        <p className="flex items-center justify-center gap-2 py-1 text-center text-xs text-slate-500">
+          <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
+          대화 목록을 최신으로 맞추는 중…
+        </p>
+      )}
+
+      {showFullListLoader ? (
         <p className="card flex items-center justify-center gap-2 p-8 text-center text-sm text-slate-400">
           <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
           대화 목록을 불러오는 중…
         </p>
-      ) : listErr ? (
+      ) : listErr && !hasStaleThreads ? (
         <div className="card space-y-3 border-rose-500/35 bg-rose-500/5 p-4 text-sm text-rose-100">
           <p>{listErr}</p>
           <div className="flex flex-col gap-2">
@@ -135,33 +145,49 @@ export default function MessagesPage() {
             </button>
           </div>
         </div>
-      ) : threads.length === 0 ? (
-        <div className="card space-y-3 p-6 text-center text-sm text-slate-400">
-          <p className="text-slate-200">아직 열린 대화가 없어요.</p>
-          <p className="text-xs leading-relaxed">
-            DM은 목록에서 새로 만들 수 없고,{" "}
-            <strong className="text-slate-300">친구 프로필</strong>에서 시작하거나{" "}
-            <strong className="text-slate-300">피드</strong>에서 친구 이름을 눌러 주세요.
-          </p>
-          <Link to="/friends" className="btn-primary inline-block w-full py-3 text-center text-sm font-medium">
-            친구 탭으로 이동
-          </Link>
-          <Link to="/" className="block text-center text-xs text-brand-400 underline-offset-2 hover:underline">
-            피드로 가기
-          </Link>
-        </div>
       ) : (
-        <ul className="space-y-2">
-          {threads.map((t) => (
-            <ThreadRowItem
-              key={t.id}
-              t={t}
-              uid={user.uid}
-              peerNames={peerNames}
-              readMap={readMap}
-            />
-          ))}
-        </ul>
+        <>
+          {listErr && hasStaleThreads ? (
+            <div className="card space-y-2 border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-100">
+              <p>{listErr}</p>
+              <button
+                type="button"
+                className="btn-secondary w-full py-2 text-center text-sm"
+                onClick={() => retryDmList()}
+              >
+                다시 시도
+              </button>
+            </div>
+          ) : null}
+          {threads.length === 0 && listReady ? (
+            <div className="card space-y-3 p-6 text-center text-sm text-slate-400">
+              <p className="text-slate-200">아직 열린 대화가 없어요.</p>
+              <p className="text-xs leading-relaxed">
+                DM은 목록에서 새로 만들 수 없고,{" "}
+                <strong className="text-slate-300">친구 프로필</strong>에서 시작하거나{" "}
+                <strong className="text-slate-300">피드</strong>에서 친구 이름을 눌러 주세요.
+              </p>
+              <Link to="/friends" className="btn-primary inline-block w-full py-3 text-center text-sm font-medium">
+                친구 탭으로 이동
+              </Link>
+              <Link to="/" className="block text-center text-xs text-brand-400 underline-offset-2 hover:underline">
+                피드로 가기
+              </Link>
+            </div>
+          ) : threads.length > 0 ? (
+            <ul className="space-y-2">
+              {threads.map((t) => (
+                <ThreadRowItem
+                  key={t.id}
+                  t={t}
+                  uid={user.uid}
+                  peerNames={peerNames}
+                  readMap={readMap}
+                />
+              ))}
+            </ul>
+          ) : null}
+        </>
       )}
     </div>
   );

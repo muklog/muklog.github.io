@@ -22,6 +22,13 @@ import DmChatPage from "./pages/DmChatPage";
 import BottomNav from "./components/BottomNav";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { DmRealtimeProvider } from "./contexts/DmRealtimeContext";
+import type { AppSettings } from "./types";
+
+/** 온보딩 완료 후 Dexie userCount 가 잠깐 0인 타이밍에 /onboarding 으로 튕기지 않도록, 완료 플래그를 우선한다. */
+function shouldRedirectToOnboarding(settings: AppSettings, userCount: number): boolean {
+  if (settings.onboarded === true) return false;
+  return !settings.onboarded || userCount === 0;
+}
 
 export default function App() {
   const location = useLocation();
@@ -46,7 +53,7 @@ export default function App() {
   const pullRefreshEnabled =
     gate !== undefined &&
     !(
-      (!gate.settings.onboarded || gate.userCount === 0) &&
+      shouldRedirectToOnboarding(gate.settings, gate.userCount) &&
       !isOnboardingRoute &&
       !isSettingsRoute &&
       !isInviteRoute
@@ -95,7 +102,7 @@ export default function App() {
   }
 
   const { settings, userCount } = gate;
-  const needsOnboarding = !settings.onboarded || userCount === 0;
+  const needsOnboarding = shouldRedirectToOnboarding(settings, userCount);
 
   // 온보딩 페이지에서 사용자가 닉네임·아바타를 다듬고 있는 동안에는 클라우드
   // 동기화로 user/onboarded 가 채워져도 자동으로 메인으로 이탈하지 않는다.

@@ -25,7 +25,7 @@ import { MEAL_SLOT_EMOJI, MEAL_SLOT_LABELS, type MealItem } from "../types";
 const FEED_PAGE_SIZE = 8;
 
 export default function FeedPage() {
-  const { user, firebaseReady } = useAuth();
+  const { user, firebaseReady, loading: authLoading } = useAuth();
   const fs = useFeedStream();
   const entries = fs?.entries ?? [];
   const loading = fs?.loading ?? true;
@@ -107,7 +107,7 @@ export default function FeedPage() {
 
       <FeedIntroBanner />
 
-      {firebaseReady && !user && (
+      {firebaseReady && !user && !authLoading && (
         <p className="rounded-lg border border-slate-800 bg-slate-900/30 px-3 py-2 text-center text-[11px] text-slate-400">
           친구 맞추기·동기화는{" "}
           <Link to="/settings" className="text-brand-400 underline-offset-2 hover:underline">
