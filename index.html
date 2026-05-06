@@ -19,6 +19,42 @@
     <title>헬스헬스 · 식단·건강 기록</title>
   </head>
   <body class="bg-slate-950 text-slate-100">
+    <!-- 당겨서 새로고침: JS 번들 로드 전에도 즉시 풀스크린 로더 (React 깜빡임 차단) -->
+    <style>
+      @keyframes hh-ptr-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+    <script>
+      try {
+        if (sessionStorage.getItem("hh_pull_refresh") === "1") {
+          var splash = document.createElement("div");
+          splash.id = "hh-ptr-splash";
+          splash.setAttribute("role", "status");
+          splash.setAttribute("aria-busy", "true");
+          splash.setAttribute(
+            "style",
+            "position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;background:#020617;font-family:Pretendard,system-ui,sans-serif;",
+          );
+          var box = document.createElement("div");
+          box.style.cssText =
+            "display:flex;flex-direction:column;align-items:center;gap:14px;";
+          var ring = document.createElement("div");
+          ring.style.cssText =
+            "width:42px;height:42px;border:3px solid rgba(52,211,153,.2);border-top-color:rgba(52,211,153,.92);border-radius:50%;animation:hh-ptr-spin .72s linear infinite;";
+          var cap = document.createElement("span");
+          cap.textContent = "새로고침 중…";
+          cap.style.cssText =
+            "font-size:12px;color:#94a3b8;letter-spacing:0.03em;";
+          box.appendChild(ring);
+          box.appendChild(cap);
+          splash.appendChild(box);
+          document.body.appendChild(splash);
+        }
+      } catch (e) {}
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

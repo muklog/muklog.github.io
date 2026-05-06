@@ -582,3 +582,22 @@ export function unreadDmThreadCount(
   }
   return n;
 }
+
+/** 피드 헤더 DM 버튼 — 친구 탭과 동일하게 `?with=` 로 채팅 직입장. 목록 페이지는 환경에 따라 깨질 때가 있어 폴백은 친구 탭. */
+export function feedDmIconHref(
+  threads: DmThreadDoc[],
+  readMap: Map<string, number>,
+  myUid: string,
+): "/friends" | `/messages?with=${string}` {
+  for (const t of threads) {
+    if (!isThreadUnreadForMe(t, myUid, readMap.get(t.id))) continue;
+    const p = otherParticipantUid(t, myUid);
+    if (p) return `/messages?with=${encodeURIComponent(p)}`;
+  }
+  const t0 = threads[0];
+  if (t0) {
+    const p = otherParticipantUid(t0, myUid);
+    if (p) return `/messages?with=${encodeURIComponent(p)}`;
+  }
+  return "/friends";
+}

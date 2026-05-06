@@ -16,6 +16,7 @@ import {
   subscribeOutgoingShares,
   getPublicProfile,
 } from "../lib/friends";
+import { removePullRefreshSplash } from "../lib/pullRefreshSplash";
 import type { Meal, PublicProfile, Share } from "../types";
 import { useAuth } from "./AuthContext";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
@@ -70,17 +71,25 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
   }, [myUserId]);
 
   const [friendShares, setFriendShares] = useState<Share[] | null>(null);
+  /** 빈 목록이 캐시(fromCache)에서 온 경우 서버 확인 전까지 피드를 잠깐 열었다가 로딩으로 덮는 깜빡임 방지 */
+  const [outgoingSharesFromCache, setOutgoingSharesFromCache] = useState<boolean | null>(null);
   useEffect(() => {
     if (!myUid) {
       setFriendShares(null);
+      setOutgoingSharesFromCache(null);
       return;
     }
     if (!feedStreamActive) {
       setFriendShares(null);
+      setOutgoingSharesFromCache(null);
       return;
     }
     const unsub = subscribeOutgoingShares(
-      (rows) => setFriendShares(rows.filter((s) => s.scope?.calendar === true)),
+      (rows, meta) => {
+        const filtered = rows.filter((s) => s.scope?.calendar === true);
+        setFriendShares(filtered);
+        setOutgoingSharesFromCache(rows.length === 0 ? meta.fromCache : false);
+      },
       (e) => console.warn("[feedStream] outgoing shares", e),
     );
     return () => unsub();
@@ -233,13 +242,33 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
     (friendShares?.length ?? 0) > 0 &&
     (friendShares ?? []).some((s) => !friendMealsByOwner.has(s.ownerUid));
 
+  const emptyOutgoingAwaitingServer =
+    feedStreamActive &&
+    firebaseReady &&
+    myUid !== undefined &&
+    friendShares !== null &&
+    friendShares.length === 0 &&
+    outgoingSharesFromCache === true;
+
+  useEffect(() => {
+    if (!emptyOutgoingAwaitingServer) return;
+    const t = window.setTimeout(() => setOutgoingSharesFromCache(false), 3200);
+    return () => window.clearTimeout(t);
+  }, [emptyOutgoingAwaitingServer]);
+
   const loading =
     myMeals === undefined ||
     (feedStreamActive &&
       firebaseReady &&
       myUid !== undefined &&
       friendShares === null) ||
-    awaitingFriendMealSnapshots;
+    awaitingFriendMealSnapshots ||
+    emptyOutgoingAwaitingServer;
+
+  useEffect(() => {
+    if (loading) return;
+    removePullRefreshSplash();
+  }, [loading]);
 
   const value = useMemo<Ctx>(
     () => ({

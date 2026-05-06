@@ -15,6 +15,7 @@ import {
   where,
   writeBatch,
   type QueryConstraint,
+  type SnapshotMetadata,
   type Unsubscribe,
 } from "firebase/firestore";
 import type { User as FirebaseUser } from "firebase/auth";
@@ -574,7 +575,7 @@ export function subscribeOutgoingRequests(
 
 function subscribeShares(
   cons: QueryConstraint[],
-  cb: (rows: Share[]) => void,
+  cb: (rows: Share[], meta: SnapshotMetadata) => void,
   onErr?: (e: unknown) => void,
 ): Unsubscribe {
   const fs = getFirestoreDb();
@@ -585,7 +586,7 @@ function subscribeShares(
       const rows = snap.docs
         .map((d) => ({ ...(d.data() as Share), id: d.id }))
         .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-      cb(rows);
+      cb(rows, snap.metadata);
     },
     (err) => {
       console.error("[friends] shares subscribe", err);
@@ -596,7 +597,7 @@ function subscribeShares(
 
 /** 내가 팔로우 중인 사람들 (= 내가 viewer 인 share). */
 export function subscribeOutgoingShares(
-  cb: (rows: Share[]) => void,
+  cb: (rows: Share[], meta: SnapshotMetadata) => void,
   onErr?: (e: unknown) => void,
 ): Unsubscribe {
   const u = requireUser();
@@ -605,7 +606,7 @@ export function subscribeOutgoingShares(
 
 /** 나를 팔로우 중인 사람들 (= 내가 owner 인 share). */
 export function subscribeIncomingShares(
-  cb: (rows: Share[]) => void,
+  cb: (rows: Share[], meta: SnapshotMetadata) => void,
   onErr?: (e: unknown) => void,
 ): Unsubscribe {
   const u = requireUser();

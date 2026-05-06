@@ -76,31 +76,36 @@ export default function FeedPage() {
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-5">
-      <header className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <p className="text-xs text-slate-400">나와 친구들의 식단</p>
           <h1 className="text-xl font-bold">
             <Rss size={18} className="mb-0.5 mr-1 inline text-brand-400" />
             피드
           </h1>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-nowrap items-center gap-2">
           <FeedAlertsHeaderIcons />
-          {/* Dexie 프로필 id 로딩 전에도 자리 확보 — 알림·DM 옆 버튼이 밀리지 않음 */}
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+          {/* 프로필 id 가 늦게 잡혀도 플러스 자리 폭 고정으로 우측 아이콘 정렬 유지 */}
+          <div className="flex h-10 w-[2.5rem] shrink-0 items-center justify-center">
             {myUserId ? (
               <Link
                 to={`/day/${dateKey()}?slot=${suggestMealSlotForNow()}`}
-                className="btn-primary inline-flex h-10 w-10 items-center justify-center rounded-full p-0"
+                className="btn-primary inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full p-0"
                 aria-label="오늘 식단 사진 추가"
                 title="오늘 식단 기록"
               >
                 <Plus size={22} strokeWidth={2.5} />
               </Link>
-            ) : null}
+            ) : (
+              <span className="invisible inline-flex h-10 w-10 shrink-0" aria-hidden />
+            )}
           </div>
-          <Link to="/home" className="btn-secondary whitespace-nowrap py-2 text-sm">
-            <Home size={14} /> 식단
+          <Link
+            to="/home"
+            className="btn-secondary inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap py-2 pl-3 pr-3 text-sm"
+          >
+            <Home size={14} className="shrink-0" /> 식단
           </Link>
         </div>
       </header>
