@@ -52,6 +52,18 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
   /** HashRouter 포함 — 피드만 실시간 구독 활성화(리스너·읽기 절약). pathname 은 브라우저마다 edge case 적음. */
   const feedStreamActive = !!matchPath({ path: "/", end: true }, pathname);
 
+  /** 탭이 보이지 않을 때는 Firestore 피드 리스너를 끄고 읽기·연결 비용을 줄임 (DM 쪽과 동일 패턴). */
+  const [tabVisible, setTabVisible] = useState(
+    () => typeof document === "undefined" || document.visibilityState === "visible",
+  );
+  useEffect(() => {
+    const onVis = () => setTabVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
+  const feedFirestoreLive = feedStreamActive && tabVisible;
+
   const { user, firebaseReady } = useAuth();
   const myUid = firebaseReady ? user?.uid : undefined;
   const myUserId = usePrimaryUserId();
@@ -79,7 +91,7 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
       setOutgoingSharesFromCache(null);
       return;
     }
-    if (!feedStreamActive) {
+    if (!feedFirestoreLive) {
       setFriendShares(null);
       setOutgoingSharesFromCache(null);
       return;
@@ -93,7 +105,7 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
       (e) => console.warn("[feedStream] outgoing shares", e),
     );
     return () => unsub();
-  }, [myUid, feedStreamActive]);
+  }, [myUid, feedFirestoreLive]);
 
   const [friendPublicByUid, setFriendPublicByUid] = useState<Map<string, PublicProfile>>(
     new Map(),
@@ -236,14 +248,14 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
 
   /** 친구 공유 목록은 왔는데 각 owner 의 meals 스냅샷 전이면 빈 피드 카드가 깜빡임 → 키가 들어올 때까지 로딩 */
   const awaitingFriendMealSnapshots =
-    feedStreamActive &&
+    feedFirestoreLive &&
     firebaseReady &&
     myUid !== undefined &&
     (friendShares?.length ?? 0) > 0 &&
     (friendShares ?? []).some((s) => !friendMealsByOwner.has(s.ownerUid));
 
   const emptyOutgoingAwaitingServer =
-    feedStreamActive &&
+    feedFirestoreLive &&
     firebaseReady &&
     myUid !== undefined &&
     friendShares !== null &&
@@ -258,7 +270,7 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
 
   const loading =
     myMeals === undefined ||
-    (feedStreamActive &&
+    (feedFirestoreLive &&
       firebaseReady &&
       myUid !== undefined &&
       friendShares === null) ||
@@ -287,7 +299,7 @@ export function useFeedStream(): Ctx | null {
   return useContext(FeedStreamContext);
 }
 
-/** 피드를 벗어날 때까지 대비 안 한 배지 계산용 — 다른 탭에 있을 때는 친구 스트림이 꺼져 있어 친구 글만 있는 배지 갱신은 피드 진입 후 반영될 수 있다. */
+/** 피드를 벗어나거나 탭이 숨겨져 있으면 피드 Firestore 구독이 꺼져 친구 글 배지는 피드 탭 활성 후에 반영될 수 있다. */
 export function useFeedDotVisible(): boolean {
   const fs = useFeedStream();
   const settings = useLiveQuery(() => getSettings(), []);
