@@ -86,16 +86,19 @@ export default function FeedPage() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <FeedAlertsHeaderIcons />
-          {myUserId && (
-            <Link
-              to={`/day/${dateKey()}?slot=${suggestMealSlotForNow()}`}
-              className="btn-primary inline-flex h-10 w-10 items-center justify-center rounded-full p-0"
-              aria-label="오늘 식단 사진 추가"
-              title="오늘 식단 기록"
-            >
-              <Plus size={22} strokeWidth={2.5} />
-            </Link>
-          )}
+          {/* Dexie 프로필 id 로딩 전에도 자리 확보 — 알림·DM 옆 버튼이 밀리지 않음 */}
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+            {myUserId ? (
+              <Link
+                to={`/day/${dateKey()}?slot=${suggestMealSlotForNow()}`}
+                className="btn-primary inline-flex h-10 w-10 items-center justify-center rounded-full p-0"
+                aria-label="오늘 식단 사진 추가"
+                title="오늘 식단 기록"
+              >
+                <Plus size={22} strokeWidth={2.5} />
+              </Link>
+            ) : null}
+          </div>
           <Link to="/home" className="btn-secondary whitespace-nowrap py-2 text-sm">
             <Home size={14} /> 식단
           </Link>

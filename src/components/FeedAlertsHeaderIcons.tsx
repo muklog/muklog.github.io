@@ -10,12 +10,17 @@ import {
 } from "../lib/activityInbox";
 import { feedDmIconHref, unreadDmThreadCount } from "../lib/dm";
 
+const ICON_SLOT =
+  "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-colors";
+
+/** 알림·DM 자리 폭 고정 (gap-1 + 40px + 40px) → 로딩 전후·배지 유무로 헤더가 흔들리지 않게 */
+export const FEED_HEADER_ALERTS_WIDTH_CLASS = "w-[calc(5rem+0.25rem)] shrink-0";
+
 /** 피드 헤더 — 활동 알림 · DM 진입 및 미읽음 배지.
  * DM 스트림은 DmRealtimeProvider 가 피드/DM 경로에서 유지합니다.
- * 백그라운드일 때는 알림함만 끄며 Firestore 부하를 줄입니다.
  */
 export default function FeedAlertsHeaderIcons() {
-  const { user, firebaseReady } = useAuth();
+  const { user, firebaseReady, loading: authLoading } = useAuth();
   const myUid = user?.uid;
   const { threads, readMap: dmReadMap } = useDmRealtime();
 
@@ -45,14 +50,31 @@ export default function FeedAlertsHeaderIcons() {
   );
   const dmEntryIsFriends = dmEntryHref === "/friends";
 
-  if (!firebaseReady || !myUid) return null;
+  const showPlaceholders = !firebaseReady || authLoading;
+
+  if (showPlaceholders) {
+    return (
+      <div
+        className={cls("flex items-center justify-center gap-1", FEED_HEADER_ALERTS_WIDTH_CLASS)}
+        aria-busy="true"
+        aria-label="알림·DM 로드 중"
+      >
+        <span className={cls(ICON_SLOT, "border-slate-800 bg-slate-900/55 text-slate-600 pointer-events-none")}>
+          <Bell size={18} strokeWidth={2} className="opacity-65" aria-hidden />
+        </span>
+        <span className={cls(ICON_SLOT, "border-slate-800 bg-slate-900/55 text-slate-600 pointer-events-none")}>
+          <MessageCircle size={18} strokeWidth={2} className="opacity-65" aria-hidden />
+        </span>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex shrink-0 items-center gap-1">
+    <div className={cls("flex items-center justify-center gap-1", FEED_HEADER_ALERTS_WIDTH_CLASS)}>
       <Link
         to="/notifications"
         className={cls(
-          "relative flex h-10 w-10 items-center justify-center rounded-full border transition-colors",
+          ICON_SLOT,
           activityUnread > 0
             ? "border-brand-400/40 bg-brand-500/15 text-brand-200"
             : "border-slate-700 bg-slate-900/50 text-slate-300 hover:bg-slate-800",
@@ -67,7 +89,7 @@ export default function FeedAlertsHeaderIcons() {
       <Link
         to={dmEntryHref}
         className={cls(
-          "relative flex h-10 w-10 items-center justify-center rounded-full border transition-colors",
+          ICON_SLOT,
           dmUnread > 0
             ? "border-brand-400/40 bg-brand-500/15 text-brand-200"
             : "border-slate-700 bg-slate-900/50 text-slate-300 hover:bg-slate-800",
