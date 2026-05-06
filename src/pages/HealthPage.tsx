@@ -8,9 +8,11 @@ import {
   getAnalysisProfileForUser,
   getSettings,
   registerCloudDelete,
+  runDexie,
   uid,
 } from "../lib/db";
 import { analyzeHealthImage } from "../lib/ai";
+import { userFacingStorageErrorMessage } from "../lib/idbRetry";
 import {
   HEALTH_TYPE_LABELS,
   type HealthRecord,
@@ -27,7 +29,7 @@ export default function HealthPage() {
   const settings = useLiveQuery(() => getSettings(), []);
   const userId = usePrimaryUserId();
   const profile = useLiveQuery(
-    async () => (userId ? await db.users.get(userId) : undefined),
+    async () => (userId ? await runDexie(() => db.users.get(userId)) : undefined),
     [userId],
   );
   const [pickedType, setPickedType] = useState<HealthRecordType>("checkup");
@@ -35,13 +37,15 @@ export default function HealthPage() {
   const records = useLiveQuery(
     async () =>
       userId
-        ? (await db.health.where("userId").equals(userId).toArray()).sort(
-            (a, b) => {
-              const d = b.recordDate.localeCompare(a.recordDate);
-              if (d !== 0) return d;
-              return (b.createdAt ?? 0) - (a.createdAt ?? 0);
-            },
-          )
+        ? (
+            await runDexie(() =>
+              db.health.where("userId").equals(userId).toArray(),
+            )
+          ).sort((a, b) => {
+            const d = b.recordDate.localeCompare(a.recordDate);
+            if (d !== 0) return d;
+            return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+          })
         : [],
     [userId],
   );
@@ -63,7 +67,7 @@ export default function HealthPage() {
       createdAt: now,
       updatedAt: now,
     };
-    await db.health.put(rec);
+    await runDexie(() => db.health.put(rec));
     afterUserDataMutation();
     if (settings?.geminiApiKey) {
       runAnalysis(id, photo, pickedType, settings.geminiApiKey);
@@ -85,50 +89,56 @@ export default function HealthPage() {
         undefined,
         prof,
       );
-      const cur = await db.health.get(id);
+      const cur = await runDexie(() => db.health.get(id));
       if (!cur) return;
-      await db.health.put({
-        ...cur,
-        extractedText: result.extractedText,
-        metrics: result.metrics,
-        healthScore: result.healthScore,
-        summary: result.summary,
-        strengths: result.strengths,
-        concerns: result.concerns,
-        recommendations: result.recommendations,
-        analysisStatus: "done",
-        analysisError: undefined,
-        updatedAt: Date.now(),
-      });
+      await runDexie(() =>
+        db.health.put({
+          ...cur,
+          extractedText: result.extractedText,
+          metrics: result.metrics,
+          healthScore: result.healthScore,
+          summary: result.summary,
+          strengths: result.strengths,
+          concerns: result.concerns,
+          recommendations: result.recommendations,
+          analysisStatus: "done",
+          analysisError: undefined,
+          updatedAt: Date.now(),
+        }),
+      );
       afterUserDataMutation();
     } catch (e) {
-      const cur = await db.health.get(id);
+      const cur = await runDexie(() => db.health.get(id));
       if (!cur) return;
-      await db.health.put({
-        ...cur,
-        analysisStatus: "error",
-        analysisError: e instanceof Error ? e.message : String(e),
-        updatedAt: Date.now(),
-      });
+      await runDexie(() =>
+        db.health.put({
+          ...cur,
+          analysisStatus: "error",
+          analysisError: e instanceof Error ? e.message : String(e),
+          updatedAt: Date.now(),
+        }),
+      );
       afterUserDataMutation();
     }
   }
 
   async function reAnalyze(rec: HealthRecord) {
     if (!rec.photo || !settings?.geminiApiKey) return;
-    await db.health.put({
-      ...rec,
-      analysisStatus: "analyzing",
-      analysisError: undefined,
-      updatedAt: Date.now(),
-    });
+    await runDexie(() =>
+      db.health.put({
+        ...rec,
+        analysisStatus: "analyzing",
+        analysisError: undefined,
+        updatedAt: Date.now(),
+      }),
+    );
     afterUserDataMutation();
     runAnalysis(rec.id, rec.photo, rec.type, settings.geminiApiKey);
   }
 
   async function removeRecord(rec: HealthRecord) {
     if (!confirm("이 건강 기록을 삭제할까요?")) return;
-    await db.health.delete(rec.id);
+    await runDexie(() => db.health.delete(rec.id));
     await registerCloudDelete("health", rec.id);
   }
 
@@ -253,11 +263,11 @@ function ProfileCard({ user }: { user: User }) {
         gender,
         updatedAt: Date.now(),
       };
-      await db.users.put(next);
+      await runDexie(() => db.users.put(next));
       afterUserDataMutation();
       setEditing(false);
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      alert(userFacingStorageErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -408,11 +418,13 @@ function FocusConditionsCard({ user }: { user: User }) {
     }
     setBusy(true);
     try {
-      await db.users.put({
-        ...user,
-        focusConditions: [...current, t],
-        updatedAt: Date.now(),
-      });
+      await runDexie(() =>
+        db.users.put({
+          ...user,
+          focusConditions: [...current, t],
+          updatedAt: Date.now(),
+        }),
+      );
       afterUserDataMutation();
       setInput("");
     } finally {
@@ -424,11 +436,13 @@ function FocusConditionsCard({ user }: { user: User }) {
     setBusy(true);
     try {
       const next = current.filter((x) => x !== t);
-      await db.users.put({
-        ...user,
-        focusConditions: next.length > 0 ? next : undefined,
-        updatedAt: Date.now(),
-      });
+      await runDexie(() =>
+        db.users.put({
+          ...user,
+          focusConditions: next.length > 0 ? next : undefined,
+          updatedAt: Date.now(),
+        }),
+      );
       afterUserDataMutation();
     } finally {
       setBusy(false);

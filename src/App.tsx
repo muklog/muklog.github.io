@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, getSettings, patchSettings } from "./lib/db";
+import { db, getSettings, patchSettings, runDexie } from "./lib/db";
 import { applyTheme, normalizeTheme } from "./lib/theme";
 import { FeedStreamProvider } from "./contexts/FeedStreamContext";
 import { usePullToRefresh, PULL_TO_REFRESH_MAX_VISUAL_PX, PULL_TO_REFRESH_THRESHOLD_PX } from "./hooks/usePullToRefresh";
@@ -41,7 +41,7 @@ export default function App() {
   const gate = useLiveQuery(
     async () => ({
       settings: await getSettings(),
-      userCount: await db.users.count(),
+      userCount: await runDexie(() => db.users.count()),
     }),
     [],
   );
@@ -70,8 +70,9 @@ export default function App() {
 
   // 활성 사용자가 사라진 경우 자동 정리
   useEffect(() => {
-    if (!gate?.settings.activeUserId) return;
-    db.users.get(gate.settings.activeUserId).then((u) => {
+    const activeId = gate?.settings.activeUserId;
+    if (!activeId) return;
+    void runDexie(() => db.users.get(activeId)).then((u) => {
       if (!u) patchSettings({ activeUserId: undefined });
     });
   }, [gate?.settings.activeUserId]);
@@ -79,7 +80,7 @@ export default function App() {
   // 1인 모드: 프로필이 하나뿐이면 활성 ID를 그 프로필로 맞춤
   useEffect(() => {
     if (!gate || gate.userCount !== 1) return;
-    db.users.orderBy("createdAt").first().then((u) => {
+    void runDexie(() => db.users.orderBy("createdAt").first()).then((u) => {
       if (u && gate.settings.activeUserId !== u.id) {
         void patchSettings({ activeUserId: u.id });
       }

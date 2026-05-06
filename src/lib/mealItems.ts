@@ -12,7 +12,14 @@
  * 삭제가 발생해 meal 이 비게 되면 서버측 meal 문서도 지우고
  * 소셜(댓글/좋아요) 서브컬렉션도 best-effort 로 정리한다.
  */
-import { db, normalizeMeal, afterUserDataMutation, registerCloudDelete, getAnalysisProfileForUser } from "./db";
+import {
+  db,
+  normalizeMeal,
+  afterUserDataMutation,
+  registerCloudDelete,
+  getAnalysisProfileForUser,
+  runDexie,
+} from "./db";
 import { cleanupMealSocial } from "./social";
 import { reanalyzeMealFromText } from "./ai";
 import type { MealItem, MealSlot } from "../types";
@@ -37,17 +44,19 @@ export async function updateMealItem(
   let nextItemSnapshot: MealItem | undefined;
 
   async function attempt(): Promise<boolean> {
-    const cur = await db.meals.get(mealId);
-    if (!cur) return false;
-    const normalized = normalizeMeal(cur);
-    const hasItem = normalized.items.some((it) => it.id === itemId);
-    if (!hasItem) return false;
-    const nextItems = normalized.items.map((it) =>
-      it.id === itemId ? { ...transform(it), updatedAt: now } : it,
-    );
-    nextItemSnapshot = nextItems.find((it) => it.id === itemId);
-    await db.meals.put({ ...normalized, items: nextItems, updatedAt: now });
-    return true;
+    return runDexie(async () => {
+      const cur = await db.meals.get(mealId);
+      if (!cur) return false;
+      const normalized = normalizeMeal(cur);
+      const hasItem = normalized.items.some((it) => it.id === itemId);
+      if (!hasItem) return false;
+      const nextItems = normalized.items.map((it) =>
+        it.id === itemId ? { ...transform(it), updatedAt: now } : it,
+      );
+      nextItemSnapshot = nextItems.find((it) => it.id === itemId);
+      await db.meals.put({ ...normalized, items: nextItems, updatedAt: now });
+      return true;
+    });
   }
 
   if (!(await attempt())) {
@@ -79,20 +88,26 @@ export async function deleteMealItem(
   itemId: string,
   { ownerUid }: DeleteItemOptions = {},
 ): Promise<void> {
-  const cur = await db.meals.get(mealId);
-  if (!cur) return;
-  const normalized = normalizeMeal(cur);
-  const remaining = normalized.items.filter((it) => it.id !== itemId);
-  if (remaining.length === 0) {
-    await db.meals.delete(normalized.id);
-    await registerCloudDelete("meals", normalized.id);
-    if (ownerUid) void cleanupMealSocial(ownerUid, normalized.id);
-  } else {
-    await db.meals.put({
-      ...normalized,
-      items: remaining,
-      updatedAt: Date.now(),
-    });
+  let deletedWholeMealId: string | undefined;
+  await runDexie(async () => {
+    const cur = await db.meals.get(mealId);
+    if (!cur) return;
+    const normalized = normalizeMeal(cur);
+    const remaining = normalized.items.filter((it) => it.id !== itemId);
+    if (remaining.length === 0) {
+      await db.meals.delete(normalized.id);
+      deletedWholeMealId = normalized.id;
+    } else {
+      await db.meals.put({
+        ...normalized,
+        items: remaining,
+        updatedAt: Date.now(),
+      });
+    }
+  });
+  if (deletedWholeMealId) {
+    await registerCloudDelete("meals", deletedWholeMealId);
+    if (ownerUid) void cleanupMealSocial(ownerUid, deletedWholeMealId);
   }
   afterUserDataMutation();
 }
@@ -101,7 +116,9 @@ export async function deleteEntireMeal(
   mealId: string,
   { ownerUid }: DeleteItemOptions = {},
 ): Promise<void> {
-  await db.meals.delete(mealId);
+  await runDexie(async () => {
+    await db.meals.delete(mealId);
+  });
   await registerCloudDelete("meals", mealId);
   if (ownerUid) void cleanupMealSocial(ownerUid, mealId);
   afterUserDataMutation();

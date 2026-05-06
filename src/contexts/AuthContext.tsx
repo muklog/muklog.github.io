@@ -20,7 +20,7 @@ import {
 } from "firebase/auth";
 import { ensureAutoCloudSyncListeners, requestAutoCloudSync } from "../lib/autoCloudSync";
 import { isEmbeddedBrowserLikelyBlockingGoogleOAuth } from "../lib/inAppBrowser";
-import { clearLocalProfileDataPreservingDevicePreferences, db, getSettings } from "../lib/db";
+import { clearLocalProfileDataPreservingDevicePreferences, db, getSettings, runDexie } from "../lib/db";
 import { getFirebaseAuth, initFirebase, isFirebaseConfigured } from "../lib/firebaseApp";
 import { upsertMyPublicProfile } from "../lib/friends";
 
@@ -96,9 +96,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void (async () => {
       try {
         const s = await getSettings();
-        const localUser = s?.activeUserId
-          ? await db.users.get(s.activeUserId)
-          : undefined;
+        const aid = s.activeUserId;
+        const localUser = aid ? await runDexie(() => db.users.get(aid)) : undefined;
         await upsertMyPublicProfile(user, localUser ?? null);
       } catch (e) {
         console.warn("[auth] publicProfile upsert 실패", e);

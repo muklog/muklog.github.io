@@ -8,6 +8,7 @@ import {
   getAnalysisProfileForUser,
   getSettings,
   normalizeMeal,
+  runDexie,
   uid,
 } from "../lib/db";
 import { analyzeMealImage } from "../lib/ai";
@@ -50,7 +51,9 @@ export default function DayPage() {
     async () =>
       userId && date
         ? (
-            await db.meals.where("[userId+date]").equals([userId, date]).toArray()
+            await runDexie(() =>
+              db.meals.where("[userId+date]").equals([userId, date]).toArray(),
+            )
           ).map(normalizeMeal)
         : [],
     [userId, date],
@@ -144,17 +147,19 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
   const clearCarouselScrollRequest = useCallback(() => setScrollCarouselToItemId(null), []);
 
   async function mealRowForSlot(): Promise<Meal | undefined> {
-    if (meal?.id) {
-      const row = await db.meals.get(meal.id);
-      if (row) return normalizeMeal(row);
-    }
-    const rows = await db.meals
-      .where("[userId+date]")
-      .equals([userId, date])
-      .filter((r) => r.slot === slot)
-      .toArray();
-    const row = rows[0];
-    return row ? normalizeMeal(row) : undefined;
+    return runDexie(async () => {
+      if (meal?.id) {
+        const row = await db.meals.get(meal.id);
+        if (row) return normalizeMeal(row);
+      }
+      const rows = await db.meals
+        .where("[userId+date]")
+        .equals([userId, date])
+        .filter((r) => r.slot === slot)
+        .toArray();
+      const row = rows[0];
+      return row ? normalizeMeal(row) : undefined;
+    });
   }
 
   async function addItemWithPhoto(photo: Blob, thumbnail: Blob) {
@@ -186,7 +191,7 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
           createdAt: now,
           updatedAt: now,
         };
-    await db.meals.put(nextMeal);
+    await runDexie(() => db.meals.put(nextMeal));
     afterUserDataMutation();
     setScrollCarouselToItemId(itemId);
 
@@ -348,7 +353,7 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
                     updatedAt: now,
                   };
               void (async () => {
-                await db.meals.put(base);
+                await runDexie(() => db.meals.put(base));
                 afterUserDataMutation();
                 setEditingItemId(id);
               })();

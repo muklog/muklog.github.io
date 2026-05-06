@@ -13,6 +13,7 @@ import type { ActivityInboxDoc } from "../types";
 import { MEAL_SLOT_LABELS } from "../types";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
 import { cls } from "../lib/utils";
+import { userFacingStorageErrorMessage } from "../lib/idbRetry";
 
 export default function NotificationsPage() {
   const navigate = useNavigate();
@@ -52,7 +53,7 @@ export default function NotificationsPage() {
     try {
       await markAllActivityRead(user.uid, unreadIds);
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      alert(userFacingStorageErrorMessage(e));
     }
   }
 

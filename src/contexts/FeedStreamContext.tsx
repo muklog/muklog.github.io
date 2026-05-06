@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useLocation, matchPath } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, getSettings, normalizeMeal, patchSettings } from "../lib/db";
+import { db, getSettings, normalizeMeal, patchSettings, runDexie } from "../lib/db";
 import {
   subscribeFriendLatestMeals,
   subscribeOutgoingShares,
@@ -69,13 +69,15 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
   const myUserId = usePrimaryUserId();
 
   const myProfile = useLiveQuery(
-    async () => (myUserId ? await db.users.get(myUserId) : undefined),
+    async () => (myUserId ? await runDexie(() => db.users.get(myUserId)) : undefined),
     [myUserId],
   );
 
   const myMeals = useLiveQuery(async () => {
     if (!myUserId) return [] as Meal[];
-    const arr = await db.meals.where("userId").equals(myUserId).toArray();
+    const arr = await runDexie(() =>
+      db.meals.where("userId").equals(myUserId).toArray(),
+    );
     return arr
       .map(normalizeMeal)
       .sort((a, b) => b.updatedAt - a.updatedAt)

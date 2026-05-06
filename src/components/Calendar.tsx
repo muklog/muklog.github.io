@@ -12,7 +12,7 @@ import {
 } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../lib/db";
+import { db, runDexie } from "../lib/db";
 import { cls, dateKey, formatKoMonth } from "../lib/utils";
 
 export interface DayCount {
@@ -49,10 +49,9 @@ export default function Calendar({ cursor, setCursor, selected, onPick, userId, 
   // 외부 카운트 주입 시엔 Dexie 쿼리 건너뜀(친구 달력)
   const localCounts = useLiveQuery(async () => {
     if (externalCounts !== undefined) return null;
-    const meals = await db.meals
-      .where("date")
-      .between(startKey, endKey, true, true)
-      .toArray();
+    const meals = await runDexie(() =>
+      db.meals.where("date").between(startKey, endKey, true, true).toArray(),
+    );
     const map = new Map<string, DayCount>();
     for (const m of meals) {
       if (userId && m.userId !== userId) continue;

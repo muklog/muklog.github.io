@@ -4,8 +4,15 @@ import { useLiveQuery } from "dexie-react-hooks";
 import AvatarBubble from "../components/AvatarBubble";
 import AvatarPicker, { type AvatarPick } from "../components/AvatarPicker";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
-import { afterUserDataMutation, db, getSettings, patchSettings, uid } from "../lib/db";
+import {
+  db,
+  finishOnboardingSave,
+  getSettings,
+  runDexie,
+  uid,
+} from "../lib/db";
 import { nextColor } from "../lib/utils";
+import { userFacingStorageErrorMessage } from "../lib/idbRetry";
 import { useAuth } from "../contexts/AuthContext";
 import type { User } from "../types";
 
@@ -31,10 +38,10 @@ export default function OnboardingPage() {
   const existingUser = useLiveQuery(async () => {
     const s = await getSettings();
     if (s?.activeUserId) {
-      const u = await db.users.get(s.activeUserId);
+      const u = await runDexie(() => db.users.get(s.activeUserId!));
       if (u) return u;
     }
-    return await db.users.orderBy("createdAt").first();
+    return await runDexie(() => db.users.orderBy("createdAt").first());
   }, []);
 
   useEffect(() => {
@@ -99,7 +106,9 @@ export default function OnboardingPage() {
       const { avatarKind: nextKind, avatarDataUrl: nextDataUrl } = computeAvatarFields();
       const settings = await getSettings();
       const baseUserId = settings?.activeUserId || existingUser?.id;
-      const baseUser = baseUserId ? await db.users.get(baseUserId) : undefined;
+      const baseUser = baseUserId
+        ? await runDexie(() => db.users.get(baseUserId))
+        : undefined;
 
       if (baseUser) {
         const next: User = {
@@ -110,12 +119,13 @@ export default function OnboardingPage() {
           avatarDataUrl: nextDataUrl,
           updatedAt: now,
         };
-        await db.users.put(next);
-        afterUserDataMutation();
-        await patchSettings({
-          onboarded: true,
-          activeUserId: next.id,
-          geminiApiKey: apiKey.trim() || settings?.geminiApiKey,
+        await finishOnboardingSave({
+          userRow: next,
+          settingsPatch: {
+            onboarded: true,
+            activeUserId: next.id,
+            geminiApiKey: apiKey.trim() || settings?.geminiApiKey,
+          },
         });
       } else {
         const id = uid();
@@ -128,22 +138,19 @@ export default function OnboardingPage() {
           createdAt: now,
           updatedAt: now,
         };
-        await db.users.bulkPut([newUser]);
-        afterUserDataMutation();
-        await patchSettings({
-          onboarded: true,
-          activeUserId: id,
-          geminiApiKey: apiKey.trim() || undefined,
+        await finishOnboardingSave({
+          userRow: newUser,
+          settingsPatch: {
+            onboarded: true,
+            activeUserId: id,
+            geminiApiKey: apiKey.trim() || undefined,
+          },
         });
       }
       window.location.replace(`${window.location.origin}${import.meta.env.BASE_URL}#/`);
     } catch (e) {
       console.error("[onboarding] finish 저장 실패", e);
-      alert(
-        e instanceof Error
-          ? `저장에 실패했습니다: ${e.message}`
-          : "저장에 실패했습니다. 사이트 데이터(IndexedDB) 저장이 막혀 있지 않은지 확인해 주세요.",
-      );
+      alert(userFacingStorageErrorMessage(e));
     } finally {
       setBusy(false);
     }

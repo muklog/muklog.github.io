@@ -15,6 +15,7 @@ import type { MealItem } from "../types";
 import { blobUrl } from "../lib/image";
 import { cls } from "../lib/utils";
 import type { MealItemPatch } from "../lib/mealItems";
+import { userFacingStorageErrorMessage } from "../lib/idbRetry";
 
 export type { MealItemPatch } from "../lib/mealItems";
 
@@ -456,7 +457,7 @@ export function MealItemEditDialog({
       );
       onClose();
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      alert(userFacingStorageErrorMessage(e));
     } finally {
       setBusy(null);
     }

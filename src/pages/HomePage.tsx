@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Sparkles, ChevronRight, Plus } from "lucide-react";
-import { db, getSettings } from "../lib/db";
+import { db, getSettings, runDexie } from "../lib/db";
 import Calendar from "../components/Calendar";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { dateKey, formatKoDate, suggestMealSlotForNow } from "../lib/utils";
@@ -19,7 +19,9 @@ export default function HomePage() {
   const dayMeals = useLiveQuery(
     async () =>
       userId
-        ? await db.meals.where("[userId+date]").equals([userId, selected]).toArray()
+        ? await runDexie(() =>
+            db.meals.where("[userId+date]").equals([userId, selected]).toArray(),
+          )
         : [],
     [userId, selected],
   );
@@ -27,13 +29,15 @@ export default function HomePage() {
   const recentHealth = useLiveQuery(
     async () =>
       userId
-        ? (await db.health.where("userId").equals(userId).toArray()).sort(
-            (a, b) => {
-              const d = b.recordDate.localeCompare(a.recordDate);
-              if (d !== 0) return d;
-              return (b.createdAt ?? 0) - (a.createdAt ?? 0);
-            },
-          )
+        ? (
+            await runDexie(() =>
+              db.health.where("userId").equals(userId).toArray(),
+            )
+          ).sort((a, b) => {
+            const d = b.recordDate.localeCompare(a.recordDate);
+            if (d !== 0) return d;
+            return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+          })
         : [],
     [userId],
   );

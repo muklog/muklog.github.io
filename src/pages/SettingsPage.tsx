@@ -20,6 +20,7 @@ import {
   db,
   getSettings,
   patchSettings,
+  runDexie,
 } from "../lib/db";
 import { pingGemini } from "../lib/ai";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
@@ -46,7 +47,7 @@ export default function SettingsPage() {
   const settings = useLiveQuery(() => getSettings(), []);
   const primaryId = usePrimaryUserId();
   const profileUser = useLiveQuery(
-    async () => (primaryId ? await db.users.get(primaryId) : undefined),
+    async () => (primaryId ? await runDexie(() => db.users.get(primaryId)) : undefined),
     [primaryId],
   );
   const [apiKey, setApiKey] = useState("");
@@ -93,7 +94,9 @@ export default function SettingsPage() {
   }
 
   async function changeColor(u: User, color: string) {
-    await db.users.put({ ...u, color, updatedAt: Date.now() });
+    await runDexie(() =>
+      db.users.put({ ...u, color, updatedAt: Date.now() }),
+    );
     afterUserDataMutation();
   }
 
@@ -137,19 +140,21 @@ export default function SettingsPage() {
     }
 
     // 3) 로컬 Dexie 비우기.
-    await db.transaction(
-      "rw",
-      db.users,
-      db.meals,
-      db.health,
-      db.settings,
-      async () => {
-        await db.meals.clear();
-        await db.health.clear();
-        await db.users.clear();
-        await db.settings.clear();
-      },
-    );
+    await runDexie(async () => {
+      await db.transaction(
+        "rw",
+        db.users,
+        db.meals,
+        db.health,
+        db.settings,
+        async () => {
+          await db.meals.clear();
+          await db.health.clear();
+          await db.users.clear();
+          await db.settings.clear();
+        },
+      );
+    });
 
     if (cloudReport && cloudReport.errors.length > 0) {
       alert(

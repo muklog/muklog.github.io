@@ -1,5 +1,6 @@
 import Dexie, { type Table } from "dexie";
 import type { AppSettings, HealthRecord, Meal, MealItem, User } from "../types";
+import { isTransientIndexedDbError, withIndexedDbRetry } from "./idbRetry";
 
 /**
  * v1 시절의 Meal 구조 — top-level 에 photo/menuText/rating/... 이 있고 items 가 없다.
@@ -118,19 +119,74 @@ export const db = new HealthHealthDB();
 
 export const SETTINGS_KEY = "settings" as const;
 
+function mergeSettingsPatch(cur: AppSettings, patch: Partial<AppSettings>): AppSettings {
+  const next: AppSettings = { ...cur, ...patch, id: SETTINGS_KEY };
+  if ("appSettingsUpdatedAt" in patch && patch.appSettingsUpdatedAt !== undefined) {
+    next.appSettingsUpdatedAt = patch.appSettingsUpdatedAt;
+  } else if ("activeUserId" in patch || "onboarded" in patch || "theme" in patch) {
+    next.appSettingsUpdatedAt = Date.now();
+  }
+  if ("geminiApiKey" in patch) {
+    next.geminiSettingsUpdatedAt = Date.now();
+  }
+  return next;
+}
+
+/** Safari 등 IndexedDB 일시 오류 시 재시도 — 페이지·라이브쿼리에서 직접 Dexie 를 쓸 때 감싼다. */
+export async function runDexie<T>(fn: () => Promise<T>): Promise<T> {
+  return withIndexedDbRetry(db, fn);
+}
+
+/** 온보딩 완료: 사용자 행 + 설정을 한 트랜잭션으로 저장. iOS 는 runDexie 재시도 후에도 한 번 더 전체 패스를 돈다. */
+export async function finishOnboardingSave(args: {
+  userRow: User;
+  settingsPatch: Partial<AppSettings>;
+}): Promise<void> {
+  const ios =
+    typeof navigator !== "undefined" &&
+    /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const passes = ios ? 4 : 1;
+  let lastErr: unknown;
+
+  for (let p = 0; p < passes; p++) {
+    try {
+      await runDexie(async () => {
+        await db.transaction("rw", db.users, db.settings, async () => {
+          await db.users.put(args.userRow);
+          const cur = await db.settings.get(SETTINGS_KEY);
+          const base = (cur ?? { id: SETTINGS_KEY }) as AppSettings;
+          const next = mergeSettingsPatch(base, args.settingsPatch);
+          await db.settings.put(next);
+        });
+      });
+      scheduleAutoSyncAfterSettings(args.settingsPatch);
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (!ios || p === passes - 1 || !isTransientIndexedDbError(e)) throw e;
+      await new Promise((r) => setTimeout(r, 320 + p * 480));
+    }
+  }
+  throw lastErr;
+}
+
 export async function getSettings(): Promise<AppSettings> {
-  const s = await db.settings.get(SETTINGS_KEY);
-  return s ?? { id: SETTINGS_KEY };
+  return runDexie(async () => {
+    const s = await db.settings.get(SETTINGS_KEY);
+    return s ?? { id: SETTINGS_KEY };
+  });
 }
 
 /** 로그아웃·Google 계정 전환 시: 로컬 프로필·기록·설정 전부 초기화(다음 로그인 계정의 클라우드로 채움). */
 export async function clearLocalProfileDataPreservingDevicePreferences(): Promise<void> {
-  await db.transaction("rw", db.users, db.meals, db.health, db.settings, async () => {
-    await db.users.clear();
-    await db.meals.clear();
-    await db.health.clear();
-    await db.settings.clear();
-    await db.settings.put({ id: SETTINGS_KEY });
+  await runDexie(async () => {
+    await db.transaction("rw", db.users, db.meals, db.health, db.settings, async () => {
+      await db.users.clear();
+      await db.meals.clear();
+      await db.health.clear();
+      await db.settings.clear();
+      await db.settings.put({ id: SETTINGS_KEY });
+    });
   });
 }
 
@@ -153,17 +209,12 @@ export function afterUserDataMutation(): void {
 }
 
 export async function patchSettings(patch: Partial<AppSettings>): Promise<void> {
-  const cur = await getSettings();
-  const next: AppSettings = { ...cur, ...patch, id: SETTINGS_KEY };
-  if ("appSettingsUpdatedAt" in patch && patch.appSettingsUpdatedAt !== undefined) {
-    next.appSettingsUpdatedAt = patch.appSettingsUpdatedAt;
-  } else if ("activeUserId" in patch || "onboarded" in patch || "theme" in patch) {
-    next.appSettingsUpdatedAt = Date.now();
-  }
-  if ("geminiApiKey" in patch) {
-    next.geminiSettingsUpdatedAt = Date.now();
-  }
-  await db.settings.put(next);
+  await runDexie(async () => {
+    const cur = await db.settings.get(SETTINGS_KEY);
+    const base = (cur ?? { id: SETTINGS_KEY }) as AppSettings;
+    const next = mergeSettingsPatch(base, patch);
+    await db.settings.put(next);
+  });
   scheduleAutoSyncAfterSettings(patch);
 }
 
@@ -218,7 +269,7 @@ export async function getAnalysisProfileForUser(
   | undefined
 > {
   if (!userId) return undefined;
-  const u = await db.users.get(userId);
+  const u = await runDexie(() => db.users.get(userId));
   if (!u) return undefined;
   let ageYears: number | undefined;
   if (u.birthDate && /^\d{4}-\d{2}-\d{2}$/.test(u.birthDate)) {

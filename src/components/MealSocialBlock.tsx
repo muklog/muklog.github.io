@@ -9,7 +9,8 @@ import {
 import { Heart, Loader2, MessageCircle, Pencil, Send, Trash2, X } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useAuth } from "../contexts/AuthContext";
-import { db } from "../lib/db";
+import { db, runDexie } from "../lib/db";
+import { userFacingStorageErrorMessage } from "../lib/idbRetry";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { resolveDisplayName, resolveDisplayPhotoURL } from "../lib/identity";
 import {
@@ -182,7 +183,7 @@ function LikeRow({
       await setMyLike(ownerUid, mealId, !effectiveLiked);
     } catch (e) {
       setPendingLiked(null);
-      alert(e instanceof Error ? e.message : String(e));
+      alert(userFacingStorageErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -328,7 +329,7 @@ function CommentRow({
       await setMyCommentLike(ownerUid, mealId, comment.id, !effectiveLiked);
     } catch (e) {
       setPendingLike(null);
-      alert(e instanceof Error ? e.message : String(e));
+      alert(userFacingStorageErrorMessage(e));
     }
   }
 
@@ -338,7 +339,7 @@ function CommentRow({
       await editComment(ownerUid, mealId, comment.id, draft);
       setEditing(false);
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      alert(userFacingStorageErrorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -350,7 +351,7 @@ function CommentRow({
     try {
       await deleteComment(ownerUid, mealId, comment.id);
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      alert(userFacingStorageErrorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -551,7 +552,7 @@ function NewCommentInput({
   const { user: authUser } = useAuth();
   const myUserId = usePrimaryUserId();
   const myProfile = useLiveQuery(
-    async () => (myUserId ? await db.users.get(myUserId) : undefined),
+    async () => (myUserId ? await runDexie(() => db.users.get(myUserId)) : undefined),
     [myUserId],
   );
 

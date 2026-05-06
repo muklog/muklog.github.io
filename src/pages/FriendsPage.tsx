@@ -24,7 +24,7 @@ import {
   subscribeOutgoingShares,
   updateOutgoingScope,
 } from "../lib/friends";
-import { db } from "../lib/db";
+import { db, runDexie } from "../lib/db";
 import type { Share, ShareScope } from "../types";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
 import { cls } from "../lib/utils";
@@ -228,7 +228,7 @@ const INVITE_VALID_HOURS = Math.round(FRIEND_INVITE_TTL_MS / (60 * 60 * 1000));
 function LinkInviteCard() {
   const myUserId = usePrimaryUserId();
   const localUser = useLiveQuery(
-    async () => (myUserId ? await db.users.get(myUserId) : undefined),
+    async () => (myUserId ? await runDexie(() => db.users.get(myUserId)) : undefined),
     [myUserId],
   );
   const [busy, setBusy] = useState(false);

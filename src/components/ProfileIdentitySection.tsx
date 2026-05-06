@@ -3,10 +3,11 @@ import type { User as FirebaseUser } from "firebase/auth";
 import { Pencil, Save } from "lucide-react";
 import AvatarPicker, { type AvatarPick } from "./AvatarPicker";
 import AvatarBubble from "./AvatarBubble";
-import { afterUserDataMutation, db } from "../lib/db";
-import type { User } from "../types";
+import { afterUserDataMutation, db, runDexie } from "../lib/db";
+import { userFacingStorageErrorMessage } from "../lib/idbRetry";
 import { resolveDisplayName, resolveDisplayPhotoURL, syncMyIdentityToCloud } from "../lib/identity";
 import { upsertMyPublicProfile } from "../lib/friends";
+import type { User } from "../types";
 
 interface Props {
   user: User;
@@ -28,7 +29,7 @@ export default function ProfileIdentitySection({ user, authUser }: Props) {
   const displayPhoto = resolveDisplayPhotoURL(user, authUser?.photoURL);
 
   async function saveAll(next: User) {
-    await db.users.put({ ...next, updatedAt: Date.now() });
+    await runDexie(() => db.users.put({ ...next, updatedAt: Date.now() }));
     afterUserDataMutation();
     if (authUser) {
       try {
@@ -57,7 +58,7 @@ export default function ProfileIdentitySection({ user, authUser }: Props) {
       await saveAll({ ...user, name: trimmed });
       setEditingName(false);
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      alert(userFacingStorageErrorMessage(e));
     } finally {
       setBusy(false);
     }

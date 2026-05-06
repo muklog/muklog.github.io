@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Check, Loader2, LogIn, UserPlus } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
-import { db } from "../lib/db";
+import { db, runDexie } from "../lib/db";
 import { getFirestoreDb } from "../lib/firebaseApp";
 import { acceptFriendInviteCode } from "../lib/friends";
 import { isEmbeddedBrowserLikelyBlockingGoogleOAuth } from "../lib/inAppBrowser";
@@ -20,7 +20,7 @@ export default function InviteCodePage() {
   const { user, firebaseReady, signInWithGoogle, signInBusy, signInError } = useAuth();
   const myLocalId = usePrimaryUserId();
   const localUser = useLiveQuery(
-    async () => (myLocalId ? await db.users.get(myLocalId) : undefined),
+    async () => (myLocalId ? await runDexie(() => db.users.get(myLocalId)) : undefined),
     [myLocalId],
   );
 

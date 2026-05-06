@@ -15,7 +15,7 @@ import type {
   MealItem,
   User,
 } from "../types";
-import { db as dexieDb, getSettings, normalizeMeal, SETTINGS_KEY } from "./db";
+import { db as dexieDb, getSettings, normalizeMeal, runDexie, SETTINGS_KEY } from "./db";
 import { getFirestoreDb, getFirebaseAuth } from "./firebaseApp";
 import { base64ToBlob, blobToBase64, compressImage, makeThumbnail } from "./image";
 
@@ -554,67 +554,81 @@ export async function syncCloudWithLocal(): Promise<void> {
     const remotePublic = await pullPublicSettings(uid);
     const remotePrivate = await pullPrivateSettings(uid);
 
-    const localMembers = await dexieDb.users.toArray();
-    const localMeals = await dexieDb.meals.toArray();
-    const localHealth = await dexieDb.health.toArray();
-    let localSettings = await getSettings();
+    let mergedMembers: User[] = [];
+    let mergedMeals: Meal[] = [];
+    let mergedHealth: HealthRecord[] = [];
 
-    const pd = localSettings.cloudPendingDeletes;
-    const skipMeals = new Set(pd?.meals ?? []);
-    const skipHealth = new Set(pd?.health ?? []);
-    const remoteMealsFiltered = remoteMeals.filter((m) => !skipMeals.has(m.id));
-    const remoteHealthFiltered = remoteHealth.filter((h) => !skipHealth.has(h.id));
+    await runDexie(async () => {
+      const localMembers = await dexieDb.users.toArray();
+      const localMeals = await dexieDb.meals.toArray();
+      const localHealth = await dexieDb.health.toArray();
+      const settingsRow = await dexieDb.settings.get(SETTINGS_KEY);
+      let localSettings: AppSettings = settingsRow ?? { id: SETTINGS_KEY };
 
-    const mergedMembers = mergeUsers(localMembers, remoteMembers);
-    const mergedMeals = await mergeMeals(localMeals, remoteMealsFiltered);
-    const mergedHealth = await mergeHealth(localHealth, remoteHealthFiltered);
+      const pd = localSettings.cloudPendingDeletes;
+      const skipMeals = new Set(pd?.meals ?? []);
+      const skipHealth = new Set(pd?.health ?? []);
+      const remoteMealsFiltered = remoteMeals.filter((m) => !skipMeals.has(m.id));
+      const remoteHealthFiltered = remoteHealth.filter((h) => !skipHealth.has(h.id));
 
-    if (remotePublic && remotePublic.updatedAt > (localSettings.appSettingsUpdatedAt ?? 0)) {
-      localSettings = {
-        ...localSettings,
-        activeUserId: remotePublic.activeUserId,
-        onboarded: remotePublic.onboarded,
-        theme: remotePublic.theme,
-        appSettingsUpdatedAt: remotePublic.updatedAt,
-        id: SETTINGS_KEY,
-      };
-    }
+      mergedMembers = mergeUsers(localMembers, remoteMembers);
+      mergedMeals = await mergeMeals(localMeals, remoteMealsFiltered);
+      mergedHealth = await mergeHealth(localHealth, remoteHealthFiltered);
 
-    if (remotePrivate && remotePrivate.updatedAt > (localSettings.geminiSettingsUpdatedAt ?? 0)) {
-      localSettings = {
-        ...localSettings,
-        geminiApiKey: remotePrivate.geminiApiKey || undefined,
-        geminiSettingsUpdatedAt: remotePrivate.updatedAt,
-        id: SETTINGS_KEY,
-      };
-    }
+      if (remotePublic && remotePublic.updatedAt > (localSettings.appSettingsUpdatedAt ?? 0)) {
+        localSettings = {
+          ...localSettings,
+          activeUserId: remotePublic.activeUserId,
+          onboarded: remotePublic.onboarded,
+          theme: remotePublic.theme,
+          appSettingsUpdatedAt: remotePublic.updatedAt,
+          id: SETTINGS_KEY,
+        };
+      }
 
-    await dexieDb.transaction("rw", dexieDb.users, dexieDb.meals, dexieDb.health, dexieDb.settings, async () => {
-      const mu = new Set(mergedMembers.map((x) => x.id));
-      const oldU = await dexieDb.users.toCollection().primaryKeys();
-      await dexieDb.users.bulkDelete(oldU.filter((id) => !mu.has(id as string)) as string[]);
-      await dexieDb.users.bulkPut(mergedMembers);
+      if (remotePrivate && remotePrivate.updatedAt > (localSettings.geminiSettingsUpdatedAt ?? 0)) {
+        localSettings = {
+          ...localSettings,
+          geminiApiKey: remotePrivate.geminiApiKey || undefined,
+          geminiSettingsUpdatedAt: remotePrivate.updatedAt,
+          id: SETTINGS_KEY,
+        };
+      }
 
-      const mm = new Set(mergedMeals.map((x) => x.id));
-      const oldM = await dexieDb.meals.toCollection().primaryKeys();
-      await dexieDb.meals.bulkDelete(oldM.filter((id) => !mm.has(id as string)) as string[]);
-      await dexieDb.meals.bulkPut(mergedMeals);
+      await dexieDb.transaction(
+        "rw",
+        dexieDb.users,
+        dexieDb.meals,
+        dexieDb.health,
+        dexieDb.settings,
+        async () => {
+          const mu = new Set(mergedMembers.map((x) => x.id));
+          const oldU = await dexieDb.users.toCollection().primaryKeys();
+          await dexieDb.users.bulkDelete(oldU.filter((id) => !mu.has(id as string)) as string[]);
+          await dexieDb.users.bulkPut(mergedMembers);
 
-      const mh = new Set(mergedHealth.map((x) => x.id));
-      const oldH = await dexieDb.health.toCollection().primaryKeys();
-      await dexieDb.health.bulkDelete(oldH.filter((id) => !mh.has(id as string)) as string[]);
-      await dexieDb.health.bulkPut(mergedHealth);
+          const mm = new Set(mergedMeals.map((x) => x.id));
+          const oldM = await dexieDb.meals.toCollection().primaryKeys();
+          await dexieDb.meals.bulkDelete(oldM.filter((id) => !mm.has(id as string)) as string[]);
+          await dexieDb.meals.bulkPut(mergedMeals);
 
-      await dexieDb.settings.put({
-        ...localSettings,
-        lastCloudSyncAt: Date.now(),
-        cloudPendingDeletes: prunePendingDeletes(
-          localSettings.cloudPendingDeletes,
-          mergedMeals,
-          mergedHealth,
-        ),
-        id: SETTINGS_KEY,
-      });
+          const mh = new Set(mergedHealth.map((x) => x.id));
+          const oldH = await dexieDb.health.toCollection().primaryKeys();
+          await dexieDb.health.bulkDelete(oldH.filter((id) => !mh.has(id as string)) as string[]);
+          await dexieDb.health.bulkPut(mergedHealth);
+
+          await dexieDb.settings.put({
+            ...localSettings,
+            lastCloudSyncAt: Date.now(),
+            cloudPendingDeletes: prunePendingDeletes(
+              localSettings.cloudPendingDeletes,
+              mergedMeals,
+              mergedHealth,
+            ),
+            id: SETTINGS_KEY,
+          });
+        },
+      );
     });
 
     await deleteRemoteMembersNotIn(uid, new Set(mergedMembers.map((x) => x.id)));
