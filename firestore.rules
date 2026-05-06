@@ -155,9 +155,6 @@ service cloud.firestore {
         && p[0].size() > 0
         && p[1].size() > 0;
     }
-    function dmThreadDoc(t) {
-      return get(/databases/$(database)/documents/dmThreads/$(t)).data;
-    }
     match /dmThreads/{threadId} {
       // 목록 쿼리(array-contains만 씀)와 호환 — 복합 쿼리+규칙 조합에서 permission-denied 방지
       allow read: if request.auth != null
