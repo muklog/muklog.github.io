@@ -247,13 +247,17 @@ export function subscribeMyDmThreads(
 
   let unsub: Unsubscribe | null = null;
   let stopped = false;
-  let retriedAuth = false;
+  /** permission-denied / unauthenticated 일 때 auth 토큰 갱신 후 재구독 (초기 진입 레이스 대비해 2회까지) */
+  let authRetryCount = 0;
+  const MAX_AUTH_RETRY = 2;
 
   const attach = () => {
     unsub?.();
     unsub = onSnapshot(
       q,
+      { includeMetadataChanges: true },
       (snap) => {
+        authRetryCount = 0;
         const rows = snap.docs
           .map((d) => ({
             ...(d.data() as Omit<DmThreadDoc, "id">),
@@ -267,14 +271,15 @@ export function subscribeMyDmThreads(
         if (stopped) return;
         const code = String((err as { code?: string })?.code ?? "");
         if (
-          !retriedAuth &&
+          authRetryCount < MAX_AUTH_RETRY &&
           (code === "permission-denied" ||
             code.endsWith("/permission-denied") ||
             code === "unauthenticated" ||
             code.endsWith("/unauthenticated"))
         ) {
-          retriedAuth = true;
+          authRetryCount++;
           await getFirebaseAuth().currentUser?.getIdToken(true).catch(() => {});
+          await new Promise((r) => setTimeout(r, 180 * authRetryCount));
           if (!stopped) attach();
           return;
         }

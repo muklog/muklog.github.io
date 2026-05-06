@@ -38,10 +38,13 @@ export default function MessagesPage() {
     setListReady(false);
     setListErr(null);
     void (async () => {
+      const auth = getFirebaseAuth();
+      await auth.authStateReady();
       try {
-        await getFirebaseAuth().currentUser?.getIdToken(true);
+        /** 강제 refresh(getIdToken(true)) 직후 Firestore 구독이 일시적으로 permission-denied 가 나는 사례가 있어 헤더 DM 과 동일하게 일반 로드만 사용 */
+        await auth.currentUser?.getIdToken();
       } catch {
-        /* ignore */
+        /* 오프라인 등 */
       }
       if (cancelled) return;
       const live = getFirebaseAuth().currentUser?.uid;
