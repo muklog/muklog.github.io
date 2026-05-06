@@ -2,6 +2,14 @@ import { initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
 import { initializeFirestore, type Firestore } from "firebase/firestore";
 
+/** 모바일 WebKit/WebView 등에서 WebSocket·감지형 롱폴링이 꼬이면 초기 리스너가 permission-denied 로 떨어지는 경우가 있어 폴백 */
+function prefersFirestoreForcedLongPolling(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent,
+  );
+}
+
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let firestore: Firestore | null = null;
@@ -28,9 +36,16 @@ export function initFirebase(): FirebaseApp | null {
     appId: import.meta.env.VITE_FIREBASE_APP_ID,
   });
   auth = getAuth(app);
-  firestore = initializeFirestore(app, {
-    experimentalAutoDetectLongPolling: true,
-  });
+  firestore = initializeFirestore(
+    app,
+    prefersFirestoreForcedLongPolling()
+      ? {
+          experimentalForceLongPolling: true,
+        }
+      : {
+          experimentalAutoDetectLongPolling: true,
+        },
+  );
   return app;
 }
 

@@ -247,15 +247,15 @@ export function subscribeMyDmThreads(
 
   let unsub: Unsubscribe | null = null;
   let stopped = false;
-  /** permission-denied / unauthenticated 일 때 auth 토큰 갱신 후 재구독 (초기 진입 레이스 대비해 2회까지) */
+  /** permission-denied / unauthenticated 일 때 토큰 갱신 후 재구독 (초기 진입·모바일 레이스 대비) */
   let authRetryCount = 0;
-  const MAX_AUTH_RETRY = 2;
+  /** 모바일 WebChannel 레이스·일시 거부가 더 길게 이어지는 편이라 PC 대비 재시도 여유 확보 */
+  const MAX_AUTH_RETRY = 5;
 
   const attach = () => {
     unsub?.();
     unsub = onSnapshot(
       q,
-      { includeMetadataChanges: true },
       (snap) => {
         authRetryCount = 0;
         const rows = snap.docs
@@ -279,7 +279,7 @@ export function subscribeMyDmThreads(
         ) {
           authRetryCount++;
           await getFirebaseAuth().currentUser?.getIdToken(true).catch(() => {});
-          await new Promise((r) => setTimeout(r, 180 * authRetryCount));
+          await new Promise((r) => setTimeout(r, 260 * authRetryCount));
           if (!stopped) attach();
           return;
         }

@@ -16,7 +16,8 @@ export default defineConfig(({ command }) => ({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg"],
+      /** PNG 192·512 포함 — 크롬/웨일은 여기 빠지면 설치 플로우·스플래시가 깨지는 경우가 많음 (삼성 브라우저만 우연히 너그러운 현상 줄이기). */
+      includeAssets: ["favicon.svg", "pwa-192.png", "pwa-512.png"],
       manifest: {
         name: "헬스헬스 — 식단·건강 기록",
         short_name: "헬스헬스",
@@ -26,14 +27,33 @@ export default defineConfig(({ command }) => ({
         display: "standalone",
         orientation: "portrait",
         lang: "ko",
+        prefer_related_applications: false,
         start_url: base,
         scope: base,
         icons: [
           {
+            src: "pwa-192.png",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "pwa-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "pwa-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
+          {
             src: "favicon.svg",
             sizes: "any",
             type: "image/svg+xml",
-            purpose: "any maskable",
+            purpose: "any",
           },
         ],
       },

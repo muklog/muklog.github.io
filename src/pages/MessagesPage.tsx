@@ -41,8 +41,9 @@ export default function MessagesPage() {
       const auth = getFirebaseAuth();
       await auth.authStateReady();
       try {
-        /** 강제 refresh(getIdToken(true)) 직후 Firestore 구독이 일시적으로 permission-denied 가 나는 사례가 있어 헤더 DM 과 동일하게 일반 로드만 사용 */
-        await auth.currentUser?.getIdToken();
+        /** AuthContext 의 user 과 동일 레퍼런스로 토큰 확보 — currentUser 과의 미세 레이스(특히 모바일 WebView) 줄임 */
+        /** 강제 refresh(getIdToken(true)) 직후 Firestore 구독이 일시적으로 permission-denied 가 나는 사례가 있어 일반 로드만 사용 */
+        await user!.getIdToken();
       } catch {
         /* 오프라인 등 */
       }
