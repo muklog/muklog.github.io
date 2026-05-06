@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2, MessageCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { getPublicProfile } from "../lib/friends";
 import {
+  dmErrorMessageForUi,
   ensureDmThreadWith,
   otherParticipantUid,
   otherUidInDmThreadId,
@@ -22,6 +23,9 @@ export default function MessagesPage() {
   const peerFromQuery = searchParams.get("with")?.trim();
   const { user, firebaseReady, loading: authLoading } = useAuth();
   const [threads, setThreads] = useState<DmThreadDoc[]>([]);
+  /** 첫 스냅샷 전에는 빈 배열이라도 '대화 없음'으로 착각하지 않도록 분리 */
+  const [listReady, setListReady] = useState(false);
+  const [listErr, setListErr] = useState<string | null>(null);
   const [readMap, setReadMap] = useState<Map<string, number>>(new Map());
   const [peerNames, setPeerNames] = useState<Map<string, string>>(new Map());
   const handledPeerRef = useRef<string | null>(null);
@@ -31,16 +35,30 @@ export default function MessagesPage() {
     let ua: (() => void) | undefined;
     let ub: (() => void) | undefined;
     let cancelled = false;
+    setListReady(false);
+    setListErr(null);
     void (async () => {
       try {
-        await getFirebaseAuth().currentUser?.getIdToken();
+        await getFirebaseAuth().currentUser?.getIdToken(true);
       } catch {
         /* ignore */
       }
       if (cancelled) return;
       const live = getFirebaseAuth().currentUser?.uid;
       if (!live || live !== user.uid) return;
-      ua = subscribeMyDmThreads(user.uid, setThreads);
+      ua = subscribeMyDmThreads(
+        user.uid,
+        (rows) => {
+          setThreads(rows);
+          setListReady(true);
+          setListErr(null);
+        },
+        (e) => {
+          setThreads([]);
+          setListReady(true);
+          setListErr(dmErrorMessageForUi(e));
+        },
+      );
       ub = subscribeDmReadMap(user.uid, setReadMap, (e) =>
         console.warn("[messages] dm read map", e),
       );
@@ -132,10 +150,37 @@ export default function MessagesPage() {
         </div>
       </header>
 
-      {threads.length === 0 ? (
-        <p className="card p-8 text-center text-sm text-slate-400">
-          아직 대화가 없어요. 친구 탭 또는 피드에서 친구 이름을 눌러 DM을 보내 보세요.
+      {!listReady ? (
+        <p className="card flex items-center justify-center gap-2 p-8 text-center text-sm text-slate-400">
+          <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
+          대화 목록을 불러오는 중…
         </p>
+      ) : listErr ? (
+        <div className="card space-y-3 border-rose-500/35 bg-rose-500/5 p-4 text-sm text-rose-100">
+          <p>{listErr}</p>
+          <button
+            type="button"
+            className="btn-secondary w-full py-2 text-center text-sm"
+            onClick={() => window.location.reload()}
+          >
+            새로고침
+          </button>
+        </div>
+      ) : threads.length === 0 ? (
+        <div className="card space-y-3 p-6 text-center text-sm text-slate-400">
+          <p className="text-slate-200">아직 열린 대화가 없어요.</p>
+          <p className="text-xs leading-relaxed">
+            DM은 목록에서 새로 만들 수 없고,{" "}
+            <strong className="text-slate-300">친구 프로필</strong>에서 시작하거나{" "}
+            <strong className="text-slate-300">피드</strong>에서 친구 이름을 눌러 주세요.
+          </p>
+          <Link to="/friends" className="btn-primary inline-block w-full py-3 text-center text-sm font-medium">
+            친구 탭으로 이동
+          </Link>
+          <Link to="/" className="block text-center text-xs text-brand-400 underline-offset-2 hover:underline">
+            피드로 가기
+          </Link>
+        </div>
       ) : (
         <ul className="space-y-2">
           {threads.map((t) => {
