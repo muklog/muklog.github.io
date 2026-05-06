@@ -28,6 +28,8 @@ export default function DmChatPage() {
   const [peerLabel, setPeerLabel] = useState<string>("대화");
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  /** 구독 거절 시 하단 alert 대신 화면에 표시 (삼성 브라우저 등에서만 permission 이 달라져도 원인 파악용) */
+  const [messagesListenErr, setMessagesListenErr] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -65,10 +67,16 @@ export default function DmChatPage() {
 
   useEffect(() => {
     if (!threadId || !allowed) return;
-    const unsub = subscribeDmMessages(threadId, (rows) => {
-      setMessages(rows);
-      requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }));
-    });
+    setMessagesListenErr(null);
+    const unsub = subscribeDmMessages(
+      threadId,
+      (rows) => {
+        setMessagesListenErr(null);
+        setMessages(rows);
+        requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }));
+      },
+      (err) => setMessagesListenErr(dmErrorMessageForUi(err)),
+    );
     return () => unsub();
   }, [threadId, allowed]);
 
@@ -139,6 +147,11 @@ export default function DmChatPage() {
       </header>
 
       <div className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto">
+        {messagesListenErr && (
+          <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+            {messagesListenErr}
+          </p>
+        )}
         {messages.length === 0 ? (
           <p className="py-8 text-center text-xs text-slate-500">첫 메시지를 남겨 보세요.</p>
         ) : (

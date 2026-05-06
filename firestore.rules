@@ -180,10 +180,25 @@ service cloud.firestore {
         && resource.data.participantUids is list
         && me() in resource.data.participantUids;
     }
+    // 메시지 read 는 threadId 규약(uidA_uidB, uidA < uidB)으로 참가 여부만 판단한다.
+    // 부모 문서를 rules 안에서 매번 get() 하면 목록 리스너·일부 브라우저 환경에서 평가가 불안정해질 수 있어
+    // threadId 문자열만으로 허용(앱 생성 규약과 일치 — Firebase UID 에 '_' 가 없음).
+    function dmThreadPeersFromDocId(tid) {
+      return tid.split('_');
+    }
+    function dmMessageReadAllowed(threadId) {
+      let p = dmThreadPeersFromDocId(threadId);
+      return p.size() == 2
+        && p[0] is string
+        && p[1] is string
+        && p[0].size() > 0
+        && p[1].size() > 0
+        && p[0] < p[1]
+        && (request.auth.uid == p[0] || request.auth.uid == p[1]);
+    }
+
     match /dmThreads/{threadId}/messages/{mid} {
-      allow read: if request.auth != null
-        && dmThreadDoc(threadId).participantUids is list
-        && request.auth.uid in dmThreadDoc(threadId).participantUids;
+      allow read: if signedIn() && dmMessageReadAllowed(threadId);
       // createdAt 타입 검사 제거 — SDK/직렬화에서 int/float 외로 들어가 규칙만 거절되는 경우 방지
       allow create: if signedIn()
         && dmThreadDoc(threadId).participantUids is list

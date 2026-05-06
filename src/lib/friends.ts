@@ -702,12 +702,10 @@ export function subscribeFriendMealsInRange(
 /**
  * 특정 친구의 "최근 N 개 식사 기록" 을 실시간 구독한다 — 피드 탭용.
  *
- * orderBy("updatedAt", "desc") + limit 를 써서 가장 최근 수정된 것부터 가져온다.
- * 친구가 AI 분석을 끝내거나 수동 수정 시 updatedAt 이 갱신되므로 자연스럽게
- * 피드 맨 위로 올라온다.
+ * 과거 레코드에 `updatedAt` 이 비어 있는 경우가 있어, 쿼리는 `orderBy("date","desc")` 로
+ * 최근 일자부터 넉넉히 가져온 뒤 `updatedAt ?? createdAt` 기준으로 정렬해 상위 N 개만 넘긴다.
  *
- * 인덱스: 단일 필드 orderBy 는 Firestore 가 자동 인덱스를 제공하므로 추가
- * 설정 불필요.
+ * 단일 필드 orderBy 로 자동 인덱스만 사용한다.
  */
 export function subscribeFriendLatestMeals(
   ownerUid: string,
@@ -716,39 +714,45 @@ export function subscribeFriendLatestMeals(
   onErr?: (e: unknown) => void,
 ): Unsubscribe {
   const fs = getFirestoreDb();
+  const fetchCap = Math.min(120, Math.max(max * 6, max + 30));
   const q = query(
     collection(fs, "users", ownerUid, "meals"),
-    orderBy("updatedAt", "desc"),
-    limit(max),
+    orderBy("date", "desc"),
+    limit(fetchCap),
   );
-  const cache = new Map<string, { updatedAt: number; meal: Meal }>();
+  const cache = new Map<string, { rev: number; meal: Meal }>();
   return onSnapshot(
     q,
     async (snap) => {
       try {
-        const rows = await Promise.all(
+        const decoded = await Promise.all(
           snap.docs.map(async (d) => {
             const data = { ...(d.data() as MealStored), id: d.id };
+            const stored = data as MealStored;
+            const rev = (stored.updatedAt ?? stored.createdAt ?? 0) | 0;
             const cached = cache.get(d.id);
-            if (cached && cached.updatedAt === data.updatedAt) {
+            if (cached && cached.rev === rev) {
               return cached.meal;
             }
             const meal = await storedToMeal(data);
-            cache.set(d.id, { updatedAt: data.updatedAt, meal });
+            cache.set(d.id, { rev, meal });
             return meal;
           }),
         );
         const alive = new Set(snap.docs.map((d) => d.id));
         for (const id of [...cache.keys()]) if (!alive.has(id)) cache.delete(id);
-        cb(rows);
+        decoded.sort((a, b) => {
+          const ta = (a.updatedAt ?? a.createdAt ?? 0) | 0;
+          const tb = (b.updatedAt ?? b.createdAt ?? 0) | 0;
+          return tb - ta;
+        });
+        cb(decoded.slice(0, max));
       } catch (e) {
         console.error("[friends] latest meals snapshot decode", e);
         onErr?.(e);
       }
     },
     (err) => {
-      // updatedAt 필드가 존재하지 않는 아주 오래된(v1 이전) 레코드만 있는
-      // owner 에 대해서는 orderBy 결과가 비어 있을 수 있지만 에러는 아니다.
       console.error("[friends] latest meals subscribe", err);
       onErr?.(err);
     },

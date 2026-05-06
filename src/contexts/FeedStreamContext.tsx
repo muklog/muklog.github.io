@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, matchPath } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, getSettings, normalizeMeal, patchSettings } from "../lib/db";
 import {
@@ -47,8 +47,8 @@ const FeedStreamContext = createContext<Ctx | null>(null);
 
 export function FeedStreamProvider({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
-  /** 피드 탭이 아닐 때 친구 식단 실시간 구독을 끄면 Firestore 읽기·동시 리스너 수가 크게 줄어든다. */
-  const feedStreamActive = pathname === "/";
+  /** HashRouter 포함 — 피드만 실시간 구독 활성화(리스너·읽기 절약). pathname 은 브라우저마다 edge case 적음. */
+  const feedStreamActive = !!matchPath({ path: "/", end: true }, pathname);
 
   const { user, firebaseReady } = useAuth();
   const myUid = firebaseReady ? user?.uid : undefined;
@@ -79,7 +79,7 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
       return;
     }
     const unsub = subscribeOutgoingShares(
-      (rows) => setFriendShares(rows.filter((s) => s.scope.calendar)),
+      (rows) => setFriendShares(rows.filter((s) => s.scope?.calendar === true)),
       (e) => console.warn("[feedStream] outgoing shares", e),
     );
     return () => unsub();
