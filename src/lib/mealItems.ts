@@ -33,6 +33,8 @@ export async function updateMealItem(
   transform: (it: MealItem) => MealItem,
 ): Promise<void> {
   const now = Date.now();
+  /** 성공 후 동기화 정책용 */
+  let nextItemSnapshot: MealItem | undefined;
 
   async function attempt(): Promise<boolean> {
     const cur = await db.meals.get(mealId);
@@ -43,6 +45,7 @@ export async function updateMealItem(
     const nextItems = normalized.items.map((it) =>
       it.id === itemId ? { ...transform(it), updatedAt: now } : it,
     );
+    nextItemSnapshot = nextItems.find((it) => it.id === itemId);
     await db.meals.put({ ...normalized, items: nextItems, updatedAt: now });
     return true;
   }
@@ -56,6 +59,14 @@ export async function updateMealItem(
     }
   }
   afterUserDataMutation();
+  /** AI 분석 완료/실패는 친구 피드에 곧 보이도록 디바운스를 쓰지 않고 바로 푸시 */
+  const st = nextItemSnapshot?.analysisStatus;
+  if (st === "done" || st === "error") {
+    void import("./autoCloudSync").then((m) => {
+      m.ensureAutoCloudSyncListeners();
+      m.requestAutoCloudSync({ immediate: true });
+    });
+  }
 }
 
 export interface DeleteItemOptions {

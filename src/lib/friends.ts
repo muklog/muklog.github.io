@@ -660,12 +660,15 @@ function mealFirestoreCacheKey(data: MealStored): string {
   const part = items
     .map((it) => {
       const errLen = typeof it.analysisError === "string" ? it.analysisError.length : 0;
-      const menuLen = typeof it.menuText === "string" ? it.menuText.length : 0;
+      const mt = typeof it.menuText === "string" && it.menuText.length > 0 ? it.menuText : "";
+      /** 길이만으로는 같은 길이의 다른 문자열을 구별 못해 짧게 본문 앞 부분 포함 */
+      const menuSig =
+        mt.length > 0 ? `${mt.length}:${mt.slice(0, 96)}` : "0";
       return [
         it.id,
         it.analysisStatus ?? "",
         it.updatedAt ?? 0,
-        menuLen,
+        menuSig,
         errLen,
         typeof it.rating === "number" ? it.rating : "",
       ].join(":");
@@ -691,6 +694,7 @@ export function subscribeFriendMealsInRange(
   const cache = new Map<string, { key: string; meal: Meal }>();
   return onSnapshot(
     q,
+    { includeMetadataChanges: true },
     async (snap) => {
       try {
         const rows = await Promise.all(
@@ -745,6 +749,7 @@ export function subscribeFriendLatestMeals(
   const cache = new Map<string, { key: string; meal: Meal }>();
   return onSnapshot(
     q,
+    { includeMetadataChanges: true },
     async (snap) => {
       try {
         const decoded = await Promise.all(

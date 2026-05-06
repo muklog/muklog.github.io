@@ -333,7 +333,7 @@ export function ItemAnalysisBlock({
       <div className="flex items-center gap-2 rounded-xl bg-slate-800/50 px-3 py-2.5 text-sm text-slate-300">
         <Loader2 size={16} className="animate-spin text-brand-400" />
         {readOnly
-          ? "친구 기록이 동기화되면 요약이 여기에도 보여요."
+          ? "친구가 분석을 마치면 결과가 곧 여기에도 나타나요. 잠시 후 새로고침해 보세요."
           : "AI가 식단을 분석하고 있어요…"}
       </div>
     );
