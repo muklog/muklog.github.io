@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useFeedStream, type FeedAuthor, type FeedEntry } from "../contexts/FeedStreamContext";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Home, Plus, Rss, Sparkles, UserPlus } from "lucide-react";
+import { Home, Loader2, Plus, Rss, Sparkles, UserPlus } from "lucide-react";
 import { getAnalysisProfileForUser, getSettings } from "../lib/db";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { MealItemCard, MealItemCardsCarousel, MealItemEditDialog } from "../components/MealCard";
@@ -29,6 +29,8 @@ export default function FeedPage() {
   const fs = useFeedStream();
   const entries = fs?.entries ?? [];
   const loading = fs?.loading ?? true;
+  /** 친구 스트림·공유 목록이 준비된 뒤에만 목록·친구 유도 카드를 그림 — 준비 전엔 깜빡임 없이 로딩만 */
+  const streamReady = !loading;
   const myUid = firebaseReady ? user?.uid : undefined;
   const myUserId = usePrimaryUserId();
   const settings = useLiveQuery(() => getSettings(), []);
@@ -112,7 +114,7 @@ export default function FeedPage() {
         </p>
       )}
 
-      {!hasFriends && firebaseReady && myUid && (
+      {streamReady && !hasFriends && firebaseReady && myUid && (
         <Link
           to="/friends"
           className="card flex items-center justify-between gap-3 border-slate-800 bg-slate-900/40 p-4 hover:bg-slate-900/60"
@@ -129,31 +131,45 @@ export default function FeedPage() {
         </Link>
       )}
 
-      {loading && entries.length === 0 && (
-        <p className="card p-4 text-center text-xs text-slate-500">피드를 불러오는 중…</p>
+      {!streamReady && (
+        <div
+          className="card flex flex-col items-center justify-center gap-3 py-14 text-center"
+          aria-busy
+          aria-live="polite"
+        >
+          <Loader2 className="h-8 w-8 animate-spin text-brand-400" aria-hidden />
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-slate-200">피드를 불러오는 중…</p>
+            {myUid && (
+              <p className="text-xs text-slate-500">친구와 공유된 식단을 함께 가져오고 있어요.</p>
+            )}
+          </div>
+        </div>
       )}
 
-      {!loading && entries.length === 0 && (
+      {streamReady && entries.length === 0 && (
         <p className="card p-6 text-center text-sm text-slate-400">
           <Sparkles size={16} className="mb-0.5 mr-1 inline text-brand-400" />
           아직 기록이 없어요. 오늘의 첫 끼니를 찍어 올려볼까요?
         </p>
       )}
 
-      <div className="space-y-4">
-        {visibleEntries.map((e) => (
-          <FeedCard
-            key={`${e.author.uid}_${e.meal.id}`}
-            entry={e}
-            showSocial={!!myUid}
-            myFirebaseUid={myUid}
-            myUserId={myUserId}
-            myApiKey={apiKey}
-          />
-        ))}
-      </div>
+      {streamReady && entries.length > 0 && (
+        <div className="space-y-4">
+          {visibleEntries.map((e) => (
+            <FeedCard
+              key={`${e.author.uid}_${e.meal.id}`}
+              entry={e}
+              showSocial={!!myUid}
+              myFirebaseUid={myUid}
+              myUserId={myUserId}
+              myApiKey={apiKey}
+            />
+          ))}
+        </div>
+      )}
 
-      {!loading && visibleCount < entries.length && (
+      {streamReady && visibleCount < entries.length && (
         <div ref={sentinelRef} className="flex justify-center py-6" aria-hidden>
           <span className="text-xs text-slate-500">더 불러오는 중…</span>
         </div>
