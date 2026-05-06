@@ -44,6 +44,13 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
 
+  /**
+   * `/` 과 `/messages` 모두에서 shouldListen 이 true 라면 DM 구독 effect 의 deps 가 그대로라
+   * 리스너가 재부착되지 않음. 친구 탭 등에서는 route 가 꺼졌다 켜지면서 구독이 새로 웜업되어 목록이 잘 뜸.
+   * 피드에서 DM 목록만 곧바로 들어올 때는 동일해야 하므로, `/` → `/messages` 진입 시 한 번 재연결한다.
+   */
+  const prevPathForDmResubscribeRef = useRef<string | null>(null);
+
   const routeWantsDm = pathname === "/" || pathname.startsWith("/messages");
 
   const [tabVisible, setTabVisible] = useState(
@@ -64,6 +71,15 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
 
   const [retryNonce, setRetryNonce] = useState(0);
   const retryDmList = useCallback(() => setRetryNonce((n) => n + 1), []);
+
+  useEffect(() => {
+    const prev = prevPathForDmResubscribeRef.current;
+    prevPathForDmResubscribeRef.current = pathname;
+    if (prev === null) return;
+    if (pathname !== "/messages" || prev !== "/") return;
+    if (!firebaseReady || !myUid || authLoading || !tabVisible) return;
+    retryDmList();
+  }, [pathname, firebaseReady, myUid, authLoading, tabVisible, retryDmList]);
 
   const [threads, setThreads] = useState<DmThreadDoc[]>([]);
   const [readMap, setReadMap] = useState<Map<string, number>>(new Map());
