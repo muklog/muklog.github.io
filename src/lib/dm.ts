@@ -6,9 +6,10 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   setDoc,
+  updateDoc,
   where,
-  writeBatch,
   type Unsubscribe,
 } from "firebase/firestore";
 import type { DmMessageDoc, DmThreadDoc } from "../types";
@@ -359,19 +360,13 @@ export async function sendDmMessage(threadId: string, rawText: string): Promise<
   if (trimmed.length > 4000) throw new Error("메시지가 너무 깁니다.");
 
   const fs = getFirestoreDb();
+  const tref = doc(fs, "dmThreads", threadId);
 
   await withFirestoreMutationRetries(async () => {
     await ensureDmThreadDocReady(threadId);
 
-    const tref = doc(fs, "dmThreads", threadId);
-    const threadSnap = await getDoc(tref);
-    if (!threadSnap.exists()) throw new Error("대화방을 불러오지 못했습니다.");
-    const p = (threadSnap.data() as { participantUids?: string[] }).participantUids;
-    if (!Array.isArray(p) || !p.includes(me)) {
-      throw new Error("이 대화에 참가할 수 없습니다.");
-    }
-
-    const msgRef = doc(collection(fs, "dmThreads", threadId, "messages"));
+    const msgColl = collection(fs, "dmThreads", threadId, "messages");
+    const msgRef = doc(msgColl);
     const now = Date.now();
     const msgPayload = { senderUid: me, text: trimmed, createdAt: now };
     const threadPayload = {
@@ -380,10 +375,35 @@ export async function sendDmMessage(threadId: string, rawText: string): Promise<
       updatedAt: now,
     };
 
-    const batch = writeBatch(fs);
-    batch.set(msgRef, msgPayload);
-    batch.update(tref, threadPayload);
-    await batch.commit();
+    try {
+      await runTransaction(fs, async (txn) => {
+        const ts = await txn.get(tref);
+        if (!ts.exists()) throw new Error("대화방을 불러오지 못했습니다.");
+        const p = (ts.data() as { participantUids?: string[] }).participantUids;
+        if (!Array.isArray(p) || !p.includes(me)) {
+          throw new Error("이 대화에 참가할 수 없습니다.");
+        }
+        txn.set(msgRef, msgPayload);
+        txn.update(tref, threadPayload);
+      });
+    } catch (txnErr) {
+      const code = String((txnErr as { code?: string })?.code ?? "");
+      const deny =
+        code === "permission-denied" ||
+        code.endsWith("/permission-denied") ||
+        /insufficient permissions/i.test(firebaseErrText(txnErr));
+      const ts = await getDoc(tref);
+      if (!ts.exists()) throw txnErr;
+      const p = (ts.data() as { participantUids?: string[] }).participantUids;
+      if (!Array.isArray(p) || !p.includes(me)) throw txnErr;
+      if (deny) throw txnErr;
+      try {
+        await setDoc(msgRef, msgPayload);
+        await updateDoc(tref, threadPayload);
+      } catch {
+        throw txnErr;
+      }
+    }
   });
 
   try {

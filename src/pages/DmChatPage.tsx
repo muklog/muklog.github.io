@@ -5,6 +5,7 @@ import { ArrowLeft, Loader2, Send } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { getPublicProfile, isCalendarConnectedPairFromServer } from "../lib/friends";
 import {
+  dmErrorMessageForUi,
   ensureDmThreadWith,
   markDmThreadReadForMe,
   otherUidInDmThreadId,
@@ -29,6 +30,8 @@ export default function DmChatPage() {
   const [peerLabel, setPeerLabel] = useState<string>("대화");
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  /** 전송 실패 시 짧은 안내(성공 시 자동 제거) */
+  const [sendHint, setSendHint] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -51,26 +54,33 @@ export default function DmChatPage() {
         if (cancelled) return;
         if (!snap.exists()) await ensureDmThreadWith(peer);
         if (cancelled) return;
-
-        await markDmThreadReadForMe(threadId);
         setCanSend(true);
-
-        let linked = true;
-        try {
-          linked = await isCalendarConnectedPairFromServer(user.uid, peer);
-        } catch {
-          linked = false;
-        }
-        if (cancelled) return;
-        setCalendarLinked(linked);
-        const prof = await getPublicProfile(peer);
-        if (cancelled) return;
-        setPeerLabel(prof?.displayName ?? peer.slice(0, 6));
       } catch {
         if (!cancelled) {
           setAllowed(false);
           setCanSend(false);
         }
+        return;
+      }
+
+      void markDmThreadReadForMe(threadId).catch(() => {});
+      if (cancelled) return;
+
+      const peer = otherUidInDmThreadId(threadId, user.uid)!;
+      let linked = true;
+      try {
+        linked = await isCalendarConnectedPairFromServer(user.uid, peer);
+      } catch {
+        linked = false;
+      }
+      if (cancelled) return;
+      setCalendarLinked(linked);
+      try {
+        const prof = await getPublicProfile(peer);
+        if (cancelled) return;
+        setPeerLabel(prof?.displayName ?? peer.slice(0, 6));
+      } catch {
+        if (!cancelled) setPeerLabel(peer.slice(0, 6));
       }
     })();
     return () => {
@@ -94,11 +104,13 @@ export default function DmChatPage() {
   async function submit() {
     if (!threadId || !text.trim() || sending || !canSend) return;
     setSending(true);
+    setSendHint(null);
     try {
       await sendDmMessage(threadId, text);
       setText("");
-    } catch {
-      /* 재시도·규칙 조정은 sendDmMessage 및 Firestore 규칙에서 처리 */
+    } catch (e) {
+      console.warn("[dm] send failed", e);
+      setSendHint(dmErrorMessageForUi(e));
     } finally {
       setSending(false);
     }
@@ -168,10 +180,18 @@ export default function DmChatPage() {
             달력 공유가 일시적으로 확인되지 않아요. 메시지는 보낼 수 있으며, 문제가 계속되면 친구 탭에서 공유를 확인해 주세요.
           </p>
         )}
+        {sendHint && (
+          <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-1.5 text-[11px] text-rose-200">
+            {sendHint}
+          </p>
+        )}
         <div className="flex gap-2">
           <textarea
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              setSendHint(null);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
