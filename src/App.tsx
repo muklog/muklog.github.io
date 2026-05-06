@@ -20,6 +20,8 @@ import NotificationsPage from "./pages/NotificationsPage";
 import MessagesPage from "./pages/MessagesPage";
 import DmChatPage from "./pages/DmChatPage";
 import BottomNav from "./components/BottomNav";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
+import { DmRealtimeProvider } from "./contexts/DmRealtimeContext";
 
 export default function App() {
   const location = useLocation();
@@ -108,18 +110,19 @@ export default function App() {
   }
 
   return (
-    <FeedStreamProvider>
-      <div
-        className="app-shell mx-auto flex h-full min-h-0 w-full max-w-screen-sm flex-col"
-        style={{
-          paddingTop: "var(--safe-top)",
-          paddingBottom: "var(--safe-bottom)",
-        }}
-      >
-        <main
-          ref={mainRef}
-          className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain overflow-x-hidden bg-slate-950 pb-24 [-webkit-overflow-scrolling:touch]"
+    <DmRealtimeProvider>
+      <FeedStreamProvider>
+        <div
+          className="app-shell mx-auto flex h-full min-h-0 w-full max-w-screen-sm flex-col"
+          style={{
+            paddingTop: "var(--safe-top)",
+            paddingBottom: "var(--safe-bottom)",
+          }}
         >
+          <main
+            ref={mainRef}
+            className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain overflow-x-hidden bg-slate-950 pb-24 [-webkit-overflow-scrolling:touch]"
+          >
           {/* 풀투새로고침: 레이아웃 높이 0 유지 · absolute 로 가로 중앙 정렬 · motion 만 별도 레이어 */}
           <div
             className="pointer-events-none sticky top-0 z-[35] h-0 w-full overflow-visible"
@@ -163,28 +166,31 @@ export default function App() {
             </div>
           </div>
 
-          <div>
-            <Routes>
-              {/* 첫 화면은 피드. 기존 달력 홈은 /home 으로 이동 */}
-              <Route path="/" element={<FeedPage />} />
-              <Route path="/home" element={<HomePage />} />
-              <Route path="/day/:date" element={<DayPage />} />
-              <Route path="/health" element={<HealthPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/onboarding" element={<OnboardingPage />} />
-              <Route path="/friends" element={<FriendsPage />} />
-              <Route path="/friends/invite/c/:inviteCode" element={<InviteCodePage />} />
-              <Route path="/friends/:uid" element={<FriendProfilePage />} />
-              <Route path="/friends/:uid/day/:date" element={<FriendDayPage />} />
-              <Route path="/notifications" element={<NotificationsPage />} />
-              <Route path="/messages" element={<MessagesPage />} />
-              <Route path="/messages/:threadId" element={<DmChatPage />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </div>
-        </main>
-        {!isOnboardingRoute && <BottomNav />}
-      </div>
-    </FeedStreamProvider>
+            <AppErrorBoundary>
+              <div>
+                <Routes>
+                  {/* 첫 화면은 피드. 기존 달력 홈은 /home 으로 이동 */}
+                  <Route path="/" element={<FeedPage />} />
+                  <Route path="/home" element={<HomePage />} />
+                  <Route path="/day/:date" element={<DayPage />} />
+                  <Route path="/health" element={<HealthPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/onboarding" element={<OnboardingPage />} />
+                  <Route path="/friends" element={<FriendsPage />} />
+                  <Route path="/friends/invite/c/:inviteCode" element={<InviteCodePage />} />
+                  <Route path="/friends/:uid" element={<FriendProfilePage />} />
+                  <Route path="/friends/:uid/day/:date" element={<FriendDayPage />} />
+                  <Route path="/notifications" element={<NotificationsPage />} />
+                  <Route path="/messages" element={<MessagesPage />} />
+                  <Route path="/messages/:threadId" element={<DmChatPage />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </div>
+            </AppErrorBoundary>
+          </main>
+          {!isOnboardingRoute && <BottomNav />}
+        </div>
+      </FeedStreamProvider>
+    </DmRealtimeProvider>
   );
 }

@@ -1,6 +1,11 @@
 import { initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
-import { initializeFirestore, type Firestore } from "firebase/firestore";
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentSingleTabManager,
+  type Firestore,
+} from "firebase/firestore";
 
 /** 모바일 WebKit/WebView 등에서 WebSocket·감지형 롱폴링이 꼬이면 초기 리스너가 permission-denied 로 떨어지는 경우가 있어 폴백 */
 function prefersFirestoreForcedLongPolling(): boolean {
@@ -36,16 +41,21 @@ export function initFirebase(): FirebaseApp | null {
     appId: import.meta.env.VITE_FIREBASE_APP_ID,
   });
   auth = getAuth(app);
-  firestore = initializeFirestore(
-    app,
-    prefersFirestoreForcedLongPolling()
-      ? {
-          experimentalForceLongPolling: true,
-        }
-      : {
-          experimentalAutoDetectLongPolling: true,
-        },
-  );
+  const transport = prefersFirestoreForcedLongPolling()
+    ? { experimentalForceLongPolling: true as const }
+    : { experimentalAutoDetectLongPolling: true as const };
+  try {
+    firestore = initializeFirestore(app, {
+      ...transport,
+      /** 오프라인·재시행 시 첫 스냅이 빨라질 수 있음(사생활/인앱 등 IDB 불가 시 폴백). */
+      localCache: persistentLocalCache({
+        tabManager: persistentSingleTabManager({}),
+      }),
+    });
+  } catch (e) {
+    console.warn("[firebase] Firestore 로컬 캐시 미사용(메모리 캐시로 폴백)", e);
+    firestore = initializeFirestore(app, transport);
+  }
   return app;
 }
 

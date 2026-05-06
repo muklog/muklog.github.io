@@ -138,7 +138,7 @@ export default function OnboardingPage() {
       }
       window.location.replace(`${window.location.origin}${import.meta.env.BASE_URL}#/`);
     } catch (e) {
-      console.error(e);
+      console.error("[onboarding] finish 저장 실패", e);
       alert(
         e instanceof Error
           ? `저장에 실패했습니다: ${e.message}`

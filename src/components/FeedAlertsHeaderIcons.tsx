@@ -3,24 +3,21 @@ import { Link } from "react-router-dom";
 import { Bell, MessageCircle } from "lucide-react";
 import { cls } from "../lib/utils";
 import { useAuth } from "../contexts/AuthContext";
-import { getFirebaseAuth } from "../lib/firebaseApp";
+import { useDmRealtime } from "../contexts/DmRealtimeContext";
 import {
   subscribeActivityInbox,
   unreadActivityCount,
 } from "../lib/activityInbox";
-import type { DmThreadDoc } from "../types";
-import {
-  subscribeDmReadMap,
-  subscribeMyDmThreads,
-  unreadDmThreadCount,
-} from "../lib/dm";
+import { unreadDmThreadCount } from "../lib/dm";
 
 /** 피드 헤더 — 활동 알림 · DM 진입 및 미읽음 배지.
- *  백그라운드일 때는 리스너를 끄며 Firestore 읽기·연결 부하를 줄인다.
+ * DM 스트림은 DmRealtimeProvider 가 피드/DM 경로에서 유지합니다.
+ * 백그라운드일 때는 알림함만 끄며 Firestore 부하를 줄입니다.
  */
 export default function FeedAlertsHeaderIcons() {
-  const { user, firebaseReady, loading: authLoading } = useAuth();
+  const { user, firebaseReady } = useAuth();
   const myUid = user?.uid;
+  const { threads, readMap: dmReadMap } = useDmRealtime();
 
   const [tabVisible, setTabVisible] = useState(() =>
     typeof document === "undefined" ? true : document.visibilityState === "visible",
@@ -40,32 +37,6 @@ export default function FeedAlertsHeaderIcons() {
       () => setActivityUnread(0),
     );
   }, [myUid, tabVisible]);
-
-  const [threads, setThreads] = useState<DmThreadDoc[]>([]);
-  const [dmReadMap, setDmReadMap] = useState<Map<string, number>>(new Map());
-  useEffect(() => {
-    if (!myUid || authLoading || !tabVisible) return;
-    let unsubThreads: (() => void) | undefined;
-    let unsubRead: (() => void) | undefined;
-    let cancelled = false;
-    void (async () => {
-      try {
-        await getFirebaseAuth().currentUser?.getIdToken();
-      } catch {
-        /* 오프라인 등 */
-      }
-      if (cancelled) return;
-      const live = getFirebaseAuth().currentUser?.uid;
-      if (!live || live !== myUid) return;
-      unsubThreads = subscribeMyDmThreads(myUid, setThreads);
-      unsubRead = subscribeDmReadMap(myUid, setDmReadMap);
-    })();
-    return () => {
-      cancelled = true;
-      unsubThreads?.();
-      unsubRead?.();
-    };
-  }, [myUid, authLoading, tabVisible]);
 
   const dmUnread = myUid ? unreadDmThreadCount(threads, myUid, dmReadMap) : 0;
 

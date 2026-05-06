@@ -2,18 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Loader2, MessageCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { useDmRealtime } from "../contexts/DmRealtimeContext";
 import { getPublicProfile } from "../lib/friends";
 import {
-  dmErrorMessageForUi,
   ensureDmThreadWith,
   otherParticipantUid,
   otherUidInDmThreadId,
-  subscribeDmReadMap,
-  subscribeMyDmThreads,
   unreadDmThreadCount,
   userInDmThreadId,
 } from "../lib/dm";
-import { getFirebaseAuth } from "../lib/firebaseApp";
 import type { DmThreadDoc } from "../types";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
 
@@ -21,66 +18,17 @@ export default function MessagesPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const peerFromQuery = searchParams.get("with")?.trim();
-  const { user, firebaseReady, loading: authLoading } = useAuth();
-  const [threads, setThreads] = useState<DmThreadDoc[]>([]);
-  /** 첫 스냅샷 전에는 빈 배열이라도 '대화 없음'으로 착각하지 않도록 분리 */
-  const [listReady, setListReady] = useState(false);
-  const [listErr, setListErr] = useState<string | null>(null);
-  const [readMap, setReadMap] = useState<Map<string, number>>(new Map());
+  const { user, firebaseReady } = useAuth();
+  const {
+    threads,
+    readMap,
+    threadsListReady: listReady,
+    threadsListError: listErr,
+    retryDmList,
+  } = useDmRealtime();
+
   const [peerNames, setPeerNames] = useState<Map<string, string>>(new Map());
   const handledPeerRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!user?.uid || authLoading) return;
-    let ua: (() => void) | undefined;
-    let ub: (() => void) | undefined;
-    let cancelled = false;
-    setListReady(false);
-    setListErr(null);
-    void (async () => {
-      const auth = getFirebaseAuth();
-      await auth.authStateReady();
-      try {
-        /** AuthContext 의 user 과 동일 레퍼런스로 토큰 확보 — currentUser 과의 미세 레이스(특히 모바일 WebView) 줄임 */
-        /** 강제 refresh(getIdToken(true)) 직후 Firestore 구독이 일시적으로 permission-denied 가 나는 사례가 있어 일반 로드만 사용 */
-        await user!.getIdToken();
-      } catch {
-        /* 오프라인 등 */
-      }
-      if (cancelled) return;
-      const live = getFirebaseAuth().currentUser?.uid;
-      if (!live || live !== user.uid) {
-        if (!cancelled) {
-          setListReady(true);
-          setListErr(
-            "로그인 세션을 확인할 수 없어요. 새로고침하거나 로그아웃 후 다시 로그인해 주세요.",
-          );
-        }
-        return;
-      }
-      ua = subscribeMyDmThreads(
-        user.uid,
-        (rows) => {
-          setThreads(rows);
-          setListReady(true);
-          setListErr(null);
-        },
-        (e) => {
-          setThreads([]);
-          setListReady(true);
-          setListErr(dmErrorMessageForUi(e, "threadList"));
-        },
-      );
-      ub = subscribeDmReadMap(user.uid, setReadMap, (e) =>
-        console.warn("[messages] dm read map", e),
-      );
-    })();
-    return () => {
-      cancelled = true;
-      ua?.();
-      ub?.();
-    };
-  }, [user?.uid, authLoading]);
 
   useEffect(() => {
     if (!user?.uid || threads.length === 0) return;
@@ -170,13 +118,22 @@ export default function MessagesPage() {
       ) : listErr ? (
         <div className="card space-y-3 border-rose-500/35 bg-rose-500/5 p-4 text-sm text-rose-100">
           <p>{listErr}</p>
-          <button
-            type="button"
-            className="btn-secondary w-full py-2 text-center text-sm"
-            onClick={() => window.location.reload()}
-          >
-            새로고침
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              className="btn-primary w-full py-2 text-center text-sm font-medium"
+              onClick={() => retryDmList()}
+            >
+              다시 시도
+            </button>
+            <button
+              type="button"
+              className="btn-secondary w-full py-2 text-center text-sm"
+              onClick={() => window.location.reload()}
+            >
+              새로고침
+            </button>
+          </div>
         </div>
       ) : threads.length === 0 ? (
         <div className="card space-y-3 p-6 text-center text-sm text-slate-400">
@@ -195,32 +152,52 @@ export default function MessagesPage() {
         </div>
       ) : (
         <ul className="space-y-2">
-          {threads.map((t) => {
-            const peer = otherParticipantUid(t, user.uid)!;
-            const label = peerNames.get(peer) ?? peer.slice(0, 6);
-            const unread = unreadDmThreadCount([t], user.uid, readMap) > 0;
-            return (
-              <li key={t.id}>
-                <Link
-                  to={`/messages/${t.id}`}
-                  className={
-                    unread
-                      ? "card flex flex-col gap-1 border-brand-500/30 bg-brand-500/5 p-4"
-                      : "card flex flex-col gap-1 p-4 hover:bg-slate-900/40"
-                  }
-                >
-                  <span className="font-semibold text-slate-100">{label}</span>
-                  <span className="line-clamp-2 text-xs text-slate-400">
-                    {t.lastSenderUid === user.uid ? "나 · " : ""}
-                    {t.lastText || "(아직 메시지 없음)"}
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
+          {threads.map((t) => (
+            <ThreadRowItem
+              key={t.id}
+              t={t}
+              uid={user.uid}
+              peerNames={peerNames}
+              readMap={readMap}
+            />
+          ))}
         </ul>
       )}
     </div>
+  );
+}
+
+function ThreadRowItem({
+  t,
+  uid,
+  peerNames,
+  readMap,
+}: {
+  t: DmThreadDoc;
+  uid: string;
+  peerNames: Map<string, string>;
+  readMap: Map<string, number>;
+}) {
+  const peer = otherParticipantUid(t, uid)!;
+  const label = peerNames.get(peer) ?? peer.slice(0, 6);
+  const unread = unreadDmThreadCount([t], uid, readMap) > 0;
+  return (
+    <li>
+      <Link
+        to={`/messages/${t.id}`}
+        className={
+          unread
+            ? "card flex flex-col gap-1 border-brand-500/30 bg-brand-500/5 p-4"
+            : "card flex flex-col gap-1 p-4 hover:bg-slate-900/40"
+        }
+      >
+        <span className="font-semibold text-slate-100">{label}</span>
+        <span className="line-clamp-2 text-xs text-slate-400">
+          {t.lastSenderUid === uid ? "나 · " : ""}
+          {t.lastText || "(아직 메시지 없음)"}
+        </span>
+      </Link>
+    </li>
   );
 }
 

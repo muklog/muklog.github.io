@@ -43,6 +43,30 @@ function isPermissionDenied(e: unknown): boolean {
   );
 }
 
+/** DM 스레드 리스너 — 모바일 등에서 일시 연결 실패 시 소수 재시도 */
+function listenerErrorMayRecover(e: unknown): boolean {
+  const code = String((e as { code?: string })?.code ?? "");
+  if (
+    code === "resource-exhausted" ||
+    code.endsWith("/resource-exhausted") ||
+    /quota exceeded/i.test(firebaseErrText(e))
+  ) {
+    return false;
+  }
+  return (
+    code === "permission-denied" ||
+    code.endsWith("/permission-denied") ||
+    code === "unauthenticated" ||
+    code.endsWith("/unauthenticated") ||
+    code === "unavailable" ||
+    code.endsWith("/unavailable") ||
+    code === "deadline-exceeded" ||
+    code.endsWith("/deadline-exceeded") ||
+    code === "aborted" ||
+    code === "internal"
+  );
+}
+
 function mutationMayRecoverWithRetry(e: unknown): boolean {
   const code = String((e as { code?: string })?.code ?? "");
   // 할당량 초과 시 재시도하면 백엔드 부하만 가중되므로 절대 재시도하지 않음
@@ -270,16 +294,14 @@ export function subscribeMyDmThreads(
       async (err) => {
         if (stopped) return;
         const code = String((err as { code?: string })?.code ?? "");
-        if (
-          authRetryCount < MAX_AUTH_RETRY &&
-          (code === "permission-denied" ||
-            code.endsWith("/permission-denied") ||
-            code === "unauthenticated" ||
-            code.endsWith("/unauthenticated"))
-        ) {
+        if (authRetryCount < MAX_AUTH_RETRY && listenerErrorMayRecover(err)) {
           authRetryCount++;
-          await getFirebaseAuth().currentUser?.getIdToken(true).catch(() => {});
-          await new Promise((r) => setTimeout(r, 260 * authRetryCount));
+          if (authRetryCount === 1) {
+            await getFirebaseAuth().currentUser?.getIdToken(false).catch(() => {});
+          } else {
+            await getFirebaseAuth().currentUser?.getIdToken(true).catch(() => {});
+          }
+          await new Promise((r) => setTimeout(r, 350 * authRetryCount));
           if (!stopped) attach();
           return;
         }
