@@ -259,15 +259,33 @@ service cloud.firestore {
           || request.resource.data.fromPhotoURL == resource.data.fromPhotoURL;
       }
 
+      /** expiresAt 이 숫자(ms) 또는 Timestamp 로 저장된 문서 모두 허용 (규칙에서 타입 불일치 시 전부 거절됨) */
+      function inviteNotExpiredYet() {
+        let exp = resource.data.expiresAt;
+        return exp is timestamp ? request.time < exp : request.time.toMillis() < exp;
+      }
+
+      /** 맵 깊은 동등(==)이 필드 유무 차이로 실패하는 경우 방지 */
+      function inviteScopeHealth(scope) {
+        return ('health' in scope) ? scope.health : false;
+      }
+      function inviteRequestedScopeUnchanged() {
+        let rq = request.resource.data.requestedScope;
+        let rs = resource.data.requestedScope;
+        return rq.calendar == rs.calendar
+          && inviteScopeHealth(rq) == inviteScopeHealth(rs)
+          && inviteScopeHealth(rq) != true;
+      }
+
       allow update: if signedIn()
         && resource.data.status == 'pending'
-        && request.time.toMillis() < resource.data.expiresAt
+        && inviteNotExpiredYet()
         && invitePhotoUnchanged()
         && request.resource.data.id == resource.data.id
         && request.resource.data.fromUid == resource.data.fromUid
         && request.resource.data.fromEmail == resource.data.fromEmail
         && request.resource.data.fromName == resource.data.fromName
-        && request.resource.data.requestedScope == resource.data.requestedScope
+        && inviteRequestedScopeUnchanged()
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.expiresAt == resource.data.expiresAt
         && (
