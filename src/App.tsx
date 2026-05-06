@@ -4,7 +4,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, getSettings, patchSettings } from "./lib/db";
 import { applyTheme, normalizeTheme } from "./lib/theme";
 import { FeedStreamProvider } from "./contexts/FeedStreamContext";
-import { usePullToRefresh } from "./hooks/usePullToRefresh";
+import { usePullToRefresh, PULL_TO_REFRESH_MAX_VISUAL_PX, PULL_TO_REFRESH_THRESHOLD_PX } from "./hooks/usePullToRefresh";
 import { RefreshCw } from "lucide-react";
 import FeedPage from "./pages/FeedPage";
 import HomePage from "./pages/HomePage";
@@ -53,6 +53,11 @@ export default function App() {
   /** 게이트로 조기 return 하기 전에 호출해야 함 — 그렇지 않으면 React #310 (훅 개수 불일치) */
   const mainRef = useRef<HTMLElement>(null);
   const ptr = usePullToRefresh(mainRef, pullRefreshEnabled);
+
+  const pullNorm = Math.min(1, ptr.pullPx / PULL_TO_REFRESH_THRESHOLD_PX);
+  const visualNorm = Math.min(1, ptr.pullPx / PULL_TO_REFRESH_MAX_VISUAL_PX);
+  const hintOpacity =
+    ptr.pendingReload || ptr.pullPx > 2 ? Math.min(1, Math.max(0, (ptr.pullPx - 2) / 26)) : 0;
 
   // 활성 사용자가 사라진 경우 자동 정리
   useEffect(() => {
@@ -115,39 +120,47 @@ export default function App() {
           ref={mainRef}
           className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain overflow-x-hidden bg-slate-950 pb-24 [-webkit-overflow-scrolling:touch]"
         >
-          {/* 풀투새로고침: 콘텐츠를 밀지 않고 스크롤 영역 맨 위에만 배지를 겹친다 */}
+          {/* 풀투새로고침: 레이아웃 높이 0 유지 · absolute 로 가로 중앙 정렬 · motion 만 별도 레이어 */}
           <div
-            className={`pointer-events-none sticky top-0 z-30 flex h-0 w-full justify-center overflow-visible px-4`}
-            style={{
-              transform: `translateY(${ptr.pullPx}px)`,
-              opacity: ptr.pullPx > 3 || ptr.pendingReload ? 1 : 0,
-              transition:
-                ptr.isDragging || ptr.pendingReload
-                  ? "none"
-                  : "opacity 220ms ease-out, transform 280ms cubic-bezier(0.22, 1, 0.36, 1)",
-            }}
+            className="pointer-events-none sticky top-0 z-[35] h-0 w-full overflow-visible"
             aria-hidden
           >
-            <span className="inline-flex items-center gap-2 rounded-full border border-slate-700/90 bg-slate-900/95 px-3 py-1.5 text-[11px] font-medium text-slate-300 shadow-lg backdrop-blur-sm">
-              <RefreshCw
-                size={14}
-                className={`shrink-0 text-brand-400 ${ptr.pendingReload ? "animate-spin" : ""}`}
-                style={
-                  ptr.pendingReload
-                    ? undefined
-                    : {
-                        transform: `rotate(${Math.min(1, ptr.pullPx / 52) * 320}deg)`,
-                        opacity: ptr.armed ? 1 : 0.55 + Math.min(1, ptr.pullPx / 52) * 0.45,
-                      }
-                }
-                aria-hidden
-              />
-              {ptr.pendingReload
-                ? "새로고침 중…"
-                : ptr.armed
-                  ? "놓으면 새로고침"
-                  : "당겨서 새로고침"}
-            </span>
+            <div
+              className="absolute inset-x-0 top-0 flex justify-center px-4"
+              style={{
+                transform: `translate3d(0, ${ptr.pullPx}px, 0) scale(${0.93 + visualNorm * 0.07})`,
+                opacity: ptr.pendingReload ? 1 : hintOpacity,
+                transition:
+                  ptr.isDragging || ptr.pendingReload
+                    ? "none"
+                    : "opacity 200ms ease-out, transform 300ms cubic-bezier(0.22, 1, 0.36, 1)",
+                willChange: ptr.pullPx > 1 || ptr.isDragging ? "transform, opacity" : undefined,
+              }}
+            >
+              <span className="inline-flex items-center gap-2.5 rounded-full border border-white/14 bg-slate-900/93 px-4 py-2 text-[11px] font-medium leading-none tracking-wide text-slate-200 whitespace-nowrap shadow-[0_8px_32px_-10px_rgba(0,0,0,0.75)] ring-1 ring-black/35 backdrop-blur-md">
+                <RefreshCw
+                  size={15}
+                  strokeWidth={2.25}
+                  className={`shrink-0 text-brand-400 drop-shadow-[0_0_10px_rgba(52,211,153,0.25)] ${
+                    ptr.pendingReload ? "animate-spin" : ""
+                  }`}
+                  style={
+                    ptr.pendingReload
+                      ? undefined
+                      : {
+                          transform: `rotate(${pullNorm * 360}deg)`,
+                          opacity: ptr.armed ? 1 : 0.45 + pullNorm * 0.55,
+                        }
+                  }
+                  aria-hidden
+                />
+                {ptr.pendingReload
+                  ? "새로고침 중…"
+                  : ptr.armed
+                    ? "놓으면 새로고침"
+                    : "당겨서 새로고침"}
+              </span>
+            </div>
           </div>
 
           <div>
