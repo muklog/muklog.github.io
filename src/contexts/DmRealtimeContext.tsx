@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -12,6 +13,7 @@ import { useAuth } from "./AuthContext";
 import { getFirebaseAuth } from "../lib/firebaseApp";
 import {
   dmErrorMessageForUi,
+  prefetchMyDmThreadsSnapshot,
   subscribeDmReadMap,
   subscribeMyDmThreads,
 } from "../lib/dm";
@@ -29,15 +31,18 @@ const DmRealtimeContext = createContext<Ctx | null>(null);
 
 /**
  * 피드(/)·DM(/messages*) 에서만 Firestore 리스너 활성화.
- * `shouldListen` 만으로는 `/` → `/messages` 첫 진입 시 효과가 다시 돌지 않아 목록이 빈 채로 실패하는
- * 경우가 있음(친구 탭은 shouldListen 이 false→true 로 바뀌어 구독이 새로 붙음) — pathname 을
- * 의존해 DM 경로 전환마다 구독을 정리·재부착합니다.
- * 탭이 백그라운드일 때는 기존과 같이 끔(읽기·배터리).
+ * `/` ↔ `/messages` 는 shouldListen 이 동일해서 pathname 이 바뀌어도 구독은 유지해야 함 —
+ * 매번 해제했다 붙이면 모바일·새로고침 직후 웜업이 끊겨 목록 실패하기 쉬움.
+ * 대화 목록 화면(/messages 단독)에 들어올 때는 prefetch 로 일회 스냅샷으로 먼저 채운다.
+ * 탭이 백그라운드면 shouldListen 가 꺼지며 리스너 정리됨.
  */
 export function DmRealtimeProvider({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const { user, firebaseReady, loading: authLoading } = useAuth();
   const myUid = user?.uid;
+
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
   const routeWantsDm = pathname === "/" || pathname.startsWith("/messages");
 
@@ -64,6 +69,29 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
   const [readMap, setReadMap] = useState<Map<string, number>>(new Map());
   const [threadsListReady, setThreadsListReady] = useState(false);
   const [threadsListError, setThreadsListError] = useState<string | null>(null);
+
+  /** `/messages` 목록 화면에 올 때만 — 구독은 그대로 두고 서버 일회로 먼저 채움 */
+  useEffect(() => {
+    if (!firebaseReady || !myUid || authLoading || !shouldListen) return;
+    if (pathname !== "/messages") return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await prefetchMyDmThreadsSnapshot(myUid);
+        if (cancelled) return;
+        setThreadsListError(null);
+        setThreads((prev) => (prev.length > 0 ? prev : rows));
+        setThreadsListReady(true);
+      } catch {
+        /* 실시간 구독·재시도로 복구 */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname, firebaseReady, myUid, authLoading, shouldListen]);
 
   useEffect(() => {
     if (!firebaseReady || !myUid || authLoading) {
@@ -103,7 +131,9 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
       }
 
       setThreadsListError(null);
-      setThreadsListReady(false);
+      if (pathnameRef.current !== "/messages") {
+        setThreadsListReady(false);
+      }
       ua = subscribeMyDmThreads(
         myUid,
         (rows) => {
@@ -127,7 +157,7 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
       ua?.();
       ub?.();
     };
-  }, [firebaseReady, myUid, authLoading, shouldListen, pathname, retryNonce]);
+  }, [firebaseReady, myUid, authLoading, shouldListen, retryNonce]);
 
   const value = useMemo<Ctx>(
     () => ({

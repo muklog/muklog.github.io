@@ -416,6 +416,30 @@ export function subscribeMyDmThreads(
   };
 }
 
+/** DM 목록 화면 진입 등 — 리스너와 별도로 서버 우선 한 번 채워 느린 모바일·콜드 스타트를 줄임 */
+export async function prefetchMyDmThreadsSnapshot(myUid: string): Promise<DmThreadDoc[]> {
+  const uid = getFirebaseAuth().currentUser?.uid;
+  if (!uid || uid !== myUid) return [];
+  await getFirebaseAuth().authStateReady().catch(() => {});
+  await getFirebaseAuth().currentUser?.getIdToken(true).catch(() => {});
+  const q = query(
+    threadsCol(),
+    where("participantUids", "array-contains", uid),
+    limit(48),
+  );
+  try {
+    const snap = await getDocsFromServer(q);
+    return snapshotToDmThreads(snap, 25);
+  } catch {
+    try {
+      const snap = await getDocs(q);
+      return snapshotToDmThreads(snap, 25);
+    } catch {
+      return [];
+    }
+  }
+}
+
 /** 스레드에 내가 참가자인지(클라이언트 항상 확인) */
 export async function verifyThreadParticipation(threadId: string): Promise<boolean> {
   const me = getFirebaseAuth().currentUser?.uid;
