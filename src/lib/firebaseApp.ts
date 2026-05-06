@@ -2,13 +2,14 @@ import { initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
 import {
   initializeFirestore,
+  memoryLocalCache,
   persistentLocalCache,
   persistentSingleTabManager,
   type Firestore,
 } from "firebase/firestore";
 
-/** 모바일 WebKit/WebView 등에서 WebSocket·감지형 롱폴링이 꼬이면 초기 리스너가 permission-denied 로 떨어지는 경우가 있어 폴백 */
-function prefersFirestoreForcedLongPolling(): boolean {
+/** Android·iPhone·iPad 등 — 강제 롱폴링·IndexedDB 로컬캐시 조합에서 리스너가 자주 깨진다는 제보 대응 */
+function isFirestoreMobileUa(): boolean {
   if (typeof navigator === "undefined") return false;
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
     navigator.userAgent,
@@ -41,20 +42,35 @@ export function initFirebase(): FirebaseApp | null {
     appId: import.meta.env.VITE_FIREBASE_APP_ID,
   });
   auth = getAuth(app);
-  const transport = prefersFirestoreForcedLongPolling()
-    ? { experimentalForceLongPolling: true as const }
-    : { experimentalAutoDetectLongPolling: true as const };
+  const mobile = isFirestoreMobileUa();
+
+  /** 모바일: WebSocket 우선(autodetect) + 메모리 캐시만 — IDB 영속화·강제 롱폴링이 일부 브라우저에서 리스너 레이스를 키움. 데스크톱: 영속 캐시 유지 */
+  const mobileOpts = {
+    experimentalAutoDetectLongPolling: true as const,
+    localCache: memoryLocalCache(),
+  };
+  const desktopTryOpts = {
+    experimentalAutoDetectLongPolling: true as const,
+    localCache: persistentLocalCache({
+      tabManager: persistentSingleTabManager({}),
+    }),
+  };
+
   try {
-    firestore = initializeFirestore(app, {
-      ...transport,
-      /** 오프라인·재시행 시 첫 스냅이 빨라질 수 있음(사생활/인앱 등 IDB 불가 시 폴백). */
-      localCache: persistentLocalCache({
-        tabManager: persistentSingleTabManager({}),
-      }),
-    });
+    firestore = mobile
+      ? initializeFirestore(app, mobileOpts)
+      : initializeFirestore(app, desktopTryOpts);
   } catch (e) {
     console.warn("[firebase] Firestore 로컬 캐시 미사용(메모리 캐시로 폴백)", e);
-    firestore = initializeFirestore(app, transport);
+    try {
+      firestore = initializeFirestore(app, {
+        experimentalAutoDetectLongPolling: true,
+        localCache: memoryLocalCache(),
+      });
+    } catch (e2) {
+      console.warn("[firebase] 메모리 캐시만 생략, 기본 초기화", e2);
+      firestore = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+    }
   }
   return app;
 }

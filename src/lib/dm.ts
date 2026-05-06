@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -10,6 +11,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  type QuerySnapshot,
   type Unsubscribe,
 } from "firebase/firestore";
 import type { DmMessageDoc, DmThreadDoc } from "../types";
@@ -197,6 +199,16 @@ function threadsCol() {
   return collection(getFirestoreDb(), "dmThreads");
 }
 
+function snapshotToDmThreads(snap: QuerySnapshot, displayLimit: number): DmThreadDoc[] {
+  return snap.docs
+    .map((d) => ({
+      ...(d.data() as Omit<DmThreadDoc, "id">),
+      id: d.id,
+    }))
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+    .slice(0, displayLimit);
+}
+
 async function ensureDmThreadDocReady(threadId: string): Promise<void> {
   const me = requireUser();
   const peer = otherUidInDmThreadId(threadId, me);
@@ -246,8 +258,8 @@ export async function ensureDmThreadWith(peerUid: string): Promise<string> {
 
 /**
  * 내가 참가한 DM 스레드 구독.
- * array-contains + orderBy 복합 쿼리는 규칙 평가와 맞지 않아 전체가 permission-denied 되는 경우가 있어,
- * 단일 필터 쿼리 후 클라이언트에서 updatedAt 기준 정렬한다.
+ * - 먼저 getDocs 로 일회 로드(모바일 등에서 리스너만 붙일 때보다 안정적인 경우가 많음)
+ * - 리스너가 끊겨도 한 번이라도 성공한 목록이 있으면 onErr 로 낙관을 보이지 않고 백오프 재구독
  */
 export function subscribeMyDmThreads(
   myUid: string,
@@ -271,29 +283,63 @@ export function subscribeMyDmThreads(
 
   let unsub: Unsubscribe | null = null;
   let stopped = false;
+  /** 일회 조회 또는 스냅샷으로라도 한 번 성공하면 리스너 오류는 UI에 노출하지 않음 */
+  let hadSuccess = false;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   /** permission-denied / unauthenticated 일 때 토큰 갱신 후 재구독 (초기 진입·모바일 레이스 대비) */
   let authRetryCount = 0;
-  /** 모바일 WebChannel 레이스·일시 거부가 더 길게 이어지는 편이라 PC 대비 재시도 여유 확보 */
-  const MAX_AUTH_RETRY = 5;
+  const MAX_AUTH_RETRY = 7;
+
+  const clearReconnect = () => {
+    if (reconnectTimer !== null) {
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+  };
+
+  const scheduleSilentReconnect = () => {
+    clearReconnect();
+    reconnectTimer = window.setTimeout(() => {
+      reconnectTimer = null;
+      if (!stopped) attach();
+    }, 6000);
+  };
+
+  const deliver = (snap: QuerySnapshot) => {
+    hadSuccess = true;
+    authRetryCount = 0;
+    clearReconnect();
+    cb(snapshotToDmThreads(snap, DISPLAY_LIMIT));
+  };
+
+  /** 웜업: 일회 읽기 실패해도 스냅샷이 성공할 수 있으므로 onErr 는 호출하지 않음 */
+  void (async () => {
+    for (let i = 0; i < 6 && !stopped; i++) {
+      try {
+        if (i > 0) {
+          await getFirebaseAuth()
+            .currentUser?.getIdToken(i < 2 ? false : true)
+            .catch(() => {});
+          await new Promise((r) => setTimeout(r, 320 * i));
+        }
+        const snap = await getDocs(q);
+        if (stopped) return;
+        deliver(snap);
+        return;
+      } catch (e) {
+        if (stopped) return;
+        if (!listenerErrorMayRecover(e)) break;
+      }
+    }
+  })();
 
   const attach = () => {
     unsub?.();
     unsub = onSnapshot(
       q,
-      (snap) => {
-        authRetryCount = 0;
-        const rows = snap.docs
-          .map((d) => ({
-            ...(d.data() as Omit<DmThreadDoc, "id">),
-            id: d.id,
-          }))
-          .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-          .slice(0, DISPLAY_LIMIT);
-        cb(rows);
-      },
+      (snap) => deliver(snap),
       async (err) => {
         if (stopped) return;
-        const code = String((err as { code?: string })?.code ?? "");
         if (authRetryCount < MAX_AUTH_RETRY && listenerErrorMayRecover(err)) {
           authRetryCount++;
           if (authRetryCount === 1) {
@@ -301,10 +347,16 @@ export function subscribeMyDmThreads(
           } else {
             await getFirebaseAuth().currentUser?.getIdToken(true).catch(() => {});
           }
-          await new Promise((r) => setTimeout(r, 350 * authRetryCount));
+          await new Promise((r) => setTimeout(r, 400 * authRetryCount));
           if (!stopped) attach();
           return;
         }
+        if (hadSuccess) {
+          console.warn("[dm] threads 리스너 오류 — 이미 받은 목록 유지 후 재연결 예약", err);
+          if (listenerErrorMayRecover(err)) scheduleSilentReconnect();
+          return;
+        }
+        const code = String((err as { code?: string })?.code ?? "");
         if (code !== "permission-denied" && !code.endsWith("/permission-denied")) {
           console.warn("[dm] threads subscribe", err);
         }
@@ -316,6 +368,7 @@ export function subscribeMyDmThreads(
   attach();
   return () => {
     stopped = true;
+    clearReconnect();
     unsub?.();
   };
 }
