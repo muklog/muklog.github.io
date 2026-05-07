@@ -335,7 +335,7 @@ service cloud.firestore {
     //
     // 링크 초대 수락 시 "맞팔" — 역방향 문서(id: owner_viewer) 는 원래 owner 만 create 가능하므로,
     // 이미 존재하는 반대 방향 share(수락자→발급자) 가 같은 트랜잭션에 있으면 수락자가 viewer 인 역방향 문서를 create 할 수 있게 예외를 둔다.
-    function mutualReverseShareCreateOk() {
+    function mutualReverseShareCreateOk(shareSid) {
       let o = request.resource.data.ownerUid;
       let v = request.resource.data.viewerUid;
       let revId = v + '_' + o;
@@ -345,7 +345,7 @@ service cloud.firestore {
         && v.size() > 0
         && o != v
         && me() == v
-        && sid == o + '_' + v
+        && shareSid == o + '_' + v
         && exists(/databases/$(database)/documents/shares/$(revId))
         && get(/databases/$(database)/documents/shares/$(revId)).data.ownerUid == v
         && get(/databases/$(database)/documents/shares/$(revId)).data.viewerUid == o;
@@ -363,7 +363,7 @@ service cloud.firestore {
             me() == request.resource.data.ownerUid
             && sid == request.resource.data.ownerUid + '_' + request.resource.data.viewerUid
           )
-          || mutualReverseShareCreateOk()
+          || mutualReverseShareCreateOk(sid)
         );
       allow update: if signedIn()
         && me() == resource.data.ownerUid
