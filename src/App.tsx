@@ -226,9 +226,6 @@ export default function App() {
             {blockingHydration ? (
               <div className="flex min-h-full flex-col items-center justify-center gap-2 bg-slate-950 px-6 py-12 text-center text-slate-500">
                 <p className="text-sm text-slate-300">계정 데이터를 불러오는 중…</p>
-                <p className="text-xs text-slate-500">
-                  같은 계정으로 다른 주소에서 쓰던 기록은 잠시 후 여기로 맞춰져요.
-                </p>
               </div>
             ) : (
               <AppErrorBoundary>

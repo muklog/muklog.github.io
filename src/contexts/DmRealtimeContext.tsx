@@ -30,10 +30,10 @@ type Ctx = {
 const DmRealtimeContext = createContext<Ctx | null>(null);
 
 /**
- * 피드(/)·DM(/messages*) 에서만 Firestore 리스너 활성화.
- * `/` ↔ `/messages` 는 shouldListen 이 동일해서 pathname 이 바뀌어도 구독은 유지해야 함 —
- * 매번 해제했다 붙이면 모바일·새로고침 직후 웜업이 끊겨 목록 실패하기 쉬움.
- * 대화 목록 화면(/messages 단독)에 들어올 때는 prefetch 로 일회 스냅샷으로 먼저 채운다.
+ * 피드(/)·친구(/friends*)·DM(/messages*) 에서 Firestore DM 목록 리스너 활성화.
+ * `/` → `/messages` 처럼 shouldListen 이 계속 true 인 동안에는 구독을 유지해
+ * 피드에서 곧바로 목록으로 들어와도 캐시된 목록이 비는 레이스를 줄인다.
+ * `/messages` 진입 시 prefetch 로 서버 스냅샷을 한 번 더 받는다.
  * 탭이 백그라운드면 shouldListen 가 꺼지며 리스너 정리됨.
  */
 export function DmRealtimeProvider({ children }: { children: ReactNode }) {
@@ -44,14 +44,10 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
 
-  /**
-   * `/` 과 `/messages` 모두에서 shouldListen 이 true 라면 DM 구독 effect 의 deps 가 그대로라
-   * 리스너가 재부착되지 않음. 친구 탭 등에서는 route 가 꺼졌다 켜지면서 구독이 새로 웜업되어 목록이 잘 뜸.
-   * 피드에서 DM 목록만 곧바로 들어올 때는 동일해야 하므로, `/` → `/messages` 진입 시 한 번 재연결한다.
-   */
-  const prevPathForDmResubscribeRef = useRef<string | null>(null);
-
-  const routeWantsDm = pathname === "/" || pathname.startsWith("/messages");
+  const routeWantsDm =
+    pathname === "/" ||
+    pathname.startsWith("/messages") ||
+    pathname.startsWith("/friends");
 
   const [tabVisible, setTabVisible] = useState(
     () => typeof document === "undefined" || document.visibilityState === "visible",
@@ -72,15 +68,6 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
   const [retryNonce, setRetryNonce] = useState(0);
   const retryDmList = useCallback(() => setRetryNonce((n) => n + 1), []);
 
-  useEffect(() => {
-    const prev = prevPathForDmResubscribeRef.current;
-    prevPathForDmResubscribeRef.current = pathname;
-    if (prev === null) return;
-    if (pathname !== "/messages" || prev !== "/") return;
-    if (!firebaseReady || !myUid || authLoading || !tabVisible) return;
-    retryDmList();
-  }, [pathname, firebaseReady, myUid, authLoading, tabVisible, retryDmList]);
-
   const [threads, setThreads] = useState<DmThreadDoc[]>([]);
   const [readMap, setReadMap] = useState<Map<string, number>>(new Map());
   const [threadsListReady, setThreadsListReady] = useState(false);
@@ -88,7 +75,7 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
 
   /**
    * `/messages` 목록 화면 — 구독은 그대로 두고 서버 일회 스냅샷으로 먼저 채워 로딩이 길어지지 않게 함.
-   * `retryNonce` 가 바뀌면(재시도·피드→목록 재연결) 다시 한 번 받아 목록 실패 후 빈 화면 고착을 줄임.
+   * `retryNonce` 가 바뀌면(사용자 재시도) 다시 한 번 받아 목록을 맞춤.
    */
   useEffect(() => {
     if (!firebaseReady || !myUid || authLoading || !shouldListen) return;
@@ -117,10 +104,10 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
     };
   }, [pathname, firebaseReady, myUid, authLoading, shouldListen, retryNonce]);
 
-  /** 피드(/)에 있는 동안, 목록이 아직 비었을 때만 서버 스냅샷으로 한 번 채움 → DM 탭으로 곧바로 들어와도 목록이 바로 보임 */
+  /** 피드·친구 화면에서 목록이 아직 비었을 때만 서버 스냅샷으로 한 번 채움 → DM 목록으로 곧바로 들어와도 비어 보이지 않게 */
   useEffect(() => {
     if (!firebaseReady || !myUid || authLoading || !shouldListen) return;
-    if (pathname !== "/") return;
+    if (!(pathname === "/" || pathname.startsWith("/friends"))) return;
     if (threads.length > 0) return;
 
     let cancelled = false;
@@ -188,7 +175,6 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
           setThreadsListError(null);
         },
         (e) => {
-          setThreads([]);
           setThreadsListReady(true);
           setThreadsListError(dmErrorMessageForUi(e, "threadList"));
         },
