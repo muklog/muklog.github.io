@@ -29,6 +29,7 @@ import { db, runDexie } from "../lib/db";
 import type { PublicProfile, Share, ShareScope } from "../types";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
 import FeedAlertsHeaderIcons from "../components/FeedAlertsHeaderIcons";
+import { STALL_REFRESH_HINT } from "../lib/tabLoadingMessage";
 import { cls } from "../lib/utils";
 
 export default function FriendsPage() {
@@ -230,7 +231,10 @@ function FriendsTab({
       <section className="space-y-3">
         {error && <ErrorBanner message={error} />}
         {!error && rows === null && (
-          <p className="card p-4 text-center text-xs text-slate-500">불러오는 중…</p>
+          <div className="card space-y-2 p-4 text-center text-xs text-slate-500">
+            <p>불러오는 중…</p>
+            <p className="text-[11px] text-slate-600">{STALL_REFRESH_HINT}</p>
+          </div>
         )}
         {rows?.length === 0 && (
           <p className="card p-4 text-center text-xs text-slate-500">
