@@ -18,6 +18,7 @@ import type {
 import { db as dexieDb, getSettings, normalizeMeal, runDexie, SETTINGS_KEY } from "./db";
 import { getFirestoreDb, getFirebaseAuth } from "./firebaseApp";
 import { base64ToBlob, blobToBase64, compressImage, makeThumbnail } from "./image";
+import { dateKey } from "./utils";
 
 const BATCH = 400;
 /** Firestore 문서 상한 1MiB — Base64·메타 여유 */
@@ -254,6 +255,75 @@ async function mergeHealth(local: HealthRecord[], remote: HealthStored[]): Promi
     else out.push(await storedToHealth(r));
   }
   return out;
+}
+
+function isValidDateKey(v: unknown): v is string {
+  if (typeof v !== "string" || !v.trim()) return false;
+  return /^\d{4}-\d{2}-\d{2}$/.test(v.trim());
+}
+
+/** 수동 콘솔 편집 등으로 date 가 빠진 식단 문서 복구 */
+function repairRemoteMealStored(s: MealStored): MealStored {
+  if (isValidDateKey(s.date)) return s;
+  const ts = Number.isFinite(s.updatedAt)
+    ? s.updatedAt
+    : Number.isFinite(s.createdAt)
+      ? s.createdAt
+      : Date.now();
+  return { ...s, date: dateKey(new Date(ts)) };
+}
+
+/** recordDate 누락 시 보정 */
+function repairRemoteHealthStored(s: HealthStored): HealthStored {
+  if (isValidDateKey(s.recordDate)) return s;
+  const ts = Number.isFinite(s.updatedAt)
+    ? s.updatedAt
+    : Number.isFinite(s.createdAt)
+      ? s.createdAt
+      : Date.now();
+  return { ...s, recordDate: dateKey(new Date(ts)) };
+}
+
+/**
+ * 식단/건강 문서의 `userId` 는 Firebase UID 가 아니라 Dexie 프로필(`members` 와 동일 id`)이다.
+ * `members` 가 비었거나 예전 데이터만 있으면 병합 후 활성 프로필과 어긋나 피드·달력이 비어 보인다.
+ * 원격 문서에 나타나는 소유자 id 에 대해 멤버 스텁을 채운다.
+ */
+function ensureMembersForRemoteOwners(
+  members: User[],
+  remoteMeals: MealStored[],
+  remoteHealth: HealthStored[],
+): User[] {
+  const byId = new Map(members.map((u) => [u.id, u]));
+  const defaultColor = "#334155";
+  const takeTs = (a?: number, b?: number) =>
+    Number.isFinite(a) ? (a as number) : Number.isFinite(b) ? (b as number) : Date.now();
+
+  for (const m of remoteMeals) {
+    const pid = typeof m.userId === "string" ? m.userId.trim() : "";
+    if (!pid || byId.has(pid)) continue;
+    const ts = takeTs(m.updatedAt, m.createdAt);
+    byId.set(pid, {
+      id: pid,
+      name: "내 프로필",
+      color: defaultColor,
+      createdAt: ts,
+      updatedAt: ts,
+    });
+  }
+  for (const h of remoteHealth) {
+    const pid = typeof h.userId === "string" ? h.userId.trim() : "";
+    if (!pid || byId.has(pid)) continue;
+    const ts = takeTs(h.updatedAt, h.createdAt);
+    byId.set(pid, {
+      id: pid,
+      name: "내 프로필",
+      color: defaultColor,
+      createdAt: ts,
+      updatedAt: ts,
+    });
+  }
+  return [...byId.values()];
 }
 
 /**
@@ -585,8 +655,8 @@ export async function syncCloudWithLocal(): Promise<void> {
     if (!uid) throw new Error("Google 로그인이 필요합니다.");
 
     const remoteMembers = await pullMembers(uid);
-    const remoteMeals = await pullMealsStored(uid);
-    const remoteHealth = await pullHealthStored(uid);
+    const remoteMeals = (await pullMealsStored(uid)).map(repairRemoteMealStored);
+    const remoteHealth = (await pullHealthStored(uid)).map(repairRemoteHealthStored);
     const remotePublic = await pullPublicSettings(uid);
     const remotePrivate = await pullPrivateSettings(uid);
 
@@ -608,6 +678,11 @@ export async function syncCloudWithLocal(): Promise<void> {
       const remoteHealthFiltered = remoteHealth.filter((h) => !skipHealth.has(h.id));
 
       mergedMembers = mergeUsers(localMembers, remoteMembers);
+      mergedMembers = ensureMembersForRemoteOwners(
+        mergedMembers,
+        remoteMealsFiltered,
+        remoteHealthFiltered,
+      );
       mergedMeals = await mergeMeals(localMeals, remoteMealsFiltered);
       mergedHealth = await mergeHealth(localHealth, remoteHealthFiltered);
 
