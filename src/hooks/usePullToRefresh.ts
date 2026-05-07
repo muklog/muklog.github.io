@@ -11,12 +11,41 @@ export const PULL_TO_REFRESH_MAX_VISUAL_PX = 78;
 /** 손가락 거리에 곱해 고무줄 느낌 */
 const PULL_DAMPING = 0.38;
 
+/** 터치 입력이 없는 순수 데스크톱에서는 리스너를 생략한다 */
 function isTouchEnvironment(): boolean {
   if (typeof window === "undefined") return false;
   return (
     "ontouchstart" in window ||
     (typeof navigator !== "undefined" && (navigator.maxTouchPoints ?? 0) > 0)
   );
+}
+
+const SCROLL_TOP_EPS = 8;
+
+function isMainAtScrollTop(mainEl: HTMLElement): boolean {
+  return mainEl.scrollTop <= SCROLL_TOP_EPS;
+}
+
+/**
+ * `<main>` 과 터치 타깃 사이에 세로 스크롤이 남아 있으면 당김은 그 영역에 맡긴다.
+ * (피드는 보통 해당 없음 — DM 메시지 창 등에서 오동작 방지)
+ */
+function nestedVerticalScrollBlocksPull(mainEl: HTMLElement, target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (!mainEl.contains(target)) return false;
+  let el: Element | null = target;
+  while (el && el !== mainEl) {
+    if (el instanceof HTMLElement) {
+      const cs = window.getComputedStyle(el);
+      const oy = cs.overflowY;
+      const scrollableY =
+        (oy === "auto" || oy === "scroll" || oy === "overlay") &&
+        el.scrollHeight > el.clientHeight + SCROLL_TOP_EPS;
+      if (scrollableY && el.scrollTop > SCROLL_TOP_EPS) return true;
+    }
+    el = el.parentElement;
+  }
+  return false;
 }
 
 function dampVisual(rawPull: number): number {
@@ -66,14 +95,15 @@ export function usePullToRefresh(
     let touchActive = false;
     let startY = 0;
 
-    const passiveOpt: AddEventListenerOptions = { passive: true };
-    const blockingOpt: AddEventListenerOptions = { passive: false };
+    /** 캡처 단계: 자식 요소의 기본 스크롤보다 먼저 preventDefault 할 수 있게 한다 (모바일 웹킷에서 필수에 가깝다) */
+    const capPassive: AddEventListenerOptions = { capture: true, passive: true };
+    const capBlocking: AddEventListenerOptions = { capture: true, passive: false };
 
     const setup = (): (() => void) | undefined => {
       const el = scrollEl.current;
       if (!el) return undefined;
 
-      const top = () => el.scrollTop <= 2;
+      const top = () => isMainAtScrollTop(el);
 
       const settleToZero = () => {
         cancelAnimationFrame(settleRafRef.current);
@@ -89,7 +119,7 @@ export function usePullToRefresh(
 
       const onTouchStart: EventListener = (e) => {
         const te = e as TouchEvent;
-        if (!top()) return;
+        if (!top() || nestedVerticalScrollBlocksPull(el, te.target)) return;
         cancelAnimationFrame(settleRafRef.current);
         settleRafRef.current = 0;
         touchActive = true;
@@ -102,7 +132,7 @@ export function usePullToRefresh(
       const onTouchMove: EventListener = (e) => {
         const te = e as TouchEvent;
         if (!touchActive) return;
-        if (!top()) {
+        if (!top() || nestedVerticalScrollBlocksPull(el, te.target)) {
           touchActive = false;
           gestureMaxRawRef.current = 0;
           settleToZero();
@@ -141,18 +171,18 @@ export function usePullToRefresh(
         settleToZero();
       };
 
-      el.addEventListener("touchstart", onTouchStart, passiveOpt);
-      el.addEventListener("touchmove", onTouchMove, blockingOpt);
-      el.addEventListener("touchend", onTouchEnd, passiveOpt);
-      el.addEventListener("touchcancel", onTouchEnd, passiveOpt);
+      el.addEventListener("touchstart", onTouchStart, capPassive);
+      el.addEventListener("touchmove", onTouchMove, capBlocking);
+      el.addEventListener("touchend", onTouchEnd, capPassive);
+      el.addEventListener("touchcancel", onTouchEnd, capPassive);
 
       return () => {
         cancelAnimationFrame(settleRafRef.current);
         settleRafRef.current = 0;
-        el.removeEventListener("touchstart", onTouchStart, passiveOpt);
-        el.removeEventListener("touchmove", onTouchMove, blockingOpt);
-        el.removeEventListener("touchend", onTouchEnd, passiveOpt);
-        el.removeEventListener("touchcancel", onTouchEnd, passiveOpt);
+        el.removeEventListener("touchstart", onTouchStart, capPassive);
+        el.removeEventListener("touchmove", onTouchMove, capBlocking);
+        el.removeEventListener("touchend", onTouchEnd, capPassive);
+        el.removeEventListener("touchcancel", onTouchEnd, capPassive);
       };
     };
 
