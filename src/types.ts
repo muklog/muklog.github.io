@@ -218,6 +218,9 @@ export interface ActivityInboxDoc {
   snippet?: string;
   createdAt: number;
   read: boolean;
+  /** 수신자가 목록에서 숨김 */
+  deleted?: boolean;
+  deletedAt?: number;
 }
 
 /** /dmThreads/{threadId} — 1:1 채팅 스레드 */

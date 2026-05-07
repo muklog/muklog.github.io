@@ -28,6 +28,7 @@ import {
 import { db, runDexie } from "../lib/db";
 import type { PublicProfile, Share, ShareScope } from "../types";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
+import FeedAlertsHeaderIcons from "../components/FeedAlertsHeaderIcons";
 import { cls } from "../lib/utils";
 
 export default function FriendsPage() {
@@ -95,12 +96,17 @@ export default function FriendsPage() {
 
 function Header() {
   return (
-    <header>
-      <p className="text-xs text-slate-400">공유</p>
-      <h1 className="text-xl font-bold">
-        <Users size={18} className="mb-0.5 mr-1 inline text-brand-400" />
-        친구
-      </h1>
+    <header className="flex items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-slate-400">공유</p>
+        <h1 className="text-xl font-bold">
+          <Users size={18} className="mb-0.5 mr-1 inline text-brand-400" />
+          친구
+        </h1>
+      </div>
+      <div className="flex shrink-0 items-center pt-0.5">
+        <FeedAlertsHeaderIcons />
+      </div>
     </header>
   );
 }
@@ -191,16 +197,19 @@ function FriendsTab({
     () => (rows === null ? null : rows.map((r) => r.otherUid)),
     [rows],
   );
-  const [pubByUid, setPubByUid] = useState<Map<string, PublicProfile | null>>(
-    () => new Map(),
-  );
+  const [pubByUid, setPubByUid] = useState<Map<string, PublicProfile | null>>(() => new Map());
+  const [pubHydratedUids, setPubHydratedUids] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     if (friendUids === null) {
       setPubByUid(new Map());
+      setPubHydratedUids(new Set());
       return;
     }
-    return subscribePublicProfilesForUids(friendUids, setPubByUid);
+    return subscribePublicProfilesForUids(friendUids, ({ byUid, hydratedUids }) => {
+      setPubByUid(byUid);
+      setPubHydratedUids(hydratedUids);
+    });
   }, [friendUids]);
 
   return (
@@ -221,6 +230,7 @@ function FriendsTab({
             key={r.otherUid}
             row={r}
             publicProfile={pubByUid.get(r.otherUid) ?? null}
+            publicProfileHydrated={pubHydratedUids.has(r.otherUid)}
           />
         ))}
       </section>
@@ -365,16 +375,16 @@ function avatarFromPublicProfile(
 function FriendCard({
   row,
   publicProfile,
+  publicProfileHydrated,
 }: {
   row: FriendRow;
   publicProfile: PublicProfile | null;
+  publicProfileHydrated: boolean;
 }) {
   const { otherUid, name, photo, outgoing, incoming } = row;
-  const { name: dispName, photo: dispPhoto } = avatarFromPublicProfile(
-    publicProfile,
-    name,
-    photo,
-  );
+  const { name: dispName, photo: dispPhoto } = !publicProfileHydrated
+    ? { name: "친구", photo: undefined }
+    : avatarFromPublicProfile(publicProfile, name, photo);
   const mutual = !!outgoing && !!incoming;
   const [busy, setBusy] = useState<"stopOut" | "stopIn" | null>(null);
   const [err, setErr] = useState<string | null>(null);

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
-import { ArrowLeft, Loader2, Send } from "lucide-react";
+import { ArrowLeft, Loader2, Send, Trash2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { useDmRealtime } from "../contexts/DmRealtimeContext";
 import { isCalendarConnectedPairFromServer, subscribePeerIdentityForDm } from "../lib/friends";
 import {
   dmErrorMessageForUi,
   ensureDmThreadWith,
+  markDmThreadDeletedForMe,
   markDmThreadReadForMe,
   otherUidInDmThreadId,
   sendDmMessage,
@@ -22,6 +24,7 @@ export default function DmChatPage() {
   const { threadId = "" } = useParams();
   const navigate = useNavigate();
   const { user, firebaseReady, loading: authLoading } = useAuth();
+  const { dmDeletedThreadIds } = useDmRealtime();
   const [messages, setMessages] = useState<DmMessageDoc[]>([]);
   const [allowed, setAllowed] = useState<null | boolean>(null);
   /** 참가자로 확인된 방에서는 메시지 전송 허용(달력 연결은 안내용) */
@@ -136,6 +139,20 @@ export default function DmChatPage() {
 
   const meUid = user?.uid;
 
+  const threadDeletedForMe = !!(threadId && dmDeletedThreadIds.has(threadId));
+
+  async function deleteThisThread() {
+    if (!threadId || !user?.uid) return;
+    if (!confirm("이 대화를 목록에서 삭제할까요? 메시지 기록은 서버에 남을 수 있어요.")) return;
+    try {
+      await markDmThreadDeletedForMe(user.uid, threadId);
+      navigate("/messages");
+    } catch (e) {
+      console.warn("[dm] delete thread prefs", e);
+      alert(dmErrorMessageForUi(e));
+    }
+  }
+
   if (!firebaseReady) return <Placeholder>Firebase 연동이 필요해요.</Placeholder>;
   if (!user) {
     if (authLoading) {
@@ -187,9 +204,23 @@ export default function DmChatPage() {
         <PeerAvatar photoURL={peerIdentity.photoURL} name={peerIdentity.displayName} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-slate-100">{peerIdentity.displayName}</p>
-          <p className="text-[11px] text-slate-500">DM</p>
+          <p className="text-[11px] text-slate-500">{threadDeletedForMe ? "삭제됨 · DM" : "DM"}</p>
         </div>
+        <button
+          type="button"
+          onClick={() => void deleteThisThread()}
+          className="rounded-lg p-2 text-slate-500 hover:bg-slate-900 hover:text-rose-300"
+          aria-label="대화 목록에서 삭제"
+        >
+          <Trash2 size={20} />
+        </button>
       </header>
+
+      {threadDeletedForMe ? (
+        <p className="shrink-0 border-b border-slate-800 bg-slate-900/70 px-3 py-2 text-[11px] text-slate-500">
+          이 대화는 내 목록에서 삭제됨으로 표시했어요. 메시지는 그대로 열람할 수 있어요.
+        </p>
+      ) : null}
 
       <div
         ref={messagesScrollRef}

@@ -10,6 +10,9 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 // CI 에서 VITE_BASE_PATH 로 설정. 로컬은 루트 기준과 동일하게 "/".
 const base = process.env.VITE_BASE_PATH ?? "/";
 
+/** HashRouter — 매니페스트 start_url 에 해시를 넣어 설치 후 첫 주소와 라우터 진입을 맞춤 */
+const pwaStartUrl = base === "/" ? "/#/" : `${base.replace(/\/$/, "")}/#/`;
+
 export default defineConfig(({ command }) => ({
   base,
   plugins: [
@@ -28,7 +31,7 @@ export default defineConfig(({ command }) => ({
         orientation: "portrait",
         lang: "ko",
         prefer_related_applications: false,
-        start_url: base,
+        start_url: pwaStartUrl,
         scope: base,
         icons: [
           {

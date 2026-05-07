@@ -15,6 +15,7 @@ import {
   dmErrorMessageForUi,
   isFirestorePermissionDenied,
   prefetchMyDmThreadsSnapshot,
+  subscribeDmDeletedThreadIds,
   subscribeDmReadMap,
   subscribeMyDmThreads,
 } from "../lib/dm";
@@ -23,6 +24,8 @@ import type { DmThreadDoc } from "../types";
 type Ctx = {
   threads: DmThreadDoc[];
   readMap: Map<string, number>;
+  /** 내가 목록에서 삭제로 표시한 DM 스레드 id */
+  dmDeletedThreadIds: Set<string>;
   threadsListReady: boolean;
   threadsListError: string | null;
   retryDmList: () => void;
@@ -71,6 +74,7 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
 
   const [threads, setThreads] = useState<DmThreadDoc[]>([]);
   const [readMap, setReadMap] = useState<Map<string, number>>(new Map());
+  const [dmDeletedThreadIds, setDmDeletedThreadIds] = useState<Set<string>>(() => new Set());
   const [threadsListReady, setThreadsListReady] = useState(false);
   const [threadsListError, setThreadsListError] = useState<string | null>(null);
 
@@ -131,6 +135,7 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
     if (!firebaseReady || !myUid || authLoading) {
       setThreads([]);
       setReadMap(new Map());
+      setDmDeletedThreadIds(new Set());
       setThreadsListReady(false);
       setThreadsListError(null);
       return;
@@ -193,15 +198,31 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
     };
   }, [firebaseReady, myUid, authLoading, shouldListen, retryNonce]);
 
+  useEffect(() => {
+    if (!firebaseReady || !myUid || authLoading) {
+      setDmDeletedThreadIds(new Set());
+      return;
+    }
+
+    const u = subscribeDmDeletedThreadIds(myUid, setDmDeletedThreadIds, (e) =>
+      console.warn("[dmRealtime] dmThreadPrefs", e),
+    );
+    return () => {
+      u();
+      setDmDeletedThreadIds(new Set());
+    };
+  }, [firebaseReady, myUid, authLoading]);
+
   const value = useMemo<Ctx>(
     () => ({
       threads,
       readMap,
+      dmDeletedThreadIds,
       threadsListReady,
       threadsListError,
       retryDmList,
     }),
-    [threads, readMap, threadsListReady, threadsListError, retryDmList],
+    [threads, readMap, dmDeletedThreadIds, threadsListReady, threadsListError, retryDmList],
   );
 
   return (

@@ -2,6 +2,9 @@ import { Link, useLocation } from "react-router-dom";
 import { Calendar, HeartPulse, Rss, Settings, Users } from "lucide-react";
 import { cls } from "../lib/utils";
 import { useFeedDotVisible } from "../contexts/FeedStreamContext";
+import { useAuth } from "../contexts/AuthContext";
+import { useDmRealtime } from "../contexts/DmRealtimeContext";
+import { unreadDmThreadCount } from "../lib/dm";
 
 const items = [
   { to: "/", label: "피드", icon: Rss },
@@ -14,6 +17,13 @@ const items = [
 export default function BottomNav() {
   const { pathname } = useLocation();
   const feedDot = useFeedDotVisible();
+  const { user } = useAuth();
+  const { threads, readMap, dmDeletedThreadIds } = useDmRealtime();
+  const myUid = user?.uid;
+  const dmUnread = myUid
+    ? unreadDmThreadCount(threads, myUid, readMap, { ignoreThreadIds: dmDeletedThreadIds })
+    : 0;
+
   return (
     <nav
       className="bottom-nav fixed bottom-0 left-1/2 z-40 w-full max-w-screen-sm -translate-x-1/2 backdrop-blur"
@@ -23,6 +33,8 @@ export default function BottomNav() {
         {items.map(({ to, label, icon: Icon }) => {
           const active = isActive(to, pathname);
           const showFeedDot = to === "/" && feedDot && !active;
+          const showDmDot = dmUnread > 0 && !active && (to === "/" || to === "/friends");
+          const feedAndDmDots = showFeedDot && showDmDot;
           return (
             <li key={to} className="flex-1">
               <Link
@@ -31,11 +43,28 @@ export default function BottomNav() {
                   "relative flex flex-col items-center justify-center gap-1 py-3 text-[11px] transition-colors",
                   active ? "text-brand-400" : "text-slate-400 hover:text-slate-200",
                 )}
+                aria-label={
+                  showDmDot && myUid
+                    ? `${label}, 새 DM ${dmUnread > 99 ? "99+" : dmUnread}건`
+                    : undefined
+                }
               >
                 <Icon size={20} strokeWidth={active ? 2.4 : 2} />
                 {showFeedDot && (
                   <span
-                    className="absolute right-[calc(50%-18px)] top-2 h-2 w-2 rounded-full bg-rose-500 shadow ring-2 ring-slate-950"
+                    className={cls(
+                      "absolute top-2 h-2 w-2 rounded-full bg-rose-500 shadow ring-2 ring-slate-950",
+                      feedAndDmDots ? "right-[calc(50%+6px)]" : "right-[calc(50%-18px)]",
+                    )}
+                    aria-hidden
+                  />
+                )}
+                {showDmDot && (
+                  <span
+                    className={cls(
+                      "absolute top-2 h-2 w-2 rounded-full bg-rose-500 shadow ring-2 ring-slate-950",
+                      feedAndDmDots ? "right-[calc(50%-22px)]" : "right-[calc(50%-18px)]",
+                    )}
                     aria-hidden
                   />
                 )}

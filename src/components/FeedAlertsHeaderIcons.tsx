@@ -20,7 +20,7 @@ export const FEED_HEADER_ALERTS_WIDTH_CLASS = "w-[calc(5rem+0.25rem)] shrink-0";
 export default function FeedAlertsHeaderIcons() {
   const { user } = useAuth();
   const myUid = user?.uid;
-  const { threads, readMap: dmReadMap } = useDmRealtime();
+  const { threads, readMap: dmReadMap, dmDeletedThreadIds } = useDmRealtime();
 
   const [tabVisible, setTabVisible] = useState(() =>
     typeof document === "undefined" ? true : document.visibilityState === "visible",
@@ -41,7 +41,9 @@ export default function FeedAlertsHeaderIcons() {
     );
   }, [myUid, tabVisible]);
 
-  const dmUnread = myUid ? unreadDmThreadCount(threads, myUid, dmReadMap) : 0;
+  const dmUnread = myUid
+    ? unreadDmThreadCount(threads, myUid, dmReadMap, { ignoreThreadIds: dmDeletedThreadIds })
+    : 0;
 
   return (
     <div className={cls("flex items-center justify-center gap-1", FEED_HEADER_ALERTS_WIDTH_CLASS)}>

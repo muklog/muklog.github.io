@@ -242,19 +242,27 @@ export async function getPublicProfile(uid: string): Promise<PublicProfile | nul
   return snap.data() as PublicProfile;
 }
 
+/** publicProfiles 스냅 최소 1회 수신 전에는 share 폴백 표시를 막기 위한 메타 */
+export type PublicProfilesSubscribeState = {
+  byUid: Map<string, PublicProfile | null>;
+  /** 해당 uid 문서에 대해 onSnapshot 이 최소 한 번 돌았음(문서 없음 포함) */
+  hydratedUids: Set<string>;
+};
+
 /** 친구 목록 등 — 여러 uid 의 publicProfiles 를 실시간 구독 */
 export function subscribePublicProfilesForUids(
   uids: string[],
-  onNext: (map: Map<string, PublicProfile | null>) => void,
+  onNext: (state: PublicProfilesSubscribeState) => void,
 ): Unsubscribe {
   const fs = getFirestoreDb();
   const uniq = [...new Set(uids.filter(Boolean))];
   if (uniq.length === 0) {
-    onNext(new Map());
+    onNext({ byUid: new Map(), hydratedUids: new Set() });
     return () => {};
   }
 
   const map = new Map<string, PublicProfile | null>();
+  const hydratedUids = new Set<string>();
   for (const id of uniq) map.set(id, null);
 
   let scheduled = false;
@@ -263,7 +271,7 @@ export function subscribePublicProfilesForUids(
     scheduled = true;
     queueMicrotask(() => {
       scheduled = false;
-      onNext(new Map(map));
+      onNext({ byUid: new Map(map), hydratedUids: new Set(hydratedUids) });
     });
   }
 
@@ -272,10 +280,12 @@ export function subscribePublicProfilesForUids(
       doc(fs, "publicProfiles", uid),
       (snap) => {
         map.set(uid, snap.exists() ? (snap.data() as PublicProfile) : null);
+        hydratedUids.add(uid);
         emit();
       },
       () => {
         map.set(uid, null);
+        hydratedUids.add(uid);
         emit();
       },
     ),
@@ -355,10 +365,15 @@ export function subscribePeerIdentityForDm(
 ): Unsubscribe {
   const fs = getFirestoreDb();
   let pub: PublicProfile | null = null;
+  let pubHydrated = false;
   let shareForward: Share | null = null;
   let shareReverse: Share | null = null;
 
   function emit() {
+    if (!pubHydrated) {
+      onNext({ displayName: "대화" });
+      return;
+    }
     onNext(pickLatestPeerDmIdentity(peerUid, pub, [shareForward, shareReverse]));
   }
 
@@ -366,10 +381,12 @@ export function subscribePeerIdentityForDm(
     doc(fs, "publicProfiles", peerUid),
     (snap) => {
       pub = snap.exists() ? (snap.data() as PublicProfile) : null;
+      pubHydrated = true;
       emit();
     },
     () => {
       pub = null;
+      pubHydrated = true;
       emit();
     },
   );
@@ -627,6 +644,9 @@ export async function acceptFriendInviteCode(
     outSid = shareIdFor(me.uid, inv.fromUid);
     const shareRef = doc(fs, "shares", outSid);
     const shareSnap = await transaction.get(shareRef);
+    const revSid = shareIdFor(inv.fromUid, me.uid);
+    const revShareRef = doc(fs, "shares", revSid);
+    const revSnap = await transaction.get(revShareRef);
     const now = Date.now();
     const myName = resolveDisplayName(localUser, me) || myEmail;
     const myPhoto = resolveDisplayPhotoURL(localUser, me.photoURL);
@@ -666,6 +686,34 @@ export async function acceptFriendInviteCode(
       if (myPhoto !== undefined) patch.ownerPhotoURL = myPhoto;
       if (inv.fromPhotoURL !== undefined) patch.viewerPhotoURL = inv.fromPhotoURL;
       transaction.update(shareRef, patch);
+    }
+
+    /** 맞팔 — 발급자(owner) → 수락자(viewer) 역방향 share (수락자만 viewer 이므로 규칙상 역방향 create 예외 사용) */
+    if (!revSnap.exists()) {
+      const revShare: Share = {
+        id: revSid,
+        ownerUid: inv.fromUid,
+        viewerUid: me.uid,
+        scope: finalScope,
+        ownerEmail: inv.fromEmail,
+        ownerName: inv.fromName,
+        ownerPhotoURL: inv.fromPhotoURL,
+        viewerEmail: myEmail,
+        viewerName: myName,
+        viewerPhotoURL: myPhoto,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const cleanRev: Record<string, unknown> = { ...revShare };
+      if (cleanRev.ownerPhotoURL === undefined) delete cleanRev.ownerPhotoURL;
+      if (cleanRev.viewerPhotoURL === undefined) delete cleanRev.viewerPhotoURL;
+      transaction.set(revShareRef, cleanRev);
+    } else {
+      const rex = revSnap.data() as Share;
+      if (rex.ownerUid !== inv.fromUid || rex.viewerUid !== me.uid) {
+        throw new Error("이 초대와 맞지 않는 공유 설정이 이미 있어요.");
+      }
+      // 역방향 문서의 owner 는 발급자라 수락자가 update 할 수 없음 — 형식만 맞으면 그대로 둠
     }
 
     transaction.update(inviteRef, {

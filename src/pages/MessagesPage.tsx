@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Loader2, MessageCircle } from "lucide-react";
+import { ArrowLeft, Loader2, MessageCircle, Trash2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useDmRealtime } from "../contexts/DmRealtimeContext";
 import { resolvePeerIdentityForDm, subscribePublicProfilesForUids, type PeerDmIdentity } from "../lib/friends";
 import {
   ensureDmThreadWith,
+  markDmThreadDeletedForMe,
   otherParticipantUid,
   otherUidInDmThreadId,
   unreadDmThreadCount,
@@ -14,6 +15,7 @@ import {
 import type { DmThreadDoc } from "../types";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
 import { isFirestoreMobileUa } from "../lib/firebaseApp";
+import { cls } from "../lib/utils";
 
 export default function MessagesPage() {
   const navigate = useNavigate();
@@ -27,6 +29,7 @@ export default function MessagesPage() {
     threadsListReady: listReady,
     threadsListError: listErr,
     retryDmList,
+    dmDeletedThreadIds,
   } = useDmRealtime();
 
   const [peerIdMap, setPeerIdMap] = useState<Map<string, PeerDmIdentity>>(new Map());
@@ -71,18 +74,21 @@ export default function MessagesPage() {
     const peers = threadPeersKey.split("|").filter(Boolean);
     let cancelled = false;
 
-    async function refresh() {
+    async function refresh(state: { hydratedUids: Set<string> }) {
       const pairs = await Promise.all(
-        peers.map(async (p) => [p, await resolvePeerIdentityForDm(p, myUid)] as const),
+        peers.map(async (p) => {
+          if (!state.hydratedUids.has(p)) return [p, { displayName: "대화" }] as const;
+          const id = await resolvePeerIdentityForDm(p, myUid);
+          return [p, id] as const;
+        }),
       );
       if (cancelled) return;
       setPeerIdMap(new Map(pairs));
     }
 
-    const unsub = subscribePublicProfilesForUids(peers, () => {
-      void refresh();
+    const unsub = subscribePublicProfilesForUids(peers, (s) => {
+      void refresh(s);
     });
-    void refresh();
 
     return () => {
       cancelled = true;
@@ -118,9 +124,22 @@ export default function MessagesPage() {
   }, [user?.uid, peerFromQuery, navigate]);
 
   const dmUnread = useMemo(
-    () => (user?.uid ? unreadDmThreadCount(threads, user.uid, readMap) : 0),
-    [threads, readMap, user?.uid],
+    () =>
+      user?.uid
+        ? unreadDmThreadCount(threads, user.uid, readMap, { ignoreThreadIds: dmDeletedThreadIds })
+        : 0,
+    [threads, readMap, user?.uid, dmDeletedThreadIds],
   );
+
+  async function handleRemoveThread(myUid: string, threadId: string) {
+    if (!confirm("이 대화를 목록에서 삭제할까요? 기록은 상대와 서버에 남아 있을 수 있어요.")) return;
+    try {
+      await markDmThreadDeletedForMe(myUid, threadId);
+    } catch (e) {
+      console.warn("[messages] delete thread prefs", e);
+      alert(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   const hasStaleThreads = threads.length > 0;
   const showFullListLoader = !listReady && !hasStaleThreads;
@@ -223,6 +242,8 @@ export default function MessagesPage() {
                   uid={user.uid}
                   peerIdMap={peerIdMap}
                   readMap={readMap}
+                  listDeleted={dmDeletedThreadIds.has(t.id)}
+                  onRemoveFromList={() => void handleRemoveThread(user.uid, t.id)}
                 />
               ))}
             </ul>
@@ -238,38 +259,67 @@ function ThreadRowItem({
   uid,
   peerIdMap,
   readMap,
+  listDeleted,
+  onRemoveFromList,
 }: {
   t: DmThreadDoc;
   uid: string;
   peerIdMap: Map<string, PeerDmIdentity>;
   readMap: Map<string, number>;
+  listDeleted: boolean;
+  onRemoveFromList: () => void;
 }) {
   const peer = otherParticipantUid(t, uid)!;
   const id = peerIdMap.get(peer);
-  const label = id?.displayName?.trim() || "대화";
-  const photoURL = id?.photoURL;
-  const unread = unreadDmThreadCount([t], uid, readMap) > 0;
+  const peerLabel = id?.displayName?.trim() || "대화";
+  const photoURL = listDeleted ? undefined : id?.photoURL;
+  const title = listDeleted ? "삭제됨" : peerLabel;
+  const unread = !listDeleted && unreadDmThreadCount([t], uid, readMap) > 0;
+  const cardClass = cls(
+    "card flex min-w-0 items-stretch gap-0 p-0 transition-colors",
+    listDeleted && "border-slate-700/50 opacity-90",
+    unread && !listDeleted && "border-brand-500/30 bg-brand-500/5",
+    !unread && !listDeleted && "hover:bg-slate-900/40",
+  );
   return (
     <li>
-      <Link
-        to={`/messages/${t.id}`}
-        className={
-          unread
-            ? "card flex flex-col gap-1 border-brand-500/30 bg-brand-500/5 p-4"
-            : "card flex flex-col gap-1 p-4 hover:bg-slate-900/40"
-        }
-      >
-        <div className="flex items-center gap-3">
-          <DmRowAvatar name={label} photoURL={photoURL} />
-          <div className="min-w-0 flex-1">
-            <span className="block truncate font-semibold text-slate-100">{label}</span>
-            <span className="line-clamp-2 text-xs text-slate-400">
-              {t.lastSenderUid === uid ? "나 · " : ""}
-              {t.lastText || "(아직 메시지 없음)"}
-            </span>
+      <div className={cardClass}>
+        <Link to={`/messages/${t.id}`} className="flex min-w-0 flex-1 flex-col gap-1 p-4">
+          <div className="flex items-center gap-3">
+            <DmRowAvatar name={listDeleted ? "대화" : title} photoURL={photoURL} />
+            <div className="min-w-0 flex-1">
+              <span
+                className={cls(
+                  "block truncate font-semibold",
+                  listDeleted ? "text-slate-500" : "text-slate-100",
+                )}
+              >
+                {title}
+              </span>
+              <span className="line-clamp-2 text-xs text-slate-400">
+                {listDeleted ? (
+                  <span className="text-slate-500">{peerLabel} · 목록에서 숨김</span>
+                ) : (
+                  <>
+                    {t.lastSenderUid === uid ? "나 · " : ""}
+                    {t.lastText || "(아직 메시지 없음)"}
+                  </>
+                )}
+              </span>
+            </div>
           </div>
-        </div>
-      </Link>
+        </Link>
+        {!listDeleted ? (
+          <button
+            type="button"
+            className="flex shrink-0 items-center justify-center border-l border-slate-800/80 px-3 text-slate-500 hover:bg-slate-900/60 hover:text-rose-300"
+            aria-label="대화 목록에서 삭제"
+            onClick={() => onRemoveFromList()}
+          >
+            <Trash2 size={18} />
+          </button>
+        ) : null}
+      </div>
     </li>
   );
 }
@@ -300,13 +350,19 @@ function TitleBlock({ dmUnread }: { dmUnread: number }) {
     <div className="min-w-0">
       <p className="text-xs text-slate-400">직접 메시지</p>
       <h1 className="flex items-center gap-2 text-xl font-bold">
-        <MessageCircle size={18} className="text-brand-400" />
+        <span className="relative inline-flex shrink-0">
+          <MessageCircle
+            size={18}
+            className={dmUnread > 0 ? "text-brand-300" : "text-brand-400"}
+            strokeWidth={2}
+          />
+          {dmUnread > 0 ? (
+            <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white shadow ring-2 ring-slate-950">
+              {dmUnread > 99 ? "99+" : dmUnread}
+            </span>
+          ) : null}
+        </span>
         DM
-        {dmUnread > 0 && (
-          <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">
-            {dmUnread > 99 ? "99+" : dmUnread}
-          </span>
-        )}
       </h1>
     </div>
   );

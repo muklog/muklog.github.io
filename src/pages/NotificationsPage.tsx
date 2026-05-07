@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Bell, Loader2 } from "lucide-react";
+import { ArrowLeft, Bell, Loader2, Trash2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import {
   activityKindLabel,
+  markActivityItemDeleted,
   markActivityItemRead,
   markAllActivityRead,
   subscribeActivityInbox,
@@ -46,7 +47,21 @@ export default function NotificationsPage() {
     }
   }
 
-  const unreadIds = useMemo(() => rows.filter((r) => !r.read).map((r) => r.id), [rows]);
+  async function removeItem(it: ActivityInboxDoc) {
+    if (!user?.uid) return;
+    try {
+      await markActivityItemDeleted(user.uid, it.id);
+    } catch (e) {
+      alert(userFacingStorageErrorMessage(e));
+    }
+  }
+
+  const visibleRows = useMemo(() => rows.filter((r) => !r.deleted), [rows]);
+
+  const unreadIds = useMemo(
+    () => rows.filter((r) => !r.read && !r.deleted).map((r) => r.id),
+    [rows],
+  );
 
   async function clearAllUnread() {
     if (!user?.uid || unreadIds.length === 0) return;
@@ -96,40 +111,56 @@ export default function NotificationsPage() {
         )}
       </header>
 
-      {rows.length === 0 ? (
+      {visibleRows.length === 0 ? (
         <p className="card p-8 text-center text-sm text-slate-400">
-          아직 알림이 없어요. 피드에서 친구를 응원해 보세요.
+          {rows.length > 0
+            ? "표시할 알림이 없어요. 삭제한 항목은 목록에 다시 나타나지 않아요."
+            : "아직 알림이 없어요. 피드에서 친구를 응원해 보세요."}
         </p>
       ) : (
         <ul className="space-y-2">
-          {rows.map((it) => (
+          {visibleRows.map((it) => (
             <li key={it.id}>
-              <button
-                type="button"
-                onClick={() => void tapRow(it)}
+              <div
                 className={cls(
-                  "card w-full p-4 text-left transition-colors hover:bg-slate-900/50",
+                  "card flex w-full items-stretch gap-0 p-0 transition-colors",
                   !it.read && "border-brand-500/30 bg-brand-500/5",
                 )}
               >
-                <div className="flex gap-3">
-                  <AvatarCircle name={it.actorName} url={it.actorPhotoURL} />
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <p className="text-xs font-semibold text-brand-200">{activityKindLabel(it.kind)}</p>
-                    <p className="text-sm font-medium text-slate-100">{it.actorName}</p>
-                    <p className="text-[11px] text-slate-400">
-                      {MEAL_SLOT_LABELS[it.mealSlot] ?? it.mealSlot} · {it.mealDate.replace(/-/g, ".")}
-                      {it.snippet ? (
-                        <>
-                          {" "}
-                          — <span className="text-slate-300">"{it.snippet}"</span>
-                        </>
-                      ) : null}
-                    </p>
+                <button
+                  type="button"
+                  onClick={() => void tapRow(it)}
+                  className="min-w-0 flex-1 p-4 text-left hover:bg-slate-900/50"
+                >
+                  <div className="flex gap-3">
+                    <AvatarCircle name={it.actorName} url={it.actorPhotoURL} />
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="text-xs font-semibold text-brand-200">{activityKindLabel(it.kind)}</p>
+                      <p className="text-sm font-medium text-slate-100">{it.actorName}</p>
+                      <p className="text-[11px] text-slate-400">
+                        {MEAL_SLOT_LABELS[it.mealSlot] ?? it.mealSlot} · {it.mealDate.replace(/-/g, ".")}
+                        {it.snippet ? (
+                          <>
+                            {" "}
+                            — <span className="text-slate-300">"{it.snippet}"</span>
+                          </>
+                        ) : null}
+                      </p>
+                    </div>
+                    {!it.read && (
+                      <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-rose-400" aria-hidden />
+                    )}
                   </div>
-                  {!it.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-rose-400" aria-hidden />}
-                </div>
-              </button>
+                </button>
+                <button
+                  type="button"
+                  className="flex shrink-0 items-center justify-center border-l border-slate-800/80 px-3 text-slate-500 hover:bg-slate-900/60 hover:text-rose-300"
+                  aria-label="알림 삭제"
+                  onClick={() => void removeItem(it)}
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
             </li>
           ))}
         </ul>

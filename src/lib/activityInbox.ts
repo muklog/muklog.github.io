@@ -73,6 +73,13 @@ export async function markActivityItemRead(recipientUid: string, itemId: string)
   });
 }
 
+export async function markActivityItemDeleted(recipientUid: string, itemId: string): Promise<void> {
+  await updateDoc(doc(getFirestoreDb(), "users", recipientUid, "activityInbox", itemId), {
+    deleted: true,
+    deletedAt: Date.now(),
+  });
+}
+
 export async function markAllActivityRead(recipientUid: string, unreadIds: string[]): Promise<void> {
   if (unreadIds.length === 0) return;
   const fs = getFirestoreDb();
@@ -84,7 +91,7 @@ export async function markAllActivityRead(recipientUid: string, unreadIds: strin
 }
 
 export function unreadActivityCount(rows: ActivityInboxDoc[]): number {
-  return rows.filter((x) => !x.read).length;
+  return rows.filter((x) => !x.read && !x.deleted).length;
 }
 
 /** 알림 카드 라벨 */

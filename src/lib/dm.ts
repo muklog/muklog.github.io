@@ -700,13 +700,53 @@ export function subscribeDmReadMap(
   );
 }
 
+export function subscribeDmDeletedThreadIds(
+  myUid: string,
+  cb: (threadIds: Set<string>) => void,
+  onErr?: (e: unknown) => void,
+): Unsubscribe {
+  const fs = getFirestoreDb();
+  const col = collection(fs, "users", myUid, "dmThreadPrefs");
+  return onSnapshot(
+    col,
+    (snap) => {
+      const ids = new Set<string>();
+      for (const d of snap.docs) {
+        const t = d.data() as { deleted?: boolean };
+        if (t.deleted === true) ids.add(d.id);
+      }
+      cb(ids);
+    },
+    (err) => {
+      console.warn("[dm] dmThreadPrefs subscribe", err);
+      onErr?.(err);
+    },
+  );
+}
+
+/** 목록에서 숨김 — 스레드·메시지 문서는 그대로 두고 내 환경설정만 기록 */
+export async function markDmThreadDeletedForMe(myUid: string, threadId: string): Promise<void> {
+  const fs = getFirestoreDb();
+  const now = Date.now();
+  await withFirestoreMutationRetries(() =>
+    setDoc(
+      doc(fs, "users", myUid, "dmThreadPrefs", threadId),
+      { deleted: true, deletedAt: now, updatedAt: now },
+      { merge: true },
+    ),
+  );
+}
+
 export function unreadDmThreadCount(
   threads: DmThreadDoc[],
   myUid: string,
   readMap: Map<string, number>,
+  opts?: { ignoreThreadIds?: Set<string> },
 ): number {
+  const skip = opts?.ignoreThreadIds;
   let n = 0;
   for (const t of threads) {
+    if (skip?.has(t.id)) continue;
     if (isThreadUnreadForMe(t, myUid, readMap.get(t.id))) n += 1;
   }
   return n;
