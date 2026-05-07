@@ -133,13 +133,14 @@ function truncateWithEllipsis(ctx: CanvasRenderingContext2D, text: string, maxWi
 }
 
 function stripUrlSchemeForWatermark(url: string): string {
-  return url.replace(/^https?:\/\//i, "");
+  const hostAndPath = url.replace(/^https?:\/\//i, "");
+  return hostAndPath.replace(/\/+$/, "");
 }
 
 function computeWatermarkLayout(
   canvasWidth: number,
   cssWidthRef: number,
-  /** 워터마크에만 쓰임 — 스킴(https://) 제외한 호스트·경로 */
+  /** 워터마크에만 쓰임 — 스킴·끝의 `/` 제외한 호스트·경로 */
   watermarkHostAndPath: string,
 ): {
   barPx: number;
