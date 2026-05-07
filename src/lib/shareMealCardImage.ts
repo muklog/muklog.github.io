@@ -225,7 +225,8 @@ async function captureElementToDataUrl(element: HTMLElement, pixelRatio: number)
     pixelRatio,
     cacheBust: false,
     backgroundColor: "#0f172a",
-    skipFonts: true,
+    // Pretendard 등 웹폰트를 SVG에 포함해야 칩·태그 등 소형 텍스트가 화면과 동일한 크기·메트릭으로 그려짐
+    skipFonts: false,
     filter: (node) => {
       if (!(node instanceof HTMLElement)) return true;
       const cls = typeof node.className === "string" ? node.className : "";
