@@ -303,6 +303,7 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
                   item={it}
                   index={idx}
                   canAnalyze={!!apiKey}
+                  showShare
                   onReanalyze={() => void reAnalyzeItem(it)}
                   onEdit={() => setEditingItemId(it.id)}
                   onRemove={() => void removeItem(it.id)}

@@ -324,6 +324,7 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
               canAnalyze={isMine && !!myApiKey}
               showPhotoAnalyzingOverlay={false}
               reanalyzeBusy={imageReanalyzeBusyId === it.id}
+              showShare
               onEdit={isMine ? () => setEditingItemId(it.id) : undefined}
               onReanalyze={
                 isMine && it.photo ? () => void handleReanalyzeByImage(it) : undefined
