@@ -23,7 +23,9 @@ import HealthScoreRing from "../components/HealthScoreRing";
 import HealthRecordCard from "../components/HealthRecordCard";
 import PhotoUpload from "../components/PhotoUpload";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
-import { dateKey, formatKoDate } from "../lib/utils";
+import { dateKey, formatKoDate, cls } from "../lib/utils";
+
+const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1);
 
 export default function HealthPage() {
   const settings = useLiveQuery(() => getSettings(), []);
@@ -237,29 +239,76 @@ export default function HealthPage() {
 
 // ---------------- 프로필 카드 (키/몸무게/생년월일/성별) ----------------
 
+function daysInMonth(year: number, month: number): number {
+  return new Date(year, month, 0).getDate();
+}
+
+function splitBirthParts(iso?: string): { y: string; m: string; d: string } {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return { y: "", m: "", d: "" };
+  const [ys, ms, ds] = iso.split("-");
+  return { y: ys, m: String(parseInt(ms, 10)), d: String(parseInt(ds, 10)) };
+}
+
+function composeBirthIso(y: string, m: string, d: string): string | undefined {
+  const yt = y.trim();
+  const mt = m.trim();
+  const dt = d.trim();
+  if (!yt || !mt || !dt) return undefined;
+  const yi = Number(yt);
+  const mi = Number(mt);
+  const di = Number(dt);
+  if (!Number.isFinite(yi) || !Number.isFinite(mi) || !Number.isFinite(di)) return undefined;
+  const dim = daysInMonth(yi, mi);
+  const dc = Math.min(di, dim);
+  return `${yi}-${String(mi).padStart(2, "0")}-${String(dc).padStart(2, "0")}`;
+}
+
+function birthYearOptions(): number[] {
+  const cy = new Date().getFullYear();
+  const minY = cy - 100;
+  const list: number[] = [];
+  for (let yy = cy; yy >= minY; yy--) list.push(yy);
+  return list;
+}
+
 function ProfileCard({ user }: { user: User }) {
   const [editing, setEditing] = useState(false);
   const [height, setHeight] = useState<string>(numToStr(user.heightCm));
   const [weight, setWeight] = useState<string>(numToStr(user.weightKg));
-  const [birthDate, setBirthDate] = useState<string>(user.birthDate ?? "");
+  const [birthY, setBirthY] = useState<string>(() => splitBirthParts(user.birthDate).y);
+  const [birthM, setBirthM] = useState<string>(() => splitBirthParts(user.birthDate).m);
+  const [birthD, setBirthD] = useState<string>(() => splitBirthParts(user.birthDate).d);
   const [gender, setGender] = useState<User["gender"]>(user.gender);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setHeight(numToStr(user.heightCm));
     setWeight(numToStr(user.weightKg));
-    setBirthDate(user.birthDate ?? "");
+    const p = splitBirthParts(user.birthDate);
+    setBirthY(p.y);
+    setBirthM(p.m);
+    setBirthD(p.d);
     setGender(user.gender);
   }, [user.id, user.heightCm, user.weightKg, user.birthDate, user.gender]);
+
+  const maxDayForPick =
+    birthY && birthM ? daysInMonth(Number(birthY), Number(birthM)) : 31;
+
+  useEffect(() => {
+    if (!birthY || !birthM || !birthD) return;
+    const d = Number(birthD);
+    if (d > maxDayForPick) setBirthD(String(maxDayForPick));
+  }, [birthY, birthM, maxDayForPick, birthD]);
 
   async function save() {
     setBusy(true);
     try {
+      const composedBirth = composeBirthIso(birthY, birthM, birthD);
       const next: User = {
         ...user,
         heightCm: strToNum(height),
         weightKg: strToNum(weight),
-        birthDate: birthDate.trim() || undefined,
+        birthDate: composedBirth,
         gender,
         updatedAt: Date.now(),
       };
@@ -320,10 +369,52 @@ function ProfileCard({ user }: { user: User }) {
             <Field label="체중 (kg)">
               <input inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} className="input" placeholder="예: 65" />
             </Field>
-            <Field label="생년월일">
-              <input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} className="input" />
-            </Field>
-            <Field label="성별">
+            <div className="col-span-2 space-y-1">
+              <span className="text-[11px] font-medium text-slate-300">생년월일</span>
+              <div className="flex gap-2">
+                <select
+                  value={birthY}
+                  onChange={(e) => setBirthY(e.target.value)}
+                  className="input min-w-0 flex-[1.15] text-xs"
+                  aria-label="출생 연도"
+                >
+                  <option value="">연도</option>
+                  {birthYearOptions().map((y) => (
+                    <option key={y} value={String(y)}>
+                      {y}년
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={birthM}
+                  onChange={(e) => setBirthM(e.target.value)}
+                  className="input min-w-0 flex-1 text-xs"
+                  aria-label="출생 월"
+                >
+                  <option value="">월</option>
+                  {MONTH_OPTIONS.map((mo) => (
+                    <option key={mo} value={String(mo)}>
+                      {mo}월
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={birthD}
+                  onChange={(e) => setBirthD(e.target.value)}
+                  className="input min-w-0 flex-1 text-xs"
+                  aria-label="출생 일"
+                >
+                  <option value="">일</option>
+                  {Array.from({ length: maxDayForPick }, (_, i) => i + 1).map((day) => (
+                    <option key={day} value={String(day)}>
+                      {day}일
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-[10px] leading-snug text-slate-500">달력 대신 목록에서 고르면 됩니다. 입력 안 하면 비워 둬요.</p>
+            </div>
+            <Field label="성별" className="col-span-2">
               <select
                 value={gender ?? ""}
                 onChange={(e) => setGender((e.target.value || undefined) as User["gender"])}
@@ -370,9 +461,17 @@ function ProfileRow({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="block space-y-1">
+    <label className={cls("block space-y-1", className)}>
       <span className="text-[11px] font-medium text-slate-300">{label}</span>
       {children}
     </label>

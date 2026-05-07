@@ -62,6 +62,16 @@ export function MealItemCard({
             사진 없음
           </div>
         )}
+        {item.analysisStatus === "analyzing" && (
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950/60 backdrop-blur-[2px]"
+            aria-busy
+            aria-live="polite"
+          >
+            <Loader2 className="h-8 w-8 shrink-0 animate-spin text-brand-400" aria-hidden />
+            <span className="px-2 text-center text-[11px] font-medium text-slate-100">AI 분석 중…</span>
+          </div>
+        )}
         <span className="absolute left-2 top-2 rounded-full bg-slate-950/70 px-2 py-0.5 text-[10px] font-semibold text-slate-200 backdrop-blur">
           #{index + 1}
         </span>
@@ -219,9 +229,10 @@ function mealItemHasSyncedAnalysisPayload(item: MealItem): boolean {
   if (
     n &&
     (typeof n.calories === "number" ||
-      typeof n.protein === "number" ||
       typeof n.carbs === "number" ||
+      typeof n.protein === "number" ||
       typeof n.fat === "number" ||
+      typeof n.sugar === "number" ||
       (n.healthTags?.length ?? 0) > 0)
   ) {
     return true;
@@ -271,19 +282,24 @@ export function ItemAnalysisBlock({
                 🔥 {item.nutrition.calories}kcal
               </span>
             )}
-            {item.nutrition.protein !== undefined && (
-              <span className="chip bg-slate-700/60 text-slate-200">
-                💪 단백질 {item.nutrition.protein}g
-              </span>
-            )}
             {item.nutrition.carbs !== undefined && (
               <span className="chip bg-slate-700/60 text-slate-200">
                 🌾 탄수 {item.nutrition.carbs}g
               </span>
             )}
+            {item.nutrition.protein !== undefined && (
+              <span className="chip bg-slate-700/60 text-slate-200">
+                💪 단백질 {item.nutrition.protein}g
+              </span>
+            )}
             {item.nutrition.fat !== undefined && (
               <span className="chip bg-slate-700/60 text-slate-200">
                 🥑 지방 {item.nutrition.fat}g
+              </span>
+            )}
+            {item.nutrition.sugar !== undefined && (
+              <span className="chip bg-slate-700/60 text-slate-200">
+                🍬 당 {item.nutrition.sugar}g
               </span>
             )}
             {item.nutrition.healthTags?.map((t) => (
@@ -409,9 +425,10 @@ export function MealItemEditDialog({
   const [menu, setMenu] = useState(item.menuText ?? "");
   const [comment, setComment] = useState(item.aiComment ?? "");
   const [cal, setCal] = useState<string>(numToStr(item.nutrition?.calories));
-  const [pro, setPro] = useState<string>(numToStr(item.nutrition?.protein));
   const [carb, setCarb] = useState<string>(numToStr(item.nutrition?.carbs));
+  const [pro, setPro] = useState<string>(numToStr(item.nutrition?.protein));
   const [fat, setFat] = useState<string>(numToStr(item.nutrition?.fat));
+  const [sugar, setSugar] = useState<string>(numToStr(item.nutrition?.sugar));
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>(item.nutrition?.healthTags ?? []);
   const [busy, setBusy] = useState<null | "save" | "reanalyze">(null);
@@ -436,16 +453,18 @@ export function MealItemEditDialog({
     try {
       const nutrition: MealItem["nutrition"] = {
         calories: strToNum(cal),
-        protein: strToNum(pro),
         carbs: strToNum(carb),
+        protein: strToNum(pro),
         fat: strToNum(fat),
+        sugar: strToNum(sugar),
         healthTags: tags.length ? tags : undefined,
       };
       const hasAny =
         nutrition.calories !== undefined ||
-        nutrition.protein !== undefined ||
         nutrition.carbs !== undefined ||
+        nutrition.protein !== undefined ||
         nutrition.fat !== undefined ||
+        nutrition.sugar !== undefined ||
         (nutrition.healthTags && nutrition.healthTags.length > 0);
       await onSave(
         {
@@ -543,14 +562,17 @@ export function MealItemEditDialog({
             <Field label="칼로리 (kcal)">
               <input inputMode="numeric" value={cal} onChange={(e) => setCal(e.target.value)} className="input" />
             </Field>
-            <Field label="단백질 (g)">
-              <input inputMode="numeric" value={pro} onChange={(e) => setPro(e.target.value)} className="input" />
-            </Field>
             <Field label="탄수화물 (g)">
               <input inputMode="numeric" value={carb} onChange={(e) => setCarb(e.target.value)} className="input" />
             </Field>
+            <Field label="단백질 (g)">
+              <input inputMode="numeric" value={pro} onChange={(e) => setPro(e.target.value)} className="input" />
+            </Field>
             <Field label="지방 (g)">
               <input inputMode="numeric" value={fat} onChange={(e) => setFat(e.target.value)} className="input" />
+            </Field>
+            <Field label="당 (g)" className="col-span-2">
+              <input inputMode="numeric" value={sugar} onChange={(e) => setSugar(e.target.value)} className="input" />
             </Field>
           </div>
 
@@ -642,9 +664,17 @@ export function MealItemEditDialog({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="block space-y-1 text-xs text-slate-400">
+    <label className={cls("block space-y-1 text-xs text-slate-400", className)}>
       <span className="font-medium text-slate-300">{label}</span>
       {children}
     </label>

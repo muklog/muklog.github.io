@@ -169,7 +169,20 @@ export default function DmChatPage() {
         {messages.length === 0 ? (
           <p className="py-8 text-center text-xs text-slate-500">첫 메시지를 남겨 보세요.</p>
         ) : (
-          messages.map((m) => <Bubble key={m.id} mine={m.senderUid === meUid} text={m.text} />)
+          messages.map((m, i) => {
+            const mine = m.senderUid === meUid;
+            const next = messages[i + 1];
+            const showTime = !next || next.senderUid !== m.senderUid;
+            return (
+              <Bubble
+                key={m.id}
+                mine={mine}
+                text={m.text}
+                createdAt={m.createdAt ?? 0}
+                showTime={showTime}
+              />
+            );
+          })
         )}
         <div ref={bottomRef} />
       </div>
@@ -218,9 +231,20 @@ export default function DmChatPage() {
   );
 }
 
-function Bubble({ mine, text }: { mine: boolean; text: string }) {
+function Bubble({
+  mine,
+  text,
+  createdAt,
+  showTime,
+}: {
+  mine: boolean;
+  text: string;
+  createdAt: number;
+  showTime: boolean;
+}) {
+  const timeLabel = formatDmTimeLabel(createdAt);
   return (
-    <div className={cls("flex w-full", mine ? "justify-end" : "justify-start")}>
+    <div className={cls("flex w-full flex-col gap-0.5", mine ? "items-end" : "items-start")}>
       <div
         className={cls(
           "max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap shadow-sm",
@@ -229,8 +253,41 @@ function Bubble({ mine, text }: { mine: boolean; text: string }) {
       >
         {text}
       </div>
+      {showTime && timeLabel && (
+        <p
+          className={cls(
+            "px-1 text-[10px] tabular-nums text-slate-500",
+            mine ? "text-right" : "text-left",
+          )}
+        >
+          {timeLabel}
+        </p>
+      )}
     </div>
   );
+}
+
+/** 분 단위까지 (초 생략). 같은 날이면 시각만, 날이 바뀌면 날짜 포함 */
+function formatDmTimeLabel(ts: number): string {
+  if (!Number.isFinite(ts) || ts <= 0) return "";
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  const clock = d.toLocaleTimeString("ko-KR", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  if (sameDay) return clock;
+  const datePart = d.toLocaleDateString("ko-KR", {
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+  });
+  return `${datePart} ${clock}`;
 }
 
 function HeaderSkeleton() {

@@ -200,6 +200,8 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
   const { author, meal, isMine } = entry;
   const items = meal.items ?? [];
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  /** 피드 스트림이 Dexie 갱신보다 늦을 때도 즉시 분석 중 UI 표시 */
+  const [imageReanalyzeBusyId, setImageReanalyzeBusyId] = useState<string | null>(null);
   const editingItem = items.find((it) => it.id === editingItemId) ?? null;
 
   const totalCalories = useMemo(
@@ -220,38 +222,48 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
 
   async function handleReanalyzeByImage(item: MealItem) {
     if (!isMine || !myApiKey || !item.photo || !myUserId) return;
-    await updateMealItem(meal.id, item.id, (it) => ({
-      ...it,
-      analysisStatus: "analyzing",
-      analysisError: undefined,
-      manuallyEdited: false,
-    }));
+    setImageReanalyzeBusyId(item.id);
     try {
-      const profile = await getAnalysisProfileForUser(myUserId);
-      const result = await analyzeMealImage(
-        myApiKey,
-        item.photo,
-        meal.slot,
-        undefined,
-        profile,
-      );
       await updateMealItem(meal.id, item.id, (it) => ({
         ...it,
-        menuText: result.menuText,
-        rating: result.rating,
-        aiComment: result.aiComment,
-        nutrition: result.nutrition,
-        analysisStatus: "done",
+        analysisStatus: "analyzing",
         analysisError: undefined,
         manuallyEdited: false,
       }));
-    } catch (e) {
-      await updateMealItem(meal.id, item.id, (it) => ({
-        ...it,
-        analysisStatus: "error",
-        analysisError: e instanceof Error ? e.message : String(e),
-      }));
+      try {
+        const profile = await getAnalysisProfileForUser(myUserId);
+        const result = await analyzeMealImage(
+          myApiKey,
+          item.photo,
+          meal.slot,
+          undefined,
+          profile,
+        );
+        await updateMealItem(meal.id, item.id, (it) => ({
+          ...it,
+          menuText: result.menuText,
+          rating: result.rating,
+          aiComment: result.aiComment,
+          nutrition: result.nutrition,
+          analysisStatus: "done",
+          analysisError: undefined,
+          manuallyEdited: false,
+        }));
+      } catch (e) {
+        await updateMealItem(meal.id, item.id, (it) => ({
+          ...it,
+          analysisStatus: "error",
+          analysisError: e instanceof Error ? e.message : String(e),
+        }));
+      }
+    } finally {
+      setImageReanalyzeBusyId(null);
     }
+  }
+
+  function itemForDisplay(it: MealItem): MealItem {
+    if (imageReanalyzeBusyId !== it.id) return it;
+    return { ...it, analysisStatus: "analyzing", analysisError: undefined };
   }
 
   async function handleRemoveItem(item: MealItem) {
@@ -309,13 +321,15 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
           items={items}
           renderSlide={(it, idx) => (
             <MealItemCard
-              item={it}
+              item={itemForDisplay(it)}
               index={idx}
               readOnly={!isMine}
               canAnalyze={isMine && !!myApiKey}
               onEdit={isMine ? () => setEditingItemId(it.id) : undefined}
               onReanalyze={
-                isMine && it.photo ? () => void handleReanalyzeByImage(it) : undefined
+                isMine && it.photo && imageReanalyzeBusyId !== it.id
+                  ? () => void handleReanalyzeByImage(it)
+                  : undefined
               }
               onRemove={isMine ? () => void handleRemoveItem(it) : undefined}
             />

@@ -95,9 +95,11 @@ export interface MealItem {
   aiComment?: string;
   nutrition?: {
     calories?: number;
-    protein?: number;
     carbs?: number;
+    protein?: number;
     fat?: number;
+    /** 당류·가당 추정 (g) */
+    sugar?: number;
     healthTags?: string[];
   };
   analysisStatus: "pending" | "analyzing" | "done" | "error" | "skipped";
