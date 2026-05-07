@@ -1,7 +1,16 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState, type RefObject } from "react";
 import { Camera, ImagePlus, Loader2 } from "lucide-react";
 import { compressImage, type CompressOptions } from "../lib/image";
 import { cls } from "../lib/utils";
+
+/**
+ * 갤러리(사진 보관함) 쪽으로 붙이기 위한 accept.
+ * `image/*` 만 쓰면 Android 의 ‘파일’·Chrome 문서 피커가 함께 뜨는 경우가 많고,
+ * MIME 을 좁히면 사진/미디어 앱 위주로 열리는 경우가 많습니다.
+ * (기기·브라우저마다 다르고, 카메라 항목까지 완전히 숨기는 것은 웹 표준으로는 불가에 가깝습니다.)
+ */
+const GALLERY_FILE_ACCEPT =
+  "image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif,image/bmp,image/gif,.jpg,.jpeg,.png,.webp,.heic,.heif,.bmp,.gif";
 
 interface Props {
   /** 처리 후 호출 - photo / thumbnail 둘 다 압축된 Blob */
@@ -31,6 +40,7 @@ export default function PhotoUpload({
   compressOptions,
   square = false,
 }: Props) {
+  const galleryInputId = useId();
   const camRef = useRef<HTMLInputElement>(null);
   const galRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -85,7 +95,7 @@ export default function PhotoUpload({
 
   // 같은 사진을 연속으로 선택하면 onChange 가 안 뜨는 iOS 버그 방지 —
   // 클릭 직전에도 value 를 비워 둔다.
-  function openPicker(ref: React.RefObject<HTMLInputElement | null>) {
+  function openPicker(ref: RefObject<HTMLInputElement | null>) {
     const el = ref.current;
     if (!el) return;
     el.value = "";
@@ -96,6 +106,9 @@ export default function PhotoUpload({
     variant === "primary"
       ? "btn-primary"
       : "btn-secondary";
+
+  const galleryAria =
+    multipleGallery === true ? "갤러리에서 선택 (여러 장 가능)" : "갤러리·사진에서 선택";
 
   return (
     <div className={cls("flex gap-2", className)}>
@@ -108,15 +121,27 @@ export default function PhotoUpload({
         {busy ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
         {busy ? (busyLabel ? `처리 중… ${busyLabel}` : "처리 중…") : label}
       </button>
-      <button
-        type="button"
-        disabled={disabled || busy}
-        onClick={() => openPicker(galRef)}
-        className="btn-secondary"
-        aria-label={multipleGallery ? "갤러리에서 선택 (여러 장 가능)" : "갤러리에서 선택"}
-      >
-        <ImagePlus size={18} />
-      </button>
+      {disabled || busy ? (
+        <span
+          className="btn-secondary inline-flex cursor-not-allowed items-center justify-center px-3 opacity-50"
+          aria-disabled
+          aria-label={galleryAria}
+        >
+          <ImagePlus size={18} />
+        </span>
+      ) : (
+        <label
+          htmlFor={galleryInputId}
+          className="btn-secondary inline-flex cursor-pointer items-center justify-center px-3"
+          aria-label={galleryAria}
+          onPointerDown={() => {
+            const el = galRef.current;
+            if (el) el.value = "";
+          }}
+        >
+          <ImagePlus size={18} />
+        </label>
+      )}
       <input
         ref={camRef}
         type="file"
@@ -126,9 +151,10 @@ export default function PhotoUpload({
         onChange={(e) => void handleFiles(e.target.files)}
       />
       <input
+        id={galleryInputId}
         ref={galRef}
         type="file"
-        accept="image/*"
+        accept={GALLERY_FILE_ACCEPT}
         multiple={multipleGallery}
         className="hidden"
         onChange={(e) => void handleFiles(e.target.files)}
