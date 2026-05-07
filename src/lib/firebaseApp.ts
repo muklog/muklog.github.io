@@ -1,5 +1,5 @@
 import { initializeApp, type FirebaseApp } from "firebase/app";
-import { getAuth, type Auth } from "firebase/auth";
+import { getAuth, type Auth, type User } from "firebase/auth";
 import {
   initializeFirestore,
   memoryLocalCache,
@@ -80,6 +80,20 @@ export function getFirebaseAuth(): Auth {
   initFirebase();
   if (!auth) throw new Error("Firebase 인증이 설정되지 않았습니다.");
   return auth;
+}
+
+/**
+ * 인앱→기본 브라우저 전환 직후 등, UI에는 로그인됐어도 Firestore 요청에 아직 토큰이 안 붙는
+ * 짧은 레이스에서 permission-denied 가 나는 경우가 있어, 쓰기 전에 한 번 호출한다.
+ * @param forceRefresh true 이면 서버에서 ID 토큰을 다시 받아 Firestore 채널에 확실히 반영한다.
+ */
+export async function ensureAuthTokenForFirestore(forceRefresh = false): Promise<User> {
+  const a = getFirebaseAuth();
+  await a.authStateReady();
+  const u = a.currentUser;
+  if (!u) throw new Error("Google 로그인이 필요합니다.");
+  await u.getIdToken(forceRefresh);
+  return u;
 }
 
 export function getFirestoreDb(): Firestore {

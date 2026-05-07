@@ -28,7 +28,7 @@ import type {
   ShareScope,
   User,
 } from "../types";
-import { getFirebaseAuth, getFirestoreDb } from "./firebaseApp";
+import { ensureAuthTokenForFirestore, getFirebaseAuth, getFirestoreDb } from "./firebaseApp";
 import { storedToMeal, type MealStored } from "./cloudSync";
 import { resolveDisplayName, resolveDisplayPhotoURL, syncMyIdentityToCloud } from "./identity";
 
@@ -619,7 +619,7 @@ export async function acceptFriendInviteCode(
   finalScope: ShareScope,
   localUser?: User | null,
 ): Promise<Share> {
-  const me = requireUser();
+  const me = await ensureAuthTokenForFirestore(true);
   const myEmail = requireEmail(me);
   if (isEmptyScope(finalScope)) {
     throw new Error("공개할 범위를 하나 이상 선택해 주세요.");
