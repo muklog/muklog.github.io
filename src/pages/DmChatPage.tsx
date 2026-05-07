@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
 import { ArrowLeft, Loader2, Send } from "lucide-react";
@@ -34,7 +34,22 @@ export default function DmChatPage() {
   const [sending, setSending] = useState(false);
   /** 전송 실패 시 짧은 안내(성공 시 자동 제거) */
   const [sendHint, setSendHint] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+
+  /** scrollIntoView 는 조상 <main> 까지 움직여 DM 패널이 처음에 어긋난다 — 메시지 박스만 스크롤한다 */
+  const scrollMessagesToBottom = useCallback(() => {
+    requestAnimationFrame(() => {
+      const box = messagesScrollRef.current;
+      if (box) box.scrollTop = box.scrollHeight;
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!allowed || !threadId) return;
+    const main = document.querySelector("main");
+    if (main instanceof HTMLElement) main.scrollTop = 0;
+    scrollMessagesToBottom();
+  }, [allowed, threadId, scrollMessagesToBottom]);
 
   useEffect(() => {
     if (!threadId || !user?.uid) return;
@@ -95,10 +110,10 @@ export default function DmChatPage() {
     if (!threadId || !allowed) return;
     const unsub = subscribeDmMessages(threadId, (rows) => {
       setMessages(rows);
-      requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }));
+      scrollMessagesToBottom();
     });
     return () => unsub();
-  }, [threadId, allowed]);
+  }, [threadId, allowed, scrollMessagesToBottom]);
 
   useEffect(() => {
     if (threadId && allowed && messages.length > 0) void markDmThreadReadForMe(threadId);
@@ -169,7 +184,10 @@ export default function DmChatPage() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-auto py-2 pl-0.5 pr-0 [-webkit-overflow-scrolling:touch]">
+      <div
+        ref={messagesScrollRef}
+        className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-auto py-2 pl-0.5 pr-0 [-webkit-overflow-scrolling:touch]"
+      >
         {messages.length === 0 ? (
           <p className="py-8 text-center text-xs text-slate-500">첫 메시지를 남겨 보세요.</p>
         ) : (
@@ -188,7 +206,6 @@ export default function DmChatPage() {
             );
           })
         )}
-        <div ref={bottomRef} />
       </div>
 
       <div className="flex shrink-0 flex-col gap-1 border-t border-slate-800 bg-slate-950 pt-2">
