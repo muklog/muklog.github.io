@@ -5,13 +5,17 @@ import {
 } from "../lib/pullRefreshSplash";
 
 /** 손가락 이동(px)으로 새로고침 여부 판단 — 시각적 당김은 damp 적용 */
-export const PULL_TO_REFRESH_THRESHOLD_PX = 56;
+export const PULL_TO_REFRESH_THRESHOLD_PX = 52;
 /** 당긴 거리 → 화면에 반영되는 최대 오프셋(px) */
 export const PULL_TO_REFRESH_MAX_VISUAL_PX = 72;
 /** 손가락 거리에 곱해 고무줄 느낌 */
 const PULL_DAMPING = 0.42;
 
-const SCROLL_TOP_EPS = 18;
+/** 맨 위 판정 — 살짝 밀린 scrollTop 에서도 PTR 이 붙도록 여유 */
+const SCROLL_TOP_EPS = 48;
+
+/** 이 거리 이상 당기면 “커밋”: 이후에는 scrollTop 요동으로 제스처를 끊지 않음 */
+const PULL_COMMIT_RAW_PX = 12;
 
 function isMainAtScrollTop(mainEl: HTMLElement): boolean {
   return mainEl.scrollTop <= SCROLL_TOP_EPS;
@@ -32,9 +36,8 @@ export type PullToRefreshGesture = {
 /**
  * `<main>` 맨 위에서 아래로 당겼다 떼면 `location.reload()`.
  *
- * - 리스너는 `window` 캡처에 붙여 손가락이 하단 탭으로 살짝 벗어나도 `touchmove` 가 끊기지 않게 한다.
- * - 스크롤 여부는 오직 `scrollEl`(보통 `<main>`)의 `scrollTop` 만 본다. DM 등 중첩 스크롤 라우트는 App 에서 비활성화한다.
- * - 터치 외 환경에서도 리스너는 등록되지만 이벤트가 거의 없다.
+ * iOS 등에서 아래로 당기기 시작할 때 잠깐 scrollTop 이 튀면 기존 로직이 즉시 제스처를 끊었고,
+ * 오늘 바뀐 `overscroll-behavior` 도 브라우저별로 PTR 과 상성이 달라 문제를 키울 수 있다.
  */
 export function usePullToRefresh(
   scrollEl: RefObject<HTMLElement | null>,
@@ -61,6 +64,8 @@ export function usePullToRefresh(
     }
 
     let touchActive = false;
+    let startedAtTop = false;
+    let pullCommitted = false;
     let startY = 0;
 
     const capPassive: AddEventListenerOptions = { capture: true, passive: true };
@@ -90,7 +95,9 @@ export function usePullToRefresh(
       const onTouchStart: EventListener = (e) => {
         const te = e as TouchEvent;
         if (!targetInsideMain(te.target)) return;
-        if (!top()) return;
+        startedAtTop = top();
+        pullCommitted = false;
+        if (!startedAtTop) return;
         cancelAnimationFrame(settleRafRef.current);
         settleRafRef.current = 0;
         touchActive = true;
@@ -102,20 +109,24 @@ export function usePullToRefresh(
 
       const onTouchMove: EventListener = (e) => {
         const te = e as TouchEvent;
-        if (!touchActive) return;
-        /** 제스처 중에는 맨 위만 유지하면 된다. 타깃은 바뀔 수 있음(캐러셀 등). */
-        if (!top()) {
-          touchActive = false;
-          gestureMaxRawRef.current = 0;
-          settleToZero();
-          return;
-        }
+        if (!touchActive || !startedAtTop) return;
+
         const raw = te.touches[0].clientY - startY;
         if (raw <= 2) return;
 
-        /** 아래로 당기기가 명확해지면 즉시 기본 스크롤을 막는다(iOS/Android 공통). */
-        if (te.cancelable && raw > 6) {
+        /** 고무줄이 한 프레임이라도 scrollTop 을 밀면 그 다음 줄에서 PTR 이 끊기므로, 맨 위에서 아래로 당길 때는 먼저 막는다 */
+        if (te.cancelable && raw > 4) {
           te.preventDefault();
+        }
+
+        if (!pullCommitted) {
+          if (!top()) {
+            touchActive = false;
+            gestureMaxRawRef.current = 0;
+            settleToZero();
+            return;
+          }
+          if (raw >= PULL_COMMIT_RAW_PX) pullCommitted = true;
         }
 
         gestureMaxRawRef.current = Math.max(gestureMaxRawRef.current, raw);
@@ -128,8 +139,10 @@ export function usePullToRefresh(
         touchActive = false;
         const maxRaw = gestureMaxRawRef.current;
         gestureMaxRawRef.current = 0;
+        pullCommitted = false;
 
-        const go = top() && maxRaw >= PULL_TO_REFRESH_THRESHOLD_PX;
+        /** 떼는 순간 scrollTop 이 살짝 어긋나 새로고침이 씹히지 않게, 시작이 맨 위였고 당김만 본다 */
+        const go = startedAtTop && maxRaw >= PULL_TO_REFRESH_THRESHOLD_PX;
 
         if (go) {
           armPullRefreshBeforeReload();

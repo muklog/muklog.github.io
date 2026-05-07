@@ -139,8 +139,7 @@ body,
 
 body {
   -webkit-tap-highlight-color: transparent;
-  /* none 이면 안쪽 <main> 고무줄·당김 제스처가 막히는 경우가 있어 contain 으로 두고 스크롤 체인만 끊음 */
-  overscroll-behavior-y: contain;
+  overscroll-behavior-y: none;
   font-feature-settings: "tnum" on;
   /* 페이지 베이스 배경. 데스크탑에서 max-w-screen-sm 컨테이너 양옆에 보임.
      테마마다 이 색이 달라 컨테이너 바깥에서도 테마 차이가 즉시 느껴집니다. */

@@ -180,7 +180,7 @@ export default function App() {
         >
           <main
             ref={mainRef}
-            className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain overflow-x-hidden bg-slate-950 pb-24 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]"
+            className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-auto overflow-x-hidden bg-slate-950 pb-24 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]"
           >
           {/* 풀투새로고침: 레이아웃 높이 0 유지 · absolute 로 가로 중앙 정렬 · motion 만 별도 레이어 */}
           <div
