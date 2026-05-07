@@ -177,10 +177,11 @@ service cloud.firestore {
           || dmMessageReadAllowed(threadId)
         );
 
-      // 컬렉션 list 쿼리(where participantUids array-contains me) — read 를 OR 로 묶으면
-      // Firestore 가 쿼리-규칙 일치를 증명하지 못해 permission-denied(특히 getDocsFromServer)가 날 수 있어 list 를 분리.
-      allow list: if request.auth != null
-        && resource.data.participantUids is list
+      // 컬렉션 list 쿼리(where participantUids array-contains me)
+      // — array-contains 결과는 항상 이 조건을 만족해야 하므로 is list 가 실패해 막히는 데이터가 있으면 제외하기 위해
+      //   keys + in 만 요구(필드가 list 가 아니면 해당 문서는 list 평가에서 거절되어 쿼리 전체가 막힐 수 있음 — 클라이언트는 항상 배열로 저장).
+      allow list: if signedIn()
+        && resource.data.keys().hasAll(['participantUids'])
         && request.auth.uid in resource.data.participantUids;
       allow create: if signedIn()
         && dmPairOk(request.resource.data.participantUids)

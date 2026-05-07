@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "./AuthContext";
-import { getFirebaseAuth } from "../lib/firebaseApp";
+import { getFirebaseAuth, isFirestoreMobileUa } from "../lib/firebaseApp";
 import {
   dmErrorMessageForUi,
   isFirestorePermissionDenied,
@@ -148,10 +148,11 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
       const auth = getFirebaseAuth();
       await auth.authStateReady();
       try {
-        await getFirebaseAuth().currentUser?.getIdToken();
+        await getFirebaseAuth().currentUser?.getIdToken(true);
       } catch {
         /* 오프라인 등 */
       }
+      await new Promise((r) => setTimeout(r, isFirestoreMobileUa() ? 120 : 60));
       if (cancelled) return;
       const live = getFirebaseAuth().currentUser?.uid;
       if (!live || live !== myUid) {

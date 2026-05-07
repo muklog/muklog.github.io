@@ -12,6 +12,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  type Query,
   type QuerySnapshot,
   type Unsubscribe,
 } from "firebase/firestore";
@@ -204,6 +205,43 @@ function threadsCol() {
   return collection(getFirestoreDb(), "dmThreads");
 }
 
+/** DM 목록 쿼리 직전 — auth 토큰이 Firestore 에 반영되기 전 server read 가 나가 permission 으로 보이는 현상 완화 */
+async function waitForFirestoreAuthBeforeDmList(expectedUid: string): Promise<void> {
+  const auth = getFirebaseAuth();
+  await auth.authStateReady();
+  const u = auth.currentUser;
+  if (!u || u.uid !== expectedUid) throw new Error("unauthenticated");
+  await u.getIdToken(true);
+  await new Promise((r) => setTimeout(r, isFirestoreMobileUa() ? 160 : 80));
+}
+
+/** getDocsFromServer 재시도(permission·unauthenticated·일시 장애) — 모바일은 횟수·간격 여유 */
+async function getDmThreadListSnapshotFromServerWithRetry(q: Query): Promise<QuerySnapshot | null> {
+  const auth = getFirebaseAuth();
+  const mobile = isFirestoreMobileUa();
+  const max = mobile ? 8 : 6;
+  for (let i = 0; i < max; i++) {
+    await auth.authStateReady();
+    const u = auth.currentUser;
+    if (!u) return null;
+    await u.getIdToken(i > 0).catch(() => {});
+    if (i > 0) await new Promise((r) => setTimeout(r, 200 * i + (mobile ? 150 : 0)));
+    try {
+      return await getDocsFromServer(q);
+    } catch (e) {
+      if (i === max - 1) {
+        console.warn("[dm] thread list server read — retries exhausted", e);
+        return null;
+      }
+      if (!isPermissionDenied(e) && !listenerErrorMayRecover(e)) {
+        console.warn("[dm] thread list server read — non-recoverable", e);
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
 function snapshotToDmThreads(snap: QuerySnapshot, displayLimit: number): DmThreadDoc[] {
   return snap.docs
     .map((d) => ({
@@ -394,6 +432,11 @@ export function subscribeMyDmThreads(
 
   /** 웜업이 끝난 뒤에만 onSnapshot 붙임 — 리스너가 prefetch/웜업보다 먼저 빈 목록을 덮는 레이스 제거 */
   void (async () => {
+    try {
+      await waitForFirestoreAuthBeforeDmList(myUid);
+    } catch {
+      /* 아래 getDocs/리스너가 토큰 준비 후 복구 */
+    }
     for (let i = 0; i < warmMaxAttempts && !stopped; i++) {
       try {
         if (i > 0) {
@@ -412,13 +455,14 @@ export function subscribeMyDmThreads(
       }
     }
     if (!stopped && !hadSuccess) {
-      try {
-        await getFirebaseAuth().currentUser?.getIdToken(true).catch(() => {});
-        const snap = await getDocsFromServer(q);
-        if (!stopped) applySnapshot(snap);
-      } catch (e) {
-        if (!stopped) {
-          console.warn("[dm] getDocsFromServer thread list fallback", e);
+      const serverSnap = await getDmThreadListSnapshotFromServerWithRetry(q);
+      if (!stopped && serverSnap) void applySnapshot(serverSnap);
+      if (!stopped && !hadSuccess) {
+        try {
+          const snap = await getDocs(q);
+          if (!stopped) void applySnapshot(snap);
+        } catch (e) {
+          if (!stopped) console.warn("[dm] thread list cache read fallback", e);
         }
       }
     }
@@ -437,24 +481,24 @@ export function subscribeMyDmThreads(
 export async function prefetchMyDmThreadsSnapshot(myUid: string): Promise<DmThreadDoc[]> {
   const uid = getFirebaseAuth().currentUser?.uid;
   if (!uid || uid !== myUid) return [];
-  await getFirebaseAuth().authStateReady().catch(() => {});
-  await getFirebaseAuth().currentUser?.getIdToken(true).catch(() => {});
+  try {
+    await waitForFirestoreAuthBeforeDmList(myUid);
+  } catch {
+    return [];
+  }
   const q = query(
     threadsCol(),
     where("participantUids", "array-contains", uid),
     limit(48),
   );
+  const serverSnap = await getDmThreadListSnapshotFromServerWithRetry(q);
+  if (serverSnap) return snapshotToDmThreads(serverSnap, 25);
   try {
-    const snap = await getDocsFromServer(q);
+    const snap = await getDocs(q);
     return snapshotToDmThreads(snap, 25);
-  } catch (e) {
-    try {
-      const snap = await getDocs(q);
-      return snapshotToDmThreads(snap, 25);
-    } catch (e2) {
-      if (isPermissionDenied(e2)) throw e2;
-      return [];
-    }
+  } catch (e2) {
+    if (isPermissionDenied(e2)) throw e2;
+    return [];
   }
 }
 
