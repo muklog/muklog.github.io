@@ -28,7 +28,8 @@ function isMainAtScrollTop(mainEl: HTMLElement): boolean {
 
 /**
  * `<main>` 과 터치 타깃 사이에 세로 스크롤이 남아 있으면 당김은 그 영역에 맡긴다.
- * (피드는 보통 해당 없음 — DM 메시지 창 등에서 오동작 방지)
+ * - `overflow-x: auto` 만 준 가로 캐러셀은 CSS 에서 `overflow-y` 가 `auto` 로 바뀌는 경우가 많아
+ *   세로 방해 요소로 오인하지 않도록 건너뛴다.
  */
 function nestedVerticalScrollBlocksPull(mainEl: HTMLElement, target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
@@ -38,6 +39,18 @@ function nestedVerticalScrollBlocksPull(mainEl: HTMLElement, target: EventTarget
     if (el instanceof HTMLElement) {
       const cs = window.getComputedStyle(el);
       const oy = cs.overflowY;
+      const ox = cs.overflowX;
+
+      const horizDominantStrip =
+        (ox === "auto" || ox === "scroll" || ox === "overlay") &&
+        el.scrollWidth > el.clientWidth + SCROLL_TOP_EPS &&
+        el.scrollHeight <= el.clientHeight + SCROLL_TOP_EPS * 4;
+
+      if (horizDominantStrip) {
+        el = el.parentElement;
+        continue;
+      }
+
       const scrollableY =
         (oy === "auto" || oy === "scroll" || oy === "overlay") &&
         el.scrollHeight > el.clientHeight + SCROLL_TOP_EPS;
@@ -95,15 +108,23 @@ export function usePullToRefresh(
     let touchActive = false;
     let startY = 0;
 
-    /** 캡처 단계: 자식 요소의 기본 스크롤보다 먼저 preventDefault 할 수 있게 한다 (모바일 웹킷에서 필수에 가깝다) */
+    /**
+     * `<main>` 에만 붙이면 자식 쪽 기본 스크롤·타깃 변경과 순서가 꼬일 수 있다.
+     * `window` 캡처에서 먼저 판단하고, 스크롤 루트는 여전히 ref 의 `<main>` 이다.
+     */
     const capPassive: AddEventListenerOptions = { capture: true, passive: true };
     const capBlocking: AddEventListenerOptions = { capture: true, passive: false };
 
     const setup = (): (() => void) | undefined => {
-      const el = scrollEl.current;
-      if (!el) return undefined;
+      const mainEl = scrollEl.current;
+      if (!mainEl) return undefined;
 
-      const top = () => isMainAtScrollTop(el);
+      const touchTargetInMain = (te: TouchEvent): boolean => {
+        const t = te.target;
+        return t instanceof Node && mainEl.contains(t);
+      };
+
+      const top = () => isMainAtScrollTop(mainEl);
 
       const settleToZero = () => {
         cancelAnimationFrame(settleRafRef.current);
@@ -119,7 +140,8 @@ export function usePullToRefresh(
 
       const onTouchStart: EventListener = (e) => {
         const te = e as TouchEvent;
-        if (!top() || nestedVerticalScrollBlocksPull(el, te.target)) return;
+        if (!touchTargetInMain(te)) return;
+        if (!top() || nestedVerticalScrollBlocksPull(mainEl, te.target)) return;
         cancelAnimationFrame(settleRafRef.current);
         settleRafRef.current = 0;
         touchActive = true;
@@ -132,7 +154,14 @@ export function usePullToRefresh(
       const onTouchMove: EventListener = (e) => {
         const te = e as TouchEvent;
         if (!touchActive) return;
-        if (!top() || nestedVerticalScrollBlocksPull(el, te.target)) {
+        /** touchmove 마다 `target` 이 바뀌므로 중첩 스크롤 검사는 하지 않는다 (시작 시점만 본다). */
+        if (!touchTargetInMain(te)) {
+          touchActive = false;
+          gestureMaxRawRef.current = 0;
+          settleToZero();
+          return;
+        }
+        if (!top()) {
           touchActive = false;
           gestureMaxRawRef.current = 0;
           settleToZero();
@@ -141,7 +170,7 @@ export function usePullToRefresh(
         const raw = te.touches[0].clientY - startY;
         if (raw <= 4) return;
 
-        if (te.cancelable && raw >= 18) {
+        if (te.cancelable && raw >= 16) {
           te.preventDefault();
         }
 
@@ -171,18 +200,18 @@ export function usePullToRefresh(
         settleToZero();
       };
 
-      el.addEventListener("touchstart", onTouchStart, capPassive);
-      el.addEventListener("touchmove", onTouchMove, capBlocking);
-      el.addEventListener("touchend", onTouchEnd, capPassive);
-      el.addEventListener("touchcancel", onTouchEnd, capPassive);
+      window.addEventListener("touchstart", onTouchStart, capPassive);
+      window.addEventListener("touchmove", onTouchMove, capBlocking);
+      window.addEventListener("touchend", onTouchEnd, capPassive);
+      window.addEventListener("touchcancel", onTouchEnd, capPassive);
 
       return () => {
         cancelAnimationFrame(settleRafRef.current);
         settleRafRef.current = 0;
-        el.removeEventListener("touchstart", onTouchStart, capPassive);
-        el.removeEventListener("touchmove", onTouchMove, capBlocking);
-        el.removeEventListener("touchend", onTouchEnd, capPassive);
-        el.removeEventListener("touchcancel", onTouchEnd, capPassive);
+        window.removeEventListener("touchstart", onTouchStart, capPassive);
+        window.removeEventListener("touchmove", onTouchMove, capBlocking);
+        window.removeEventListener("touchend", onTouchEnd, capPassive);
+        window.removeEventListener("touchcancel", onTouchEnd, capPassive);
       };
     };
 
