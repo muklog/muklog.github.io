@@ -106,6 +106,11 @@ export interface MealItem {
   analysisError?: string;
   /** 사용자가 분석 결과를 수동으로 수정했는지 — UI 에 '수정됨' 배지 표시용. */
   manuallyEdited?: boolean;
+  /**
+   * true 인 항목은 «사진 없이 직접 기록»으로 열었지만 아직 저장하지 않은 초안.
+   * 피드·클라우드·달력 요약에는 넣지 않는다.
+   */
+  draft?: boolean;
   createdAt: number;
   updatedAt: number;
 }

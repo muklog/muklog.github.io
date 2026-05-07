@@ -389,6 +389,7 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
               const newItem: MealItem = {
                 id,
                 analysisStatus: "skipped",
+                draft: true,
                 createdAt: now,
                 updatedAt: now,
               };
@@ -422,7 +423,14 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
         <MealItemEditDialog
           item={editingItem}
           canReanalyze={!!apiKey}
-          onClose={() => setEditingItemId(null)}
+          onClose={() => {
+            const id = editingItemId;
+            const closingDraft = editingItem.draft === true;
+            setEditingItemId(null);
+            if (closingDraft && id) {
+              void deleteMealItem(meal.id, id, { ownerUid });
+            }
+          }}
           onSave={async (patch, opts) => {
             const res = await saveMealItemPatch(meal.id, editingItem.id, patch, opts, {
               userId,

@@ -17,6 +17,7 @@ import {
   getPublicProfile,
 } from "../lib/friends";
 import { removePullRefreshSplash } from "../lib/pullRefreshSplash";
+import { publicMealItems } from "../lib/mealItems";
 import type { Meal, PublicProfile, Share } from "../types";
 import { useAuth } from "./AuthContext";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
@@ -64,7 +65,7 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
 
   const feedFirestoreLive = feedStreamActive && tabVisible;
 
-  const { user, firebaseReady } = useAuth();
+  const { user, firebaseReady, loading: authLoading } = useAuth();
   const myUid = firebaseReady ? user?.uid : undefined;
   const myUserId = usePrimaryUserId();
 
@@ -196,8 +197,9 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
       color: myProfile?.color,
     };
     for (const m of myMeals ?? []) {
-      if ((m.items ?? []).length === 0) continue;
-      out.push({ author: myAuthor, meal: m, isMine: true });
+      const pubItems = publicMealItems(m.items);
+      if (pubItems.length === 0) continue;
+      out.push({ author: myAuthor, meal: { ...m, items: pubItems }, isMine: true });
     }
     for (const share of friendShares ?? []) {
       const rows = friendMealsByOwner.get(share.ownerUid) ?? [];
@@ -206,14 +208,15 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
       const pubPhoto = pub?.photoURL?.trim();
       const sharePhoto = share.ownerPhotoURL?.trim();
       for (const m of rows) {
-        if ((m.items ?? []).length === 0) continue;
+        const pubItems = publicMealItems(m.items);
+        if (pubItems.length === 0) continue;
         out.push({
           author: {
             uid: share.ownerUid,
             name: pubName || share.ownerName,
             photoURL: pubPhoto || sharePhoto || undefined,
           },
-          meal: m,
+          meal: { ...m, items: pubItems },
           isMine: false,
         });
       }
@@ -270,7 +273,9 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(t);
   }, [emptyOutgoingAwaitingServer]);
 
+  /** 새로고침 직후에는 auth 가 잠깐 user=null 인 프레임이 있어 myUid 없이 loading 이 풀리며 옛 피드가 보였다가 다시 로딩되는 현상 방지 */
   const loading =
+    authLoading ||
     myMeals === undefined ||
     (feedFirestoreLive &&
       firebaseReady &&

@@ -214,7 +214,7 @@ export default function App() {
                   aria-hidden
                 />
                 {ptr.pendingReload
-                  ? "새로고침 중…"
+                  ? "피드를 불러오는 중…"
                   : ptr.armed
                     ? "놓으면 새로고침"
                     : "당겨서 새로고침"}

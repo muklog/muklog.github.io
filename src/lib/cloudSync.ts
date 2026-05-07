@@ -401,7 +401,7 @@ async function pullPrivateSettings(uid: string): Promise<PrivateSettingsDoc | nu
  * 공통 압축 레벨을 한 단계씩 낮춰가며 재시도한다. 레벨이 높은 쪽이 화질이 좋고,
  * 낮출수록 해상도·퀄리티를 함께 줄인다.
  */
-async function mealToStored(m: Meal): Promise<MealStored> {
+async function mealToStored(m: Meal): Promise<MealStored | null> {
   const base: Omit<MealStored, "items"> = {
     id: m.id,
     userId: m.userId,
@@ -410,9 +410,13 @@ async function mealToStored(m: Meal): Promise<MealStored> {
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
   };
-  const items = m.items ?? [];
+  const rawItems = m.items ?? [];
+  const items = rawItems.filter((it) => !it.draft);
   if (items.length === 0) {
-    return { ...base, items: [] };
+    if (rawItems.length === 0) {
+      return { ...base, items: [] };
+    }
+    return null;
   }
 
   const attempts: { maxDimension: number; quality: number }[] = [
@@ -564,6 +568,7 @@ async function pushMeals(uid: string, meals: Meal[]): Promise<void> {
   for (const raw of meals) {
     const m = normalizeMeal(raw);
     const stored = await mealToStored(m);
+    if (!stored) continue;
     batch.set(doc(fs, "users", uid, "meals", m.id), stored);
     n++;
     if (n >= BATCH) {

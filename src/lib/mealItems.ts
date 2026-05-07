@@ -24,6 +24,11 @@ import { cleanupMealSocial } from "./social";
 import { reanalyzeMealFromText } from "./ai";
 import type { MealItem, MealSlot } from "../types";
 
+/** 저장 완료된 항목만 피드·클라우드·달력 요약에 포함 */
+export function publicMealItems(items: MealItem[] | undefined): MealItem[] {
+  return (items ?? []).filter((it) => !it.draft);
+}
+
 /**
  * 편집 다이얼로그에서 사용자가 저장할 때 넘기는 값. (별점은 AI 전용이라 포함 안 됨.)
  * UI 컴포넌트(MealItemEditDialog) 와 이 헬퍼가 공유한다.
@@ -154,6 +159,7 @@ export async function saveMealItemPatch(
 ): Promise<{ reanalyzed: boolean; error?: string }> {
   await updateMealItem(mealId, itemId, (it) => ({
     ...it,
+    draft: false,
     menuText: patch.menuText,
     aiComment: patch.aiComment,
     nutrition: patch.nutrition,

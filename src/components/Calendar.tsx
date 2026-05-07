@@ -13,6 +13,7 @@ import {
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, runDexie } from "../lib/db";
+import { publicMealItems } from "../lib/mealItems";
 import { cls, dateKey, formatKoMonth } from "../lib/utils";
 
 export interface DayCount {
@@ -55,7 +56,7 @@ export default function Calendar({ cursor, setCursor, selected, onPick, userId, 
     const map = new Map<string, DayCount>();
     for (const m of meals) {
       if (userId && m.userId !== userId) continue;
-      const items = m.items ?? [];
+      const items = publicMealItems(m.items);
       if (items.length === 0) continue;
       const cur = map.get(m.date) ?? { total: 0, ratings: [] };
       cur.total += 1;

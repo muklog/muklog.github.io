@@ -36,7 +36,7 @@ export function mountPullRefreshSplashNow(): void {
   ring.style.cssText =
     `width:42px;height:42px;border:3px solid rgba(52,211,153,.2);border-top-color:rgba(52,211,153,.92);border-radius:50%;animation:${SPIN_ANIM_NAME} .72s linear infinite;`;
   const cap = document.createElement("span");
-  cap.textContent = "새로고침 중…";
+  cap.textContent = "피드를 불러오는 중…";
   cap.style.cssText = "font-size:12px;color:#94a3b8;letter-spacing:0.03em;";
   box.appendChild(ring);
   box.appendChild(cap);

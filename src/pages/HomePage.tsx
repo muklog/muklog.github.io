@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Sparkles, ChevronRight, Plus } from "lucide-react";
 import { db, getSettings, runDexie } from "../lib/db";
+import { publicMealItems } from "../lib/mealItems";
 import Calendar from "../components/Calendar";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { dateKey, formatKoDate, suggestMealSlotForNow } from "../lib/utils";
@@ -100,7 +101,7 @@ export default function HomePage() {
         <ul className="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {MEAL_SLOTS.map((slot) => {
             const m = dayMeals?.find((x) => x.slot === slot);
-            const items = m?.items ?? [];
+            const items = publicMealItems(m?.items);
             const ratings = items.map((it) => it.rating).filter((r): r is number => typeof r === "number");
             const avg =
               ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : undefined;
