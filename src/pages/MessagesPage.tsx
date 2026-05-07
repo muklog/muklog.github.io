@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { ArrowLeft, Loader2, MessageCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useDmRealtime } from "../contexts/DmRealtimeContext";
-import { resolvePeerIdentityForDm } from "../lib/friends";
+import { resolvePeerIdentityForDm, subscribePublicProfilesForUids, type PeerDmIdentity } from "../lib/friends";
 import {
   ensureDmThreadWith,
   otherParticipantUid,
@@ -29,7 +29,7 @@ export default function MessagesPage() {
     retryDmList,
   } = useDmRealtime();
 
-  const [peerNames, setPeerNames] = useState<Map<string, string>>(new Map());
+  const [peerIdMap, setPeerIdMap] = useState<Map<string, PeerDmIdentity>>(new Map());
   const handledPeerRef = useRef<string | null>(null);
   /** 모바일에서 목록 대기만 길게 걸릴 때 자동 재구독(한 번만) — PC는 스킵 */
   const listKickOnceRef = useRef(false);
@@ -53,32 +53,42 @@ export default function MessagesPage() {
     return () => window.clearTimeout(t);
   }, [firebaseReady, user?.uid, pathname, listReady, listErr, retryDmList]);
 
+  const threadPeersKey = useMemo(() => {
+    if (!user?.uid) return "";
+    return [
+      ...new Set(threads.map((t) => otherParticipantUid(t, user.uid)).filter(Boolean) as string[]),
+    ]
+      .sort()
+      .join("|");
+  }, [threads, user?.uid]);
+
   useEffect(() => {
-    if (!user?.uid || threads.length === 0) return;
+    if (!user?.uid || threadPeersKey === "") {
+      setPeerIdMap(new Map());
+      return;
+    }
+    const myUid = user.uid;
+    const peers = threadPeersKey.split("|").filter(Boolean);
     let cancelled = false;
-    void (async () => {
-      const peers = threads
-        .map((t) => otherParticipantUid(t, user.uid!))
-        .filter(Boolean) as string[];
-      const uniq = [...new Set(peers)];
-      const fetched = new Map<string, string>();
-      for (const p of uniq) {
-        if (cancelled) return;
-        const id = await resolvePeerIdentityForDm(p, user.uid!);
-        if (cancelled) return;
-        fetched.set(p, id.displayName ?? p.slice(0, 6));
-      }
+
+    async function refresh() {
+      const pairs = await Promise.all(
+        peers.map(async (p) => [p, await resolvePeerIdentityForDm(p, myUid)] as const),
+      );
       if (cancelled) return;
-      setPeerNames((prev) => {
-        const merged = new Map(prev);
-        for (const [k, v] of fetched) merged.set(k, v);
-        return merged;
-      });
-    })();
+      setPeerIdMap(new Map(pairs));
+    }
+
+    const unsub = subscribePublicProfilesForUids(peers, () => {
+      void refresh();
+    });
+    void refresh();
+
     return () => {
       cancelled = true;
+      unsub();
     };
-  }, [user?.uid, threads]);
+  }, [user?.uid, threadPeersKey]);
 
   useEffect(() => {
     if (!user?.uid || !peerFromQuery) return;
@@ -211,7 +221,7 @@ export default function MessagesPage() {
                   key={t.id}
                   t={t}
                   uid={user.uid}
-                  peerNames={peerNames}
+                  peerIdMap={peerIdMap}
                   readMap={readMap}
                 />
               ))}
@@ -226,16 +236,18 @@ export default function MessagesPage() {
 function ThreadRowItem({
   t,
   uid,
-  peerNames,
+  peerIdMap,
   readMap,
 }: {
   t: DmThreadDoc;
   uid: string;
-  peerNames: Map<string, string>;
+  peerIdMap: Map<string, PeerDmIdentity>;
   readMap: Map<string, number>;
 }) {
   const peer = otherParticipantUid(t, uid)!;
-  const label = peerNames.get(peer) ?? peer.slice(0, 6);
+  const id = peerIdMap.get(peer);
+  const label = id?.displayName?.trim() || "대화";
+  const photoURL = id?.photoURL;
   const unread = unreadDmThreadCount([t], uid, readMap) > 0;
   return (
     <li>
@@ -247,13 +259,39 @@ function ThreadRowItem({
             : "card flex flex-col gap-1 p-4 hover:bg-slate-900/40"
         }
       >
-        <span className="font-semibold text-slate-100">{label}</span>
-        <span className="line-clamp-2 text-xs text-slate-400">
-          {t.lastSenderUid === uid ? "나 · " : ""}
-          {t.lastText || "(아직 메시지 없음)"}
-        </span>
+        <div className="flex items-center gap-3">
+          <DmRowAvatar name={label} photoURL={photoURL} />
+          <div className="min-w-0 flex-1">
+            <span className="block truncate font-semibold text-slate-100">{label}</span>
+            <span className="line-clamp-2 text-xs text-slate-400">
+              {t.lastSenderUid === uid ? "나 · " : ""}
+              {t.lastText || "(아직 메시지 없음)"}
+            </span>
+          </div>
+        </div>
       </Link>
     </li>
+  );
+}
+
+function DmRowAvatar({ name, photoURL }: { name: string; photoURL?: string }) {
+  if (photoURL) {
+    return (
+      <img
+        src={photoURL}
+        alt=""
+        className="h-11 w-11 shrink-0 rounded-full border border-slate-800 object-cover"
+      />
+    );
+  }
+  const initial = name && name !== "대화" ? Array.from(name)[0]?.toUpperCase() ?? "?" : "…";
+  return (
+    <div
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-sm font-semibold text-slate-300"
+      aria-hidden
+    >
+      {initial}
+    </div>
   );
 }
 

@@ -30,7 +30,7 @@ import type {
 } from "../types";
 import { getFirebaseAuth, getFirestoreDb } from "./firebaseApp";
 import { storedToMeal, type MealStored } from "./cloudSync";
-import { resolveDisplayName, resolveDisplayPhotoURL } from "./identity";
+import { resolveDisplayName, resolveDisplayPhotoURL, syncMyIdentityToCloud } from "./identity";
 
 /** Firestore 쓰기가 네트워크 때문에 끝없이 대기할 때 사용자에게 타임아웃 안내 */
 function withFirestoreDeadline<T>(
@@ -323,9 +323,8 @@ function pickLatestPeerDmIdentity(
       typeof pub.photoURL === "string" && pub.photoURL.trim() !== ""
         ? pub.photoURL.trim()
         : undefined;
-    if (pubPhoto) return { displayName: pubName, photoURL: pubPhoto };
-    const fromShares = pickLatestPeerIdentityFromSharesOnly(peerUid, shares);
-    return { displayName: pubName, photoURL: fromShares.photoURL };
+    /** 앱 공개 프로필 닉네임이 있으면 사진도 거기서만 씀 — share 에 남은 구글 스냅샷 얼굴을 붙이지 않음(이름만 앱·사진만 구글이 되는 깨짐 방지) */
+    return { displayName: pubName, photoURL: pubPhoto };
   }
   return pickLatestPeerIdentityFromSharesOnly(peerUid, shares);
 }
@@ -679,6 +678,17 @@ export async function acceptFriendInviteCode(
 
   const s = await getDoc(doc(fs, "shares", outSid));
   if (!s.exists()) throw new Error("공유 문서를 만들지 못했어요.");
+
+  try {
+    if (localUser) {
+      await syncMyIdentityToCloud(me, localUser);
+    } else {
+      await upsertMyPublicProfile(me, null);
+    }
+  } catch (e) {
+    console.warn("[friends] acceptFriendInviteCode — 공개 프로필·동기화 후속", e);
+  }
+
   return { ...(s.data() as Share), id: s.id };
 }
 
