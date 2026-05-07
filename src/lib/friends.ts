@@ -169,6 +169,12 @@ export async function getFriendConnection(peerUid: string): Promise<{
     photoURL = outgoing.viewerPhotoURL ?? undefined;
   }
 
+  const pub = await getPublicProfile(peerUid);
+  const pubName = pub?.displayName?.trim();
+  if (pubName) displayName = pubName;
+  const pubPhoto = pub?.photoURL?.trim();
+  if (pubPhoto) photoURL = pubPhoto;
+
   const canViewFriendCalendar = !!(
     incOk &&
     incoming &&
@@ -236,23 +242,60 @@ export async function getPublicProfile(uid: string): Promise<PublicProfile | nul
   return snap.data() as PublicProfile;
 }
 
-/** DM·목록에서 보여 줄 상대 표시 정보 — shares 의 이름/사진이 더 최근이면 공개 프로필보다 우선 */
+/** 친구 목록 등 — 여러 uid 의 publicProfiles 를 실시간 구독 */
+export function subscribePublicProfilesForUids(
+  uids: string[],
+  onNext: (map: Map<string, PublicProfile | null>) => void,
+): Unsubscribe {
+  const fs = getFirestoreDb();
+  const uniq = [...new Set(uids.filter(Boolean))];
+  if (uniq.length === 0) {
+    onNext(new Map());
+    return () => {};
+  }
+
+  const map = new Map<string, PublicProfile | null>();
+  for (const id of uniq) map.set(id, null);
+
+  let scheduled = false;
+  function emit() {
+    if (scheduled) return;
+    scheduled = true;
+    queueMicrotask(() => {
+      scheduled = false;
+      onNext(new Map(map));
+    });
+  }
+
+  const unsubs = uniq.map((uid) =>
+    onSnapshot(
+      doc(fs, "publicProfiles", uid),
+      (snap) => {
+        map.set(uid, snap.exists() ? (snap.data() as PublicProfile) : null);
+        emit();
+      },
+      () => {
+        map.set(uid, null);
+        emit();
+      },
+    ),
+  );
+
+  emit();
+  return () => {
+    for (const u of unsubs) u();
+  };
+}
+
+/** DM·목록에서 보여 줄 상대 표시 정보 — 공개 프로필에 닉네임이 있으면 그걸 우선(앱 설정과 동일) */
 export type PeerDmIdentity = { displayName: string; photoURL?: string };
 
-function pickLatestPeerDmIdentity(
+function pickLatestPeerIdentityFromSharesOnly(
   peerUid: string,
-  pub: PublicProfile | null,
   shares: Array<Share | null>,
 ): PeerDmIdentity {
   type Cand = { name: string; photo?: string; at: number };
   const candidates: Cand[] = [];
-  if (pub?.displayName?.trim()) {
-    const ph =
-      typeof pub.photoURL === "string" && pub.photoURL.trim() !== ""
-        ? pub.photoURL.trim()
-        : undefined;
-    candidates.push({ name: pub.displayName.trim(), photo: ph, at: pub.updatedAt ?? 0 });
-  }
   for (const sh of shares) {
     if (!sh) continue;
     const peerIsOwner = sh.ownerUid === peerUid;
@@ -267,6 +310,24 @@ function pickLatestPeerDmIdentity(
   candidates.sort((a, b) => b.at - a.at);
   const best = candidates[0]!;
   return { displayName: best.name, photoURL: best.photo };
+}
+
+function pickLatestPeerDmIdentity(
+  peerUid: string,
+  pub: PublicProfile | null,
+  shares: Array<Share | null>,
+): PeerDmIdentity {
+  const pubName = pub?.displayName?.trim();
+  if (pubName && pub) {
+    const pubPhoto =
+      typeof pub.photoURL === "string" && pub.photoURL.trim() !== ""
+        ? pub.photoURL.trim()
+        : undefined;
+    if (pubPhoto) return { displayName: pubName, photoURL: pubPhoto };
+    const fromShares = pickLatestPeerIdentityFromSharesOnly(peerUid, shares);
+    return { displayName: pubName, photoURL: fromShares.photoURL };
+  }
+  return pickLatestPeerIdentityFromSharesOnly(peerUid, shares);
 }
 
 export async function resolvePeerIdentityForDm(

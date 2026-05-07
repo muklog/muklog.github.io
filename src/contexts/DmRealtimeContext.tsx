@@ -86,7 +86,10 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
   const [threadsListReady, setThreadsListReady] = useState(false);
   const [threadsListError, setThreadsListError] = useState<string | null>(null);
 
-  /** `/messages` 목록 화면에 올 때만 — 구독은 그대로 두고 서버 일회로 먼저 채움 */
+  /**
+   * `/messages` 목록 화면 — 구독은 그대로 두고 서버 일회 스냅샷으로 먼저 채워 로딩이 길어지지 않게 함.
+   * `retryNonce` 가 바뀌면(재시도·피드→목록 재연결) 다시 한 번 받아 목록 실패 후 빈 화면 고착을 줄임.
+   */
   useEffect(() => {
     if (!firebaseReady || !myUid || authLoading || !shouldListen) return;
     if (pathname !== "/messages") return;
@@ -105,14 +108,36 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
         });
         setThreadsListReady(true);
       } catch {
-        /* 실시간 구독·재시도로 복구 */
+        if (!cancelled) setThreadsListReady(true);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [pathname, firebaseReady, myUid, authLoading, shouldListen]);
+  }, [pathname, firebaseReady, myUid, authLoading, shouldListen, retryNonce]);
+
+  /** 피드(/)에 있는 동안, 목록이 아직 비었을 때만 서버 스냅샷으로 한 번 채움 → DM 탭으로 곧바로 들어와도 목록이 바로 보임 */
+  useEffect(() => {
+    if (!firebaseReady || !myUid || authLoading || !shouldListen) return;
+    if (pathname !== "/") return;
+    if (threads.length > 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await prefetchMyDmThreadsSnapshot(myUid);
+        if (cancelled || rows.length === 0) return;
+        setThreads((prev) => (prev.length > 0 ? prev : rows));
+      } catch {
+        /* 구독 웜업·목록 진입 시 프리페치로 이어짐 */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname, firebaseReady, myUid, authLoading, shouldListen, threads.length]);
 
   useEffect(() => {
     if (!firebaseReady || !myUid || authLoading) {

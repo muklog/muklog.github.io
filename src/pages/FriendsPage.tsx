@@ -22,10 +22,11 @@ import {
   removeShare,
   subscribeIncomingShares,
   subscribeOutgoingShares,
+  subscribePublicProfilesForUids,
   updateOutgoingScope,
 } from "../lib/friends";
 import { db, runDexie } from "../lib/db";
-import type { Share, ShareScope } from "../types";
+import type { PublicProfile, Share, ShareScope } from "../types";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
 import { cls } from "../lib/utils";
 
@@ -186,6 +187,22 @@ function FriendsTab({
     return combineRows(outShares, inShares);
   }, [outShares, inShares]);
 
+  const friendUids = useMemo(
+    () => (rows === null ? null : rows.map((r) => r.otherUid)),
+    [rows],
+  );
+  const [pubByUid, setPubByUid] = useState<Map<string, PublicProfile | null>>(
+    () => new Map(),
+  );
+
+  useEffect(() => {
+    if (friendUids === null) {
+      setPubByUid(new Map());
+      return;
+    }
+    return subscribePublicProfilesForUids(friendUids, setPubByUid);
+  }, [friendUids]);
+
   return (
     <>
       <LinkInviteCard />
@@ -200,7 +217,11 @@ function FriendsTab({
           </p>
         )}
         {rows?.map((r) => (
-          <FriendCard key={r.otherUid} row={r} />
+          <FriendCard
+            key={r.otherUid}
+            row={r}
+            publicProfile={pubByUid.get(r.otherUid) ?? null}
+          />
         ))}
       </section>
     </>
@@ -327,8 +348,33 @@ function LinkInviteCard() {
   );
 }
 
-function FriendCard({ row }: { row: FriendRow }) {
+function avatarFromPublicProfile(
+  pub: PublicProfile | null | undefined,
+  fallbackName: string,
+  fallbackPhoto?: string,
+): { name: string; photo?: string } {
+  const pn = pub?.displayName?.trim();
+  const pp = pub?.photoURL?.trim();
+  if (pn) {
+    return { name: pn, photo: pp || fallbackPhoto };
+  }
+  if (pp) return { name: fallbackName, photo: pp };
+  return { name: fallbackName, photo: fallbackPhoto };
+}
+
+function FriendCard({
+  row,
+  publicProfile,
+}: {
+  row: FriendRow;
+  publicProfile: PublicProfile | null;
+}) {
   const { otherUid, name, photo, outgoing, incoming } = row;
+  const { name: dispName, photo: dispPhoto } = avatarFromPublicProfile(
+    publicProfile,
+    name,
+    photo,
+  );
   const mutual = !!outgoing && !!incoming;
   const [busy, setBusy] = useState<"stopOut" | "stopIn" | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -345,7 +391,7 @@ function FriendCard({ row }: { row: FriendRow }) {
 
   async function stopOutgoing() {
     if (!outgoing) return;
-    if (!confirm(`${name}님에게 내 기록 공개를 중단할까요?`)) return;
+    if (!confirm(`${dispName}님에게 내 기록 공개를 중단할까요?`)) return;
     setBusy("stopOut");
     try {
       await removeShare(outgoing.id);
@@ -358,7 +404,7 @@ function FriendCard({ row }: { row: FriendRow }) {
 
   async function stopIncoming() {
     if (!incoming) return;
-    if (!confirm(`${name}님에 대한 팔로우를 끊을까요?`)) return;
+    if (!confirm(`${dispName}님에 대한 팔로우를 끊을까요?`)) return;
     setBusy("stopIn");
     try {
       await removeShare(incoming.id);
@@ -376,10 +422,10 @@ function FriendCard({ row }: { row: FriendRow }) {
           to={`/friends/${otherUid}`}
           className="flex min-w-0 flex-1 items-center gap-3 p-3 hover:bg-slate-900/60"
         >
-          <Avatar name={name} photoURL={photo} />
+          <Avatar name={dispName} photoURL={dispPhoto} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <p className="truncate text-sm font-semibold text-slate-100">{name}</p>
+              <p className="truncate text-sm font-semibold text-slate-100">{dispName}</p>
               {mutual ? (
                 <span className="shrink-0 rounded-full bg-brand-500/20 px-1.5 py-0.5 text-[10px] font-medium text-brand-200">
                   맞팔
@@ -404,7 +450,7 @@ function FriendCard({ row }: { row: FriendRow }) {
         <Link
           to={`/messages?with=${encodeURIComponent(otherUid)}`}
           title="DM"
-          aria-label={`${name}님에게 DM`}
+          aria-label={`${dispName}님에게 DM`}
           className="flex shrink-0 flex-col items-center justify-center border-l border-slate-800 px-3 py-3 text-brand-400 hover:bg-slate-800/70"
         >
           <MessageCircle size={22} strokeWidth={2} />

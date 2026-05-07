@@ -16,9 +16,7 @@ const ICON_SLOT =
 /** 알림·DM 자리 폭 고정 (gap-1 + 40px + 40px) → 로딩 전후·배지 유무로 헤더가 흔들리지 않게 */
 export const FEED_HEADER_ALERTS_WIDTH_CLASS = "w-[calc(5rem+0.25rem)] shrink-0";
 
-/** 피드 헤더 — 활동 알림 · DM 자리 아이콘.
- * 임시: DM 목록이 피드에서 직접 `/messages` 로 들어갈 때 깨지는 문제가 있어 `/friends` 로 보냄 — 나중에 `/messages` 직링으로 되돌릴 예정.
- */
+/** 피드 헤더 — 활동 알림 · DM(채팅방 목록 `/messages`) */
 export default function FeedAlertsHeaderIcons() {
   const { user } = useAuth();
   const myUid = user?.uid;
@@ -63,14 +61,14 @@ export default function FeedAlertsHeaderIcons() {
         )}
       </Link>
       <Link
-        to="/friends"
+        to="/messages"
         className={cls(
           ICON_SLOT,
           dmUnread > 0
             ? "border-brand-400/40 bg-brand-500/15 text-brand-200"
             : "border-slate-700 bg-slate-900/50 text-slate-300 hover:bg-slate-800",
         )}
-        aria-label={`친구 탭으로 이동 (DM) ${dmUnread > 0 ? `미읽음 ${dmUnread}건` : ""}`}
+        aria-label={`DM 대화 목록 ${dmUnread > 0 ? `미읽음 ${dmUnread}건` : ""}`}
       >
         <MessageCircle size={18} strokeWidth={2} />
         {dmUnread > 0 && (
