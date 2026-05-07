@@ -65,7 +65,7 @@ export default function App() {
       setHydrationTimedOut(false);
       return;
     }
-    const t = window.setTimeout(() => setHydrationTimedOut(true), 14_000);
+    const t = window.setTimeout(() => setHydrationTimedOut(true), 22_000);
     return () => window.clearTimeout(t);
   }, [needsHydrationWait]);
 

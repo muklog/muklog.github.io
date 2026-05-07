@@ -343,19 +343,22 @@ export async function shareMealCardFromElement(
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("PNG 생성 실패"))), "image/png");
   });
 
-  const file = new File([blob], opts.filename, { type: "image/png" });
+  const file = new File([blob], opts.filename, {
+    type: "image/png",
+    lastModified: Date.now(),
+  });
 
   if (typeof navigator.share === "function") {
+    const payload: ShareData = {
+      files: [file],
+      title: opts.shareTitle ?? "밀로그 식단",
+      text: opts.shareText ?? `밀로그 식단 기록 — ${opts.promoUrl}`,
+    };
     try {
-      const payload: ShareData = {
-        files: [file],
-        title: opts.shareTitle ?? "밀로그 식단",
-        text: opts.shareText ?? `밀로그 식단 기록 — ${opts.promoUrl}`,
-      };
-      if (!navigator.canShare || navigator.canShare(payload)) {
-        await navigator.share(payload);
-        return;
-      }
+      // canShare 는 일부 브라우저에서 파일 공유를 거짓으로 막아 첫 탭이 곧바로 다운로드로 가는 경우가 있어,
+      // 지원 여부는 share 호출로만 판별한다.
+      await navigator.share(payload);
+      return;
     } catch (e) {
       const err = e as { name?: string };
       if (err?.name === "AbortError") return;
@@ -369,7 +372,4 @@ export async function shareMealCardFromElement(
   a.download = opts.filename;
   a.click();
   URL.revokeObjectURL(dl);
-  alert(
-    "이미지를 저장했어요.\n카카오톡·인스타 DM 등에서 사진 첨부로 보내보세요.\n(브라우저에 따라 바로 공유 시트가 안 뜰 수 있어요.)",
-  );
 }

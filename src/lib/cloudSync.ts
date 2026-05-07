@@ -256,6 +256,42 @@ async function mergeHealth(local: HealthRecord[], remote: HealthStored[]): Promi
   return out;
 }
 
+/**
+ * 활성 프로필 ID 가 실제 식단 userId 와 어긋나면(재온보딩·도메인 변경 직후 등) 피드·달력이 비어 보입니다.
+ * 병합 결과 기준으로 한 명의 식단 소유자만 있으면 그 ID 로 맞춥니다.
+ */
+function reconcileActiveUserIdForCloudMerge(
+  mergedMembers: User[],
+  mergedMeals: Meal[],
+  currentActive: string | undefined,
+): string | undefined {
+  const memberIds = new Set(mergedMembers.map((u) => u.id));
+  const mealUserIds = [...new Set(mergedMeals.map((m) => m.userId))];
+
+  const activeHasMeals =
+    !!currentActive &&
+    memberIds.has(currentActive) &&
+    mergedMeals.some((m) => m.userId === currentActive);
+
+  if (
+    currentActive &&
+    memberIds.has(currentActive) &&
+    (mergedMeals.length === 0 || activeHasMeals)
+  ) {
+    return currentActive;
+  }
+
+  const ownersInMembers = mealUserIds.filter((id) => memberIds.has(id));
+  if (ownersInMembers.length === 1) return ownersInMembers[0];
+
+  if (mergedMembers.length === 1) return mergedMembers[0]!.id;
+
+  if (currentActive && memberIds.has(currentActive)) return currentActive;
+
+  const oldest = [...mergedMembers].sort((a, b) => a.createdAt - b.createdAt)[0];
+  return oldest?.id;
+}
+
 async function pullMembers(uid: string): Promise<User[]> {
   const fs = getFirestoreDb();
   const snap = await getDocs(collection(fs, "users", uid, "members"));
@@ -594,6 +630,16 @@ export async function syncCloudWithLocal(): Promise<void> {
           id: SETTINGS_KEY,
         };
       }
+
+      localSettings = {
+        ...localSettings,
+        activeUserId: reconcileActiveUserIdForCloudMerge(
+          mergedMembers,
+          mergedMeals,
+          localSettings.activeUserId,
+        ),
+        id: SETTINGS_KEY,
+      };
 
       await dexieDb.transaction(
         "rw",

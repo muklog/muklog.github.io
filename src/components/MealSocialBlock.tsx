@@ -115,23 +115,28 @@ export default function MealSocialBlock({ ownerUid, mealId }: Props) {
   if (!myUid) return null;
 
   return (
-    <div ref={wrapRef} className="space-y-3 border-t border-slate-800 pt-3">
+    <div ref={wrapRef} className="space-y-3 border-t border-slate-800 px-3 pb-3 pt-3">
       {!inView ? (
         <p className="text-[11px] text-slate-500">이 카드가 화면에 보이면 댓글·좋아요를 불러와요.</p>
       ) : accessErr ? null : (
         <>
-          <LikeRow
-            ownerUid={ownerUid}
-            mealId={mealId}
-            liked={liked}
-            likeCount={likedUids?.length ?? 0}
-            loading={likedUids === null}
-          />
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-              <MessageCircle size={12} />
-              <span>댓글 {total}</span>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <LikeRow
+              ownerUid={ownerUid}
+              mealId={mealId}
+              liked={liked}
+              likeCount={likedUids?.length ?? 0}
+              loading={likedUids === null}
+            />
+            <div
+              className="flex items-center gap-1.5 text-slate-400"
+              aria-label={`댓글 ${total}개`}
+            >
+              <MessageCircle size={16} strokeWidth={2} className="shrink-0 opacity-90" />
+              <span className="text-xs font-medium tabular-nums text-slate-300">댓글 {total}</span>
             </div>
+          </div>
+          <div className="space-y-2">
             {comments === null ? (
               <p className="text-[11px] text-slate-500">불러오는 중…</p>
             ) : (
@@ -190,26 +195,22 @@ function LikeRow({
   }
 
   return (
-    <div className="flex items-center gap-3 text-sm">
-      <button
-        type="button"
-        onClick={toggle}
-        disabled={busy || loading}
-        className={cls(
-          "flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors disabled:opacity-60",
-          effectiveLiked
-            ? "bg-rose-500/15 text-rose-300 hover:bg-rose-500/20"
-            : "bg-slate-800/60 text-slate-300 hover:bg-slate-800",
-        )}
-        aria-pressed={effectiveLiked}
-      >
-        <Heart size={14} className={cls(effectiveLiked && "fill-current")} />
-        <span className="text-xs font-medium">{loading ? "—" : likeCount}</span>
-      </button>
-      <span className="text-[11px] text-slate-500">
-        {effectiveLiked ? "좋아요 취소하기" : "좋아요"}
-      </span>
-    </div>
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={busy || loading}
+      title={effectiveLiked ? "좋아요 취소" : "좋아요"}
+      className={cls(
+        "flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors disabled:opacity-60",
+        effectiveLiked
+          ? "bg-rose-500/15 text-rose-300 hover:bg-rose-500/20"
+          : "bg-slate-800/60 text-slate-300 hover:bg-slate-800",
+      )}
+      aria-pressed={effectiveLiked}
+    >
+      <Heart size={16} strokeWidth={2} className={cls("shrink-0", effectiveLiked && "fill-current")} />
+      <span className="text-xs font-medium tabular-nums">{loading ? "—" : likeCount}</span>
+    </button>
   );
 }
 
