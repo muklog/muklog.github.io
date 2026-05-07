@@ -6,9 +6,9 @@ import { VitePWA } from "vite-plugin-pwa";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
-// GitHub Pages 배포용 base 경로 (저장소 이름과 동일하게 설정)
-// 사용자 정의 도메인이나 user.github.io 저장소면 "/"로 변경
-const base = process.env.VITE_BASE_PATH ?? "/healthhealth/";
+// GitHub Pages 배포용 base (<org>.github.io 저장소면 "/". 프로젝트 페이지면 "/저장소이름/")
+// CI 에서 VITE_BASE_PATH 로 설정. 로컬은 루트 기준과 동일하게 "/".
+const base = process.env.VITE_BASE_PATH ?? "/";
 
 export default defineConfig(({ command }) => ({
   base,
@@ -19,9 +19,9 @@ export default defineConfig(({ command }) => ({
       /** PNG 192·512 포함 — 크롬/웨일은 여기 빠지면 설치 플로우·스플래시가 깨지는 경우가 많음 (삼성 브라우저만 우연히 너그러운 현상 줄이기). */
       includeAssets: ["favicon.svg", "pwa-192.png", "pwa-512.png"],
       manifest: {
-        name: "헬스헬스 — 식단·건강 기록",
-        short_name: "헬스헬스",
-        description: "달력 기반 식단 기록과 AI 건강 분석 — 1인용",
+        name: "밀로그 — 식단·건강 기록",
+        short_name: "밀로그",
+        description: "달력·식단·AI 분석과 친구 피드 — 한 기기에서는 내 기록 중심",
         theme_color: "#10b981",
         background_color: "#0f172a",
         display: "standalone",

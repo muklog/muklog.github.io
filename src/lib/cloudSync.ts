@@ -23,7 +23,7 @@ const BATCH = 400;
 /** Firestore 문서 상한 1MiB — Base64·메타 여유 */
 const DOC_SAFE_BYTES = 900_000;
 
-// 헬스헬스는 1인 앱이라 Dexie `users` 테이블에는 본인 프로필 1행만 들어갑니다.
+// 로컬(IndexedDB) `users` 는 이 기기에서 쓰는 활성 프로필 한 명분만 유지합니다. 친구 데이터는 Firestore 로만 조회합니다.
 // Firestore 컬렉션명 `users/{uid}/members` 는 초기 멀티 프로필 시절의 잔재이지만,
 // 기존 사용자 데이터와의 호환을 위해 이름은 그대로 둡니다.
 // 코드 내부의 *Members 함수·변수도 같은 의미입니다.

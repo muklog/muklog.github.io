@@ -222,10 +222,10 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
     try {
       const promoUrl = getAppShareAbsoluteUrl();
       await shareMealCardFromElement(el, {
-        filename: `healthhealth-meal-${Date.now()}.png`,
+        filename: `mealog-meal-${Date.now()}.png`,
         promoUrl,
-        shareTitle: "헬스헬스 식단",
-        shareText: `헬스헬스에서 기록한 식단이에요 — ${promoUrl}`,
+        shareTitle: "밀로그 식단",
+        shareText: `밀로그에서 기록한 식단이에요 — ${promoUrl}`,
       });
     } catch (e) {
       console.error("[FeedCard] share", e);

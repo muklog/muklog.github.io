@@ -167,7 +167,7 @@ export const DEFAULT_THEME: ThemeId = "green";
 export interface AppSettings {
   id: "settings";
   geminiApiKey?: string;
-  /** 활성 프로필 id (1인 앱이지만 Dexie users 테이블의 어떤 행을 쓰는지 식별) */
+  /** 활성 프로필 id — Dexie users 에서 이 기기에 로그인해 쓰는 내 프로필 행 식별 */
   activeUserId?: string;
   /** 온보딩 완료 여부 */
   onboarded?: boolean;

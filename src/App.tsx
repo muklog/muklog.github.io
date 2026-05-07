@@ -77,7 +77,7 @@ export default function App() {
     });
   }, [gate?.settings.activeUserId]);
 
-  // 1인 모드: 프로필이 하나뿐이면 활성 ID를 그 프로필로 맞춤
+  // 로컬 프로필이 하나뿐이면 활성 ID를 그 프로필로 맞춤
   useEffect(() => {
     if (!gate || gate.userCount !== 1) return;
     void runDexie(() => db.users.orderBy("createdAt").first()).then((u) => {

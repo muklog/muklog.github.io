@@ -50,7 +50,7 @@ export default function HomePage() {
           <p className="text-xs text-slate-400">오늘의 식단을 기록해요</p>
           <h1 className="text-xl font-bold">
             <Sparkles size={18} className="mb-0.5 mr-1 inline text-brand-400" />
-            헬스헬스
+            밀로그
           </h1>
         </div>
         <div className="flex shrink-0 items-center gap-2">

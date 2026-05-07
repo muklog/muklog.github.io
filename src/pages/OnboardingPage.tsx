@@ -32,7 +32,7 @@ export default function OnboardingPage() {
   /** 아바타·체크박스를 건드리면 클라우드에서 늦게 온 프로필이 덮어쓰지 않게 */
   const [profileTouched, setProfileTouched] = useState(false);
 
-  // 클라우드 동기화나 1인 모드 보정으로 이미 Dexie 에 user 가 들어있으면
+  // 클라우드 동기화나 로컬 단일 프로필 보정으로 이미 Dexie 에 user 가 들어있으면
   // 그 정보를 가져와 입력란에 미리 채워준다 — "이미 쓰던 계정으로 재진입" 시
   // 사용자가 굳이 다시 입력하지 않도록.
   const existingUser = useLiveQuery(async () => {
@@ -188,7 +188,7 @@ export default function OnboardingPage() {
           ✨ 시작하기
         </div>
         <h1 className="text-3xl font-bold leading-tight">
-          헬스헬스에
+          밀로그에
           <br />
           오신 것을 환영해요
         </h1>

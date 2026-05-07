@@ -265,7 +265,7 @@ function LinkInviteCard() {
     try {
       if (navigator.share) {
         await navigator.share({
-          title: "헬스헬스 친구 초대",
+          title: "밀로그 친구 초대",
           text: "내 식단을 볼 수 있도록 초대했어요. 링크에서 수락해 주세요.",
           url: lastLink,
         });

@@ -363,7 +363,7 @@ export default function SettingsPage() {
         </button>
       </section>
 
-      <section className="px-1 pb-4 text-center text-[11px] text-slate-600">헬스헬스 v0.1.0</section>
+      <section className="px-1 pb-4 text-center text-[11px] text-slate-600">밀로그 v0.1.0</section>
     </div>
   );
 }

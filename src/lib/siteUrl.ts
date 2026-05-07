@@ -2,7 +2,7 @@
  * 친구 공유·이미지 워터마크 등에 쓰는 프로덕션 기준 URL.
  * 로컬에선 현재 origin + Vite base, SSR·예외 시에는 배포 주소로 폴백.
  */
-const FALLBACK_PRODUCTION_APP_URL = "https://gogojeje1022.github.io/healthhealth/";
+const FALLBACK_PRODUCTION_APP_URL = "https://mealog.github.io/";
 
 export function getAppShareAbsoluteUrl(): string {
   const base = import.meta.env.BASE_URL ?? "/";

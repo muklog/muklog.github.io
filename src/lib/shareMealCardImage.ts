@@ -162,7 +162,7 @@ function computeWatermarkLayout(
   const ctx = scratch.getContext("2d")!;
   const fontPxStart = Math.max(10, Math.round(11 * scaleRef));
   const minFont = Math.max(8, Math.round(8 * scaleRef));
-  const fullSingle = `헬스헬스 — ${watermarkHostAndPath}`;
+  const fullSingle = `밀로그 — ${watermarkHostAndPath}`;
 
   let chosenFont = minFont;
   let lines: string[] = [fullSingle];
@@ -172,8 +172,8 @@ function computeWatermarkLayout(
     let candidate: string[];
     if (ctx.measureText(fullSingle).width <= maxW) {
       candidate = [fullSingle];
-    } else if (ctx.measureText("헬스헬스").width <= maxW) {
-      candidate = ["헬스헬스", ...greedyWrapLine(ctx, watermarkHostAndPath, maxW)];
+    } else if (ctx.measureText("밀로그").width <= maxW) {
+      candidate = ["밀로그", ...greedyWrapLine(ctx, watermarkHostAndPath, maxW)];
     } else {
       candidate = greedyWrapLine(ctx, fullSingle, maxW);
     }
@@ -346,8 +346,8 @@ export async function shareMealCardFromElement(
     try {
       const payload: ShareData = {
         files: [file],
-        title: opts.shareTitle ?? "헬스헬스 식단",
-        text: opts.shareText ?? `헬스헬스 식단 기록 — ${opts.promoUrl}`,
+        title: opts.shareTitle ?? "밀로그 식단",
+        text: opts.shareText ?? `밀로그 식단 기록 — ${opts.promoUrl}`,
       };
       if (!navigator.canShare || navigator.canShare(payload)) {
         await navigator.share(payload);
