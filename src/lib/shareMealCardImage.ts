@@ -1,5 +1,27 @@
 import { toPng } from "html-to-image";
 
+async function ensureImagesDecoded(root: HTMLElement): Promise<void> {
+  const imgs = [...root.querySelectorAll("img")];
+  await Promise.all(
+    imgs.map(async (img) => {
+      if (img.complete && img.naturalWidth === 0) {
+        throw new Error("사진을 불러오지 못했습니다.");
+      }
+      if (!img.complete) {
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error("사진을 불러오지 못했습니다."));
+        });
+      }
+      try {
+        await img.decode();
+      } catch {
+        /* 일부 환경에서 decode 미지원·실패 무시 */
+      }
+    }),
+  );
+}
+
 function drawEllipsisText(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -32,11 +54,45 @@ export async function shareMealCardFromElement(
     shareText?: string;
   },
 ): Promise<void> {
-  const dataUrl = await toPng(element, {
-    pixelRatio: 2,
-    cacheBust: true,
-    backgroundColor: "#0f172a",
-  });
+  const w = element.offsetWidth;
+  const h = element.offsetHeight;
+  if (w < 12 || h < 12) {
+    throw new Error("캡처할 카드 영역이 비어 있어요. 보이는 카드에서 다시 시도해 주세요.");
+  }
+
+  await ensureImagesDecoded(element);
+
+  let dataUrl: string;
+  try {
+    const pr =
+      typeof window !== "undefined"
+        ? Math.min(2, window.devicePixelRatio || 2)
+        : 2;
+    dataUrl = await toPng(element, {
+      pixelRatio: pr,
+      cacheBust: true,
+      backgroundColor: "#0f172a",
+      skipFonts: true,
+      filter: (node) => {
+        if (!(node instanceof HTMLElement)) return true;
+        const cls = typeof node.className === "string" ? node.className : "";
+        /** WebKit 에서 backdrop-blur 등이 foreignObject 래스터화 실패로 이어지는 경우가 많음 */
+        if (cls.includes("backdrop-blur")) return false;
+        if (cls.includes("backdrop-saturate")) return false;
+        return true;
+      },
+    });
+    if (!dataUrl || dataUrl.length < 64) {
+      throw new Error("PNG 데이터가 비어 있습니다.");
+    }
+  } catch (e) {
+    console.error("[shareMealCardImage] toPng", e);
+    throw new Error(
+      e instanceof Error
+        ? `이미지 변환 실패: ${e.message}`
+        : "이미지를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    );
+  }
 
   const img = new Image();
   img.decoding = "async";

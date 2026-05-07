@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useFeedStream, type FeedAuthor, type FeedEntry } from "../contexts/FeedStreamContext";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Home, Loader2, Plus, Rss, Sparkles, UserPlus } from "lucide-react";
+import { Home, Loader2, Plus, Rss, Share2, Sparkles, UserPlus } from "lucide-react";
 import { getAnalysisProfileForUser, getSettings } from "../lib/db";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { MealItemCard, MealItemCardsCarousel, MealItemEditDialog } from "../components/MealCard";
@@ -16,6 +16,8 @@ import {
   updateMealItem,
 } from "../lib/mealItems";
 import { analyzeMealImage } from "../lib/ai";
+import { shareMealCardFromElement } from "../lib/shareMealCardImage";
+import { getAppShareAbsoluteUrl } from "../lib/siteUrl";
 import FeedAlertsHeaderIcons from "../components/FeedAlertsHeaderIcons";
 import { MEAL_SLOT_EMOJI, MEAL_SLOT_LABELS, type MealItem } from "../types";
 
@@ -202,7 +204,36 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   /** 피드에서 사진 재분석 중일 때 버튼 스피너만 씀 (전 카드 분석 중 UI 없음) */
   const [imageReanalyzeBusyId, setImageReanalyzeBusyId] = useState<string | null>(null);
+  const [carouselSlideIdx, setCarouselSlideIdx] = useState(0);
+  const [shareBusy, setShareBusy] = useState(false);
+  const mealShareRef = useRef<HTMLDivElement | null>(null);
   const editingItem = items.find((it) => it.id === editingItemId) ?? null;
+
+  useEffect(() => {
+    setCarouselSlideIdx((i) =>
+      items.length === 0 ? 0 : Math.min(i, Math.max(0, items.length - 1)),
+    );
+  }, [items.length]);
+
+  async function handleShareActiveCard() {
+    const el = mealShareRef.current;
+    if (!el || shareBusy || items.length === 0) return;
+    setShareBusy(true);
+    try {
+      const promoUrl = getAppShareAbsoluteUrl();
+      await shareMealCardFromElement(el, {
+        filename: `healthhealth-meal-${Date.now()}.png`,
+        promoUrl,
+        shareTitle: "헬스헬스 식단",
+        shareText: `헬스헬스에서 기록한 식단이에요 — ${promoUrl}`,
+      });
+    } catch (e) {
+      console.error("[FeedCard] share", e);
+      alert(e instanceof Error ? e.message : "이미지를 만들지 못했습니다.");
+    } finally {
+      setShareBusy(false);
+    }
+  }
 
   const totalCalories = useMemo(
     () =>
@@ -316,6 +347,7 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
       <div className="space-y-3 p-3">
         <MealItemCardsCarousel
           items={items}
+          onActiveSlideChange={setCarouselSlideIdx}
           renderSlide={(it, idx) => (
             <MealItemCard
               item={it}
@@ -324,7 +356,7 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
               canAnalyze={isMine && !!myApiKey}
               showPhotoAnalyzingOverlay={false}
               reanalyzeBusy={imageReanalyzeBusyId === it.id}
-              showShare
+              shareCaptureRef={carouselSlideIdx === idx ? mealShareRef : undefined}
               onEdit={isMine ? () => setEditingItemId(it.id) : undefined}
               onReanalyze={
                 isMine && it.photo ? () => void handleReanalyzeByImage(it) : undefined
@@ -333,8 +365,22 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
             />
           )}
         />
-        {(avgRating !== undefined || totalCalories > 0) && (
-          <div className="flex flex-wrap gap-2 text-[11px] text-slate-400">
+        {items.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+            <button
+              type="button"
+              disabled={shareBusy}
+              onClick={() => void handleShareActiveCard()}
+              className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-slate-800/60 px-2 py-0.5 text-slate-200 hover:bg-slate-800/80 disabled:opacity-50"
+              aria-label="카드 이미지로 공유"
+              title="카카오톡·인스타 등에 카드 이미지 공유"
+            >
+              {shareBusy ? (
+                <Loader2 size={12} className="animate-spin shrink-0" aria-hidden />
+              ) : (
+                <Share2 size={12} className="shrink-0" aria-hidden />
+              )}
+            </button>
             {avgRating !== undefined && (
               <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-300">
                 ★ 평균 {avgRating.toFixed(1)}

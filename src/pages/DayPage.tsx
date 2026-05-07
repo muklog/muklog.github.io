@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ArrowLeft, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, Loader2, Plus, Share2, Trash2 } from "lucide-react";
 import {
   afterUserDataMutation,
   db,
@@ -12,6 +12,8 @@ import {
   uid,
 } from "../lib/db";
 import { analyzeMealImage } from "../lib/ai";
+import { shareMealCardFromElement } from "../lib/shareMealCardImage";
+import { getAppShareAbsoluteUrl } from "../lib/siteUrl";
 import {
   deleteEntireMeal,
   deleteMealItem,
@@ -133,6 +135,9 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
   const [scrollCarouselToItemId, setScrollCarouselToItemId] = useState<string | null>(null);
+  const [carouselSlideIdx, setCarouselSlideIdx] = useState(0);
+  const [shareBusy, setShareBusy] = useState(false);
+  const mealShareRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (searchParams.get("slot") !== slot) return;
@@ -143,6 +148,32 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
   }, [slot, searchParams]);
 
   const items = meal?.items ?? [];
+
+  useEffect(() => {
+    setCarouselSlideIdx((i) =>
+      items.length === 0 ? 0 : Math.min(i, Math.max(0, items.length - 1)),
+    );
+  }, [items.length]);
+
+  async function handleShareActiveCard() {
+    const el = mealShareRef.current;
+    if (!el || shareBusy || items.length === 0) return;
+    setShareBusy(true);
+    try {
+      const promoUrl = getAppShareAbsoluteUrl();
+      await shareMealCardFromElement(el, {
+        filename: `healthhealth-meal-${Date.now()}.png`,
+        promoUrl,
+        shareTitle: "헬스헬스 식단",
+        shareText: `헬스헬스에서 기록한 식단이에요 — ${promoUrl}`,
+      });
+    } catch (e) {
+      console.error("[SlotSection] share", e);
+      alert(e instanceof Error ? e.message : "이미지를 만들지 못했습니다.");
+    } finally {
+      setShareBusy(false);
+    }
+  }
 
   const clearCarouselScrollRequest = useCallback(() => setScrollCarouselToItemId(null), []);
 
@@ -294,22 +325,41 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
       {expanded && (
         <div className="space-y-3 p-4">
           {items.length > 0 && (
-            <MealItemCardsCarousel
-              items={items}
-              scrollToItemId={scrollCarouselToItemId}
-              onScrollToItemHandled={clearCarouselScrollRequest}
-              renderSlide={(it, idx) => (
-                <MealItemCard
-                  item={it}
-                  index={idx}
-                  canAnalyze={!!apiKey}
-                  showShare
-                  onReanalyze={() => void reAnalyzeItem(it)}
-                  onEdit={() => setEditingItemId(it.id)}
-                  onRemove={() => void removeItem(it.id)}
-                />
-              )}
-            />
+            <>
+              <MealItemCardsCarousel
+                items={items}
+                scrollToItemId={scrollCarouselToItemId}
+                onScrollToItemHandled={clearCarouselScrollRequest}
+                onActiveSlideChange={setCarouselSlideIdx}
+                renderSlide={(it, idx) => (
+                  <MealItemCard
+                    item={it}
+                    index={idx}
+                    canAnalyze={!!apiKey}
+                    shareCaptureRef={carouselSlideIdx === idx ? mealShareRef : undefined}
+                    onReanalyze={() => void reAnalyzeItem(it)}
+                    onEdit={() => setEditingItemId(it.id)}
+                    onRemove={() => void removeItem(it.id)}
+                  />
+                )}
+              />
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                <button
+                  type="button"
+                  disabled={shareBusy}
+                  onClick={() => void handleShareActiveCard()}
+                  className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-slate-800/60 px-2 py-0.5 text-slate-200 hover:bg-slate-800/80 disabled:opacity-50"
+                  aria-label="카드 이미지로 공유"
+                  title="카카오톡·인스타 등에 카드 이미지 공유"
+                >
+                  {shareBusy ? (
+                    <Loader2 size={12} className="animate-spin shrink-0" aria-hidden />
+                  ) : (
+                    <Share2 size={12} className="shrink-0" aria-hidden />
+                  )}
+                </button>
+              </div>
+            </>
           )}
 
           <PhotoUpload

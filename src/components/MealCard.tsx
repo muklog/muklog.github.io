@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactNode,
+} from "react";
 import {
   CheckCircle2,
   Loader2,
   Pencil,
   RefreshCw,
-  Share2,
   Sparkles,
   Star,
   Trash2,
@@ -17,9 +23,6 @@ import { blobUrl } from "../lib/image";
 import { cls } from "../lib/utils";
 import type { MealItemPatch } from "../lib/mealItems";
 import { userFacingStorageErrorMessage } from "../lib/idbRetry";
-import { getAppShareAbsoluteUrl } from "../lib/siteUrl";
-import { shareMealCardFromElement } from "../lib/shareMealCardImage";
-
 export type { MealItemPatch } from "../lib/mealItems";
 
 /**
@@ -37,8 +40,8 @@ interface ItemCardProps {
   showPhotoAnalyzingOverlay?: boolean;
   /** 재분석 API 진행 중 — 버튼에만 스피너 (카드 전체 대신) */
   reanalyzeBusy?: boolean;
-  /** 카카오톡 등 이미지 공유 — 댓글 영역은 포함하지 않음 */
-  showShare?: boolean;
+  /** 부모에서 활성 슬라이드 카드만 넘기면 해당 카드 DOM 으로 PNG 공유 캡처 */
+  shareCaptureRef?: MutableRefObject<HTMLDivElement | null>;
   onReanalyze?: () => void;
   onEdit?: () => void;
   onRemove?: () => void;
@@ -51,38 +54,21 @@ export function MealItemCard({
   canAnalyze = false,
   showPhotoAnalyzingOverlay = true,
   reanalyzeBusy = false,
-  showShare = false,
+  shareCaptureRef,
   onReanalyze,
   onEdit,
   onRemove,
 }: ItemCardProps) {
-  const captureRef = useRef<HTMLDivElement>(null);
-  const [shareBusy, setShareBusy] = useState(false);
   const url = blobUrl(item.photo || item.thumbnail);
-
-  async function handleShareCard() {
-    const el = captureRef.current;
-    if (!el || shareBusy) return;
-    setShareBusy(true);
-    try {
-      const promoUrl = getAppShareAbsoluteUrl();
-      await shareMealCardFromElement(el, {
-        filename: `healthhealth-meal-${Date.now()}.png`,
-        promoUrl,
-        shareTitle: "헬스헬스 식단",
-        shareText: `헬스헬스에서 기록한 식단이에요 — ${promoUrl}`,
-      });
-    } catch (e) {
-      console.error("[MealItemCard] share", e);
-      alert(e instanceof Error ? e.message : "이미지를 만들지 못했습니다.");
-    } finally {
-      setShareBusy(false);
-    }
-  }
 
   return (
     <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/30 p-2">
-      <div ref={captureRef} className="space-y-2">
+      <div
+        ref={(el) => {
+          if (shareCaptureRef) shareCaptureRef.current = el;
+        }}
+        className="space-y-2"
+      >
       <div className="relative overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
         {url ? (
           <img
@@ -130,24 +116,6 @@ export function MealItemCard({
         onEdit={onEdit}
       />
       </div>
-      {showShare && (
-        <div className="flex justify-end px-0.5">
-          <button
-            type="button"
-            disabled={shareBusy}
-            onClick={() => void handleShareCard()}
-            className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 p-2 text-slate-200 hover:bg-slate-800 disabled:opacity-50"
-            aria-label="카드 이미지로 공유"
-            title="카카오톡·인스타 등에 카드 이미지 공유"
-          >
-            {shareBusy ? (
-              <Loader2 size={16} className="animate-spin shrink-0" aria-hidden />
-            ) : (
-              <Share2 size={16} className="shrink-0" aria-hidden />
-            )}
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -158,12 +126,15 @@ export function MealItemCardsCarousel({
   renderSlide,
   scrollToItemId,
   onScrollToItemHandled,
+  onActiveSlideChange,
 }: {
   items: MealItem[];
   renderSlide: (item: MealItem, index: number) => ReactNode;
   /** 설정 시 해당 항목 슬라이드로 스크롤(추가 직후 등). 처리 후 `onScrollToItemHandled` 로 부모에서 비워 주세요 */
   scrollToItemId?: string | null;
   onScrollToItemHandled?: () => void;
+  /** 가로 스크롤·항목 수 변경 시 현재 보이는 슬라이드 인덱스 (한 장이면 항상 0) */
+  onActiveSlideChange?: (index: number) => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [slide, setSlide] = useState(0);
@@ -230,6 +201,12 @@ export function MealItemCardsCarousel({
       cancelled = true;
     };
   }, [itemIdsKey, scrollToItemId]);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    if (items.length <= 1) onActiveSlideChange?.(0);
+    else onActiveSlideChange?.(slide);
+  }, [items.length, slide, onActiveSlideChange]);
 
   if (items.length === 0) return null;
 
