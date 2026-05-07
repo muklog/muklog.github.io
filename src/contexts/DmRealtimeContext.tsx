@@ -13,6 +13,7 @@ import { useAuth } from "./AuthContext";
 import { getFirebaseAuth } from "../lib/firebaseApp";
 import {
   dmErrorMessageForUi,
+  isFirestorePermissionDenied,
   prefetchMyDmThreadsSnapshot,
   subscribeDmReadMap,
   subscribeMyDmThreads,
@@ -94,8 +95,8 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
           return rows;
         });
         setThreadsListReady(true);
-      } catch {
-        if (!cancelled) setThreadsListReady(true);
+      } catch (e) {
+        if (!cancelled && !isFirestorePermissionDenied(e)) setThreadsListReady(true);
       }
     })();
 
@@ -117,7 +118,7 @@ export function DmRealtimeProvider({ children }: { children: ReactNode }) {
         if (cancelled || rows.length === 0) return;
         setThreads((prev) => (prev.length > 0 ? prev : rows));
       } catch {
-        /* 구독 웜업·목록 진입 시 프리페치로 이어짐 */
+        /* 구독·목록 진입 프리페치로 이어짐 */
       }
     })();
 

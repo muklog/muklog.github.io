@@ -35,6 +35,10 @@ function firebaseErrText(e: unknown): string {
   return String(e);
 }
 
+export function isFirestorePermissionDenied(e: unknown): boolean {
+  return isPermissionDenied(e);
+}
+
 function isPermissionDenied(e: unknown): boolean {
   const code = String((e as { code?: string })?.code ?? "");
   const raw = firebaseErrText(e);
@@ -443,11 +447,12 @@ export async function prefetchMyDmThreadsSnapshot(myUid: string): Promise<DmThre
   try {
     const snap = await getDocsFromServer(q);
     return snapshotToDmThreads(snap, 25);
-  } catch {
+  } catch (e) {
     try {
       const snap = await getDocs(q);
       return snapshotToDmThreads(snap, 25);
-    } catch {
+    } catch (e2) {
+      if (isPermissionDenied(e2)) throw e2;
       return [];
     }
   }

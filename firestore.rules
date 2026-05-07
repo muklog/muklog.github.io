@@ -170,13 +170,18 @@ service cloud.firestore {
         && (request.auth.uid == p[0] || request.auth.uid == p[1]);
     }
     match /dmThreads/{threadId} {
-      // 목록 쿼리(array-contains) + 레거시/형식 꼬임 문서: participantUids 가 없거나 타입이 어긋나도
-      // 문서 id 규약(uidA_uidB, uidA < uidB)으로 참가자면 읽기 허용 — 메시지 서브컬렉션 규칙과 동일 논리.
-      allow read: if request.auth != null
+      // 단일 문서 get — participantUids 가 없거나 꼬인 레거시도 문서 id 규약으로 허용(메시지 규칙과 동일).
+      allow get: if request.auth != null
         && (
           (resource.data.participantUids is list && request.auth.uid in resource.data.participantUids)
           || dmMessageReadAllowed(threadId)
         );
+
+      // 컬렉션 list 쿼리(where participantUids array-contains me) — read 를 OR 로 묶으면
+      // Firestore 가 쿼리-규칙 일치를 증명하지 못해 permission-denied(특히 getDocsFromServer)가 날 수 있어 list 를 분리.
+      allow list: if request.auth != null
+        && resource.data.participantUids is list
+        && request.auth.uid in resource.data.participantUids;
       allow create: if signedIn()
         && dmPairOk(request.resource.data.participantUids)
         && threadId == request.resource.data.participantUids[0] + '_' + request.resource.data.participantUids[1]
