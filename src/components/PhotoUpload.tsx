@@ -4,13 +4,15 @@ import { compressImage, type CompressOptions } from "../lib/image";
 import { cls } from "../lib/utils";
 
 /**
- * 갤러리(사진 보관함) 쪽으로 붙이기 위한 accept.
- * `image/*` 만 쓰면 Android 의 ‘파일’·Chrome 문서 피커가 함께 뜨는 경우가 많고,
- * MIME 을 좁히면 사진/미디어 앱 위주로 열리는 경우가 많습니다.
- * (기기·브라우저마다 다르고, 카메라 항목까지 완전히 숨기는 것은 웹 표준으로는 불가에 가깝습니다.)
+ * 갤러리 전용 입력의 accept.
+ *
+ * 삼성·크롬 조합에서 MIME 을 촘촘히 나열하면 「작업 선택 → 카메라 / 내 파일 / 사진 및 동영상」처럼
+ * 문서 선택용 메뉴로 이어지는 경우가 많습니다. `image/*` 만 두면 Android 13+ 에서
+ * 시스템 사진 피커(앨범 그리드)가 바로 뜨는 경우가 많습니다.
+ *
+ * 「개인 / 업무」는 업무 프로필이 켜져 있으면 OS 가 넣는 단계라 웹에서 제거할 수 없습니다.
  */
-const GALLERY_FILE_ACCEPT =
-  "image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif,image/bmp,image/gif,.jpg,.jpeg,.png,.webp,.heic,.heif,.bmp,.gif";
+const GALLERY_FILE_ACCEPT = "image/*";
 
 interface Props {
   /** 처리 후 호출 - photo / thumbnail 둘 다 압축된 Blob */
