@@ -21,7 +21,7 @@ import { cls } from "../lib/utils";
 export default function DmChatPage() {
   const { threadId = "" } = useParams();
   const navigate = useNavigate();
-  const { user, firebaseReady } = useAuth();
+  const { user, firebaseReady, loading: authLoading } = useAuth();
   const [messages, setMessages] = useState<DmMessageDoc[]>([]);
   const [allowed, setAllowed] = useState<null | boolean>(null);
   /** 참가자로 확인된 방에서는 메시지 전송 허용(달력 연결은 안내용) */
@@ -138,6 +138,13 @@ export default function DmChatPage() {
 
   if (!firebaseReady) return <Placeholder>Firebase 연동이 필요해요.</Placeholder>;
   if (!user) {
+    if (authLoading) {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-5">
+          <HeaderSkeleton />
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col gap-4 px-4 pt-5">
         <HeaderSkeleton />
@@ -172,7 +179,7 @@ export default function DmChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-4.25rem)] max-h-[calc(100dvh-4.25rem)] w-full flex-col overflow-hidden pl-2 pr-1 pt-2 pb-[max(0.625rem,env(safe-area-inset-bottom,0px))]">
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden pl-2 pr-1 pt-2 pb-[max(0.625rem,env(safe-area-inset-bottom,0px))]">
       <header className="flex shrink-0 items-center gap-2 border-b border-slate-800 bg-slate-950 pb-3">
         <button type="button" onClick={() => navigate("/messages")} className="rounded-lg p-2 hover:bg-slate-800">
           <ArrowLeft size={20} />
@@ -186,7 +193,7 @@ export default function DmChatPage() {
 
       <div
         ref={messagesScrollRef}
-        className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-auto py-2 pl-0.5 pr-0 [-webkit-overflow-scrolling:touch]"
+        className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain py-2 pl-0.5 pr-0 [-webkit-overflow-scrolling:touch]"
       >
         {messages.length === 0 ? (
           <p className="py-8 text-center text-xs text-slate-500">첫 메시지를 남겨 보세요.</p>

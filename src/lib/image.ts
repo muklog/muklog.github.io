@@ -115,6 +115,45 @@ async function decodeImage(blob: Blob): Promise<DecodedImage> {
   return decodeWithHtmlImage(blob);
 }
 
+/**
+ * 일부 모바일·WebView 에서 `toBlob` 이 null 을 돌려주는 경우가 있어 toDataURL 로 폴백한다.
+ */
+function canvasToBlobWithFallback(
+  canvas: HTMLCanvasElement,
+  mimeType: string,
+  quality: number,
+): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => {
+        if (b && b.size > 0) {
+          resolve(b);
+          return;
+        }
+        try {
+          const dataUrl = canvas.toDataURL(mimeType, quality);
+          const comma = dataUrl.indexOf(",");
+          if (comma < 0) {
+            reject(new Error("이미지를 JPEG 로 저장하지 못했습니다."));
+            return;
+          }
+          const base64 = dataUrl.slice(comma + 1);
+          const bin = atob(base64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const out = new Blob([bytes], { type: mimeType });
+          if (out.size > 0) resolve(out);
+          else reject(new Error("이미지를 JPEG 로 저장하지 못했습니다."));
+        } catch (e) {
+          reject(e instanceof Error ? e : new Error(String(e)));
+        }
+      },
+      mimeType,
+      quality,
+    );
+  });
+}
+
 export async function compressImage(
   file: Blob,
   opts: CompressOptions = {},
@@ -127,9 +166,14 @@ export async function compressImage(
   } = opts;
   const img = await decodeImage(file);
   try {
+    if (!Number.isFinite(img.width) || !Number.isFinite(img.height) || img.width < 1 || img.height < 1) {
+      throw new Error("사진 크기를 읽지 못했습니다. 다시 촬영하거나 갤러리에서 선택해 보세요.");
+    }
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
-    if (!ctx) return file;
+    if (!ctx) {
+      throw new Error("이 브라우저에서 이미지 처리를 할 수 없습니다.");
+    }
 
     if (square) {
       const side = Math.min(img.width, img.height);
@@ -148,13 +192,7 @@ export async function compressImage(
       ctx.drawImage(img.source, 0, 0, w, h);
     }
 
-    return await new Promise<Blob>((resolve) => {
-      canvas.toBlob(
-        (b) => resolve(b ?? file),
-        mimeType,
-        quality,
-      );
-    });
+    return await canvasToBlobWithFallback(canvas, mimeType, quality);
   } finally {
     img.dispose();
   }

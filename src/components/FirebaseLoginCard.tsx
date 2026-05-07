@@ -51,11 +51,7 @@ export default function FirebaseLoginCard() {
   }
 
   if (loading) {
-    return (
-      <section className="card flex items-center gap-2 border-slate-800 bg-slate-900/40 px-4 py-3 text-xs text-slate-500">
-        <Loader2 size={14} className="animate-spin" /> 로그인 확인 중…
-      </section>
-    );
+    return null;
   }
 
   if (user) {

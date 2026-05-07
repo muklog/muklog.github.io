@@ -10,7 +10,6 @@ import {
   LogIn,
   LogOut,
   Palette,
-  RefreshCw,
   Trash2,
   TriangleAlert,
   UserRound,
@@ -28,7 +27,6 @@ import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { normalizeTheme, persistTheme } from "../lib/theme";
 import { THEME_IDS, THEME_LABELS, type ThemeId } from "../types";
 import { cls } from "../lib/utils";
-import { syncCloudWithLocal } from "../lib/cloudSync";
 import { wipeMyCloudData } from "../lib/wipeCloud";
 import { isEmbeddedBrowserLikelyBlockingGoogleOAuth } from "../lib/inAppBrowser";
 import EmbeddedGoogleLoginNotice from "../components/EmbeddedGoogleLoginNotice";
@@ -61,8 +59,6 @@ export default function SettingsPage() {
     | { kind: "fail"; msg: string }
   >({ kind: "idle" });
   const [keySavedFlash, setKeySavedFlash] = useState(false);
-  const [syncBusy, setSyncBusy] = useState(false);
-  const [syncFlash, setSyncFlash] = useState<null | { kind: "ok" | "err"; text: string }>(null);
 
   const oauthInAppBlocked =
     typeof navigator !== "undefined" && isEmbeddedBrowserLikelyBlockingGoogleOAuth();
@@ -94,24 +90,6 @@ export default function SettingsPage() {
         kind: "fail",
         msg: e instanceof Error ? e.message : "연결 실패",
       });
-    }
-  }
-
-  async function manualCloudSync() {
-    if (!firebaseReady || !user || syncBusy) return;
-    setSyncBusy(true);
-    setSyncFlash(null);
-    try {
-      await syncCloudWithLocal();
-      setSyncFlash({ kind: "ok", text: "클라우드와 맞춰 저장했어요." });
-    } catch (e) {
-      setSyncFlash({
-        kind: "err",
-        text: e instanceof Error ? e.message : "동기화에 실패했어요.",
-      });
-    } finally {
-      setSyncBusy(false);
-      window.setTimeout(() => setSyncFlash(null), 4000);
     }
   }
 
@@ -201,12 +179,6 @@ export default function SettingsPage() {
           </p>
         ) : null}
 
-        {firebaseReady && authLoading && (
-          <p className="flex items-center gap-2 text-xs text-slate-400">
-            <Loader2 size={14} className="animate-spin" /> 확인 중…
-          </p>
-        )}
-
         {firebaseReady && !authLoading && !user && (
           <div className="space-y-2">
             <EmbeddedGoogleLoginNotice />
@@ -255,44 +227,6 @@ export default function SettingsPage() {
         {profileUser ? (
           <div className="space-y-4">
             <ProfileIdentitySection user={profileUser} authUser={user} />
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/50 p-3">
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-slate-200">클라우드 동기화</p>
-                <p className="mt-0.5 text-[11px] text-slate-500">
-                  마지막 동기화:{" "}
-                  {settings?.lastCloudSyncAt && Number.isFinite(settings.lastCloudSyncAt)
-                    ? new Date(settings.lastCloudSyncAt).toLocaleString("ko-KR", {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      })
-                    : "기록 없음"}
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={!firebaseReady || !user || syncBusy}
-                onClick={() => void manualCloudSync()}
-                className="btn-secondary inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl p-0 disabled:opacity-50"
-                aria-label="클라우드와 지금 동기화"
-                title="클라우드와 지금 동기화"
-              >
-                {syncBusy ? (
-                  <Loader2 size={20} className="animate-spin text-brand-400" aria-hidden />
-                ) : (
-                  <RefreshCw size={20} className="text-brand-400" aria-hidden />
-                )}
-              </button>
-            </div>
-            {syncFlash && (
-              <p
-                className={cls(
-                  "text-xs",
-                  syncFlash.kind === "ok" ? "text-emerald-400" : "text-rose-400",
-                )}
-              >
-                {syncFlash.text}
-              </p>
-            )}
           </div>
         ) : (
           <p className="text-sm text-slate-500">프로필을 불러오는 중이에요.</p>

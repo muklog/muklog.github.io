@@ -20,7 +20,7 @@ export default function MessagesPage() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const peerFromQuery = searchParams.get("with")?.trim();
-  const { user, firebaseReady } = useAuth();
+  const { user, firebaseReady, loading: authLoading } = useAuth();
   const {
     threads,
     readMap,
@@ -117,6 +117,13 @@ export default function MessagesPage() {
 
   if (!firebaseReady) return <Placeholder>Firebase 연동이 필요해요.</Placeholder>;
   if (!user) {
+    if (authLoading) {
+      return (
+        <div className="flex flex-col gap-4 px-4 pt-5">
+          <TitleBlock dmUnread={0} />
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col gap-4 px-4 pt-5">
         <TitleBlock dmUnread={0} />

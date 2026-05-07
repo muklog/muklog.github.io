@@ -130,10 +130,19 @@ export default function MealSocialBlock({ ownerUid, mealId }: Props) {
             />
             <div
               className="flex items-center gap-1.5 text-slate-400"
-              aria-label={`댓글 ${total}개`}
+              aria-label={comments === null ? "댓글 수 불러오는 중" : `댓글 ${total}개`}
             >
               <MessageCircle size={16} strokeWidth={2} className="shrink-0 opacity-90" />
-              <span className="text-xs font-medium tabular-nums text-slate-300">댓글 {total}</span>
+              <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums text-slate-300">
+                댓글{" "}
+                <span className="inline-flex min-w-[1rem] items-center justify-center">
+                  {comments === null ? (
+                    <Loader2 size={14} className="animate-spin text-slate-500" aria-hidden />
+                  ) : (
+                    total
+                  )}
+                </span>
+              </span>
             </div>
           </div>
           <div className="space-y-2">
@@ -209,7 +218,13 @@ function LikeRow({
       aria-pressed={effectiveLiked}
     >
       <Heart size={16} strokeWidth={2} className={cls("shrink-0", effectiveLiked && "fill-current")} />
-      <span className="text-xs font-medium tabular-nums">{loading ? "—" : likeCount}</span>
+      <span className="inline-flex min-w-[1.25rem] items-center justify-center text-xs font-medium tabular-nums">
+        {loading ? (
+          <Loader2 size={14} className="animate-spin text-slate-400" aria-hidden />
+        ) : (
+          likeCount
+        )}
+      </span>
     </button>
   );
 }
@@ -465,14 +480,21 @@ function CommentLikeButton({
     <button
       type="button"
       onClick={onToggle}
+      disabled={serverCount === null}
       className={cls(
-        "inline-flex items-center gap-1 transition-colors",
+        "inline-flex items-center gap-1 transition-colors disabled:cursor-not-allowed disabled:opacity-55",
         effectiveLiked ? "text-rose-300" : "hover:text-slate-300",
       )}
       aria-pressed={effectiveLiked}
     >
       <Heart size={11} className={cls(effectiveLiked && "fill-current")} />
-      <span className="tabular-nums">{display === null ? "—" : Math.max(0, display)}</span>
+      <span className="inline-flex min-w-[0.875rem] items-center justify-center tabular-nums">
+        {display === null ? (
+          <Loader2 size={12} className="animate-spin text-slate-500" aria-hidden />
+        ) : (
+          Math.max(0, display)
+        )}
+      </span>
     </button>
   );
 }

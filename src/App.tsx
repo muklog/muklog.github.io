@@ -40,7 +40,7 @@ export default function App() {
   /** DM 대화방은 안쪽 메시지 영역이 스크롤 — 풀투새프레시와 충돌하므로 이 라우트만 끈다 */
   const isDmThreadRoute = /^\/messages\/[^/]+$/.test(location.pathname);
 
-  const { firebaseReady, user: firebaseUser, loading: authLoading } = useAuth();
+  const { firebaseReady, user: firebaseUser } = useAuth();
   const [hydrationTimedOut, setHydrationTimedOut] = useState(false);
 
   // settings / userCount 를 분리 쿼리하면 커밋 직후 한 프레임만 어긋나도
@@ -56,7 +56,6 @@ export default function App() {
   const needsHydrationWait =
     gate !== undefined &&
     firebaseReady &&
-    !authLoading &&
     !!firebaseUser &&
     gate.userCount === 0 &&
     gate.settings.onboarded !== true &&
@@ -145,11 +144,10 @@ export default function App() {
   const needsOnboarding = shouldRedirectToOnboarding(settings, userCount);
 
   /** 예전(d561e64)처럼 `<main>` 을 유지 — 인증·클라우드 대기를 전체 화면 return 으로 바꾸면 PTR 리스너가 떨어진 DOM 에 붙는 버그가 난다 */
-  const blockingAuth = firebaseReady && authLoading;
   const blockingHydration = needsHydrationWait && !hydrationTimedOut;
 
   // 인증·하이드레이션 스플래시 동안에는 온보딩 리다이렉트를 미룸(기존 조기 return 과 동일 순서)
-  if (!blockingAuth && !blockingHydration) {
+  if (!blockingHydration) {
     // 온보딩 페이지에서 사용자가 닉네임·아바타를 다듬고 있는 동안에는 클라우드
     // 동기화로 user/onboarded 가 채워져도 자동으로 메인으로 이탈하지 않는다.
     // (이전엔 `if (!needsOnboarding && isOnboardingRoute) { Navigate("/") }` 가
@@ -175,7 +173,11 @@ export default function App() {
         >
           <main
             ref={bindMainRef}
-            className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-auto overflow-x-hidden bg-slate-950 pb-24 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]"
+            className={
+              isDmThreadRoute
+                ? "relative flex min-h-0 flex-1 touch-pan-y flex-col overflow-hidden overscroll-y-none overflow-x-hidden bg-slate-950 pb-24 [scrollbar-gutter:stable]"
+                : "relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-auto overflow-x-hidden bg-slate-950 pb-24 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]"
+            }
           >
           {/* 풀투새로고침: 레이아웃 높이 0 유지 · absolute 로 가로 중앙 정렬 · motion 만 별도 레이어 */}
           <div
@@ -227,13 +229,9 @@ export default function App() {
                   같은 계정으로 다른 주소에서 쓰던 기록은 잠시 후 여기로 맞춰져요.
                 </p>
               </div>
-            ) : blockingAuth ? (
-              <div className="flex min-h-full flex-col items-center justify-center bg-slate-950 text-slate-500">
-                로그인 확인 중…
-              </div>
             ) : (
               <AppErrorBoundary>
-                <div>
+                <div className={isDmThreadRoute ? "flex min-h-0 flex-1 flex-col" : undefined}>
                   <Routes>
                     {/* 첫 화면은 피드. 기존 달력 홈은 /home 으로 이동 */}
                     <Route path="/" element={<FeedPage />} />
@@ -255,7 +253,7 @@ export default function App() {
               </AppErrorBoundary>
             )}
           </main>
-          {!isOnboardingRoute && !blockingHydration && !blockingAuth && <BottomNav />}
+          {!isOnboardingRoute && !blockingHydration && <BottomNav />}
         </div>
       </FeedStreamProvider>
     </DmRealtimeProvider>

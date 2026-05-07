@@ -49,6 +49,9 @@ export default function PhotoUpload({
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
 
   async function processOne(file: File) {
+    if (!file.size) {
+      throw new Error("사진이 아직 준비되지 않았거나 빈 파일입니다. 잠시 후 다시 촬영해 주세요.");
+    }
     const compressed = await compressImage(file, {
       maxDimension: 1280,
       quality: 0.85,

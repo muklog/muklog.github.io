@@ -26,8 +26,8 @@ import { MEAL_SLOT_EMOJI, MEAL_SLOT_LABELS, type MealItem } from "../types";
  * 친구별 식단 스트림은 Context 쪽 구독과 별개로, 카드가 화면에 있을 때만 좋아요·댓글 리스너가 붙으므로
  * 첫 번째 묶음을 작게 두면 초기 Firestore 사용을 줄일 수 있습니다.
  */
-const FEED_INITIAL_VISIBLE = 5;
-const FEED_LOAD_MORE_COUNT = 5;
+const FEED_INITIAL_VISIBLE = 3;
+const FEED_LOAD_MORE_COUNT = 3;
 
 export default function FeedPage() {
   const { user, firebaseReady, loading: authLoading } = useAuth();
