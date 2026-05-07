@@ -212,9 +212,25 @@ function FriendsTab({
     });
   }, [friendUids]);
 
+  const showOneWayMutualHint =
+    rows !== null &&
+    rows.length === 1 &&
+    rows[0] != null &&
+    !(rows[0].incoming && rows[0].outgoing);
+
   return (
     <>
       <LinkInviteCard />
+      {showOneWayMutualHint ? (
+        <div className="rounded-xl border border-sky-500/25 bg-sky-500/5 px-3 py-2.5 text-[11px] leading-relaxed text-sky-100/90">
+          <p>
+            지금은 이 친구와 <strong className="text-sky-50">한 방향</strong>만 연결돼 있어요.{" "}
+            <strong className="text-sky-50">맞팔</strong>을 다시 맺으려면 위에서{" "}
+            <strong className="text-sky-50">초대 링크를 새로 만들어</strong> 상대에게 보내 주세요. 상대가 보낸
+            링크로 내가 수락하는 경우도 있어요.
+          </p>
+        </div>
+      ) : null}
       <section className="space-y-3">
         {error && <ErrorBanner message={error} />}
         {!error && rows === null && (
