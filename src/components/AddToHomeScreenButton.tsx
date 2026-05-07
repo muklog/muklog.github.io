@@ -59,6 +59,8 @@ function HomePlusGlyph({ className }: { className?: string }) {
 
 export default function AddToHomeScreenButton({ className }: { className?: string }) {
   const [modalOpen, setModalOpen] = useState(false);
+  /** true: 버튼으로 자동 설치 불가 → 수동으로 홈에 추가 안내 */
+  const [modalManualOnly, setModalManualOnly] = useState(false);
   const [installBusy, setInstallBusy] = useState(false);
   const deferredRef = useRef<BeforeInstallPromptEvent | null>(null);
 
@@ -86,9 +88,14 @@ export default function AddToHomeScreenButton({ className }: { className?: strin
     );
   }
 
+  function openManualModal(manualOnly: boolean) {
+    setModalManualOnly(manualOnly);
+    setModalOpen(true);
+  }
+
   async function onAddClick() {
     if (iosLikely()) {
-      setModalOpen(true);
+      openManualModal(false);
       return;
     }
 
@@ -111,11 +118,11 @@ export default function AddToHomeScreenButton({ className }: { className?: strin
         await ev.prompt();
         void ev.userChoice.catch(() => {});
       } catch {
-        setModalOpen(true);
+        openManualModal(true);
       }
       return;
     }
-    setModalOpen(true);
+    openManualModal(true);
   }
 
   return (
@@ -143,15 +150,11 @@ export default function AddToHomeScreenButton({ className }: { className?: strin
             paddingTop: "max(0.75rem, env(safe-area-inset-top, 0px))",
             paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 0px))",
           }}
-          onClick={() => setModalOpen(false)}
           role="dialog"
           aria-modal="true"
           aria-labelledby="add-home-title"
         >
-          <div
-            className="flex max-h-[min(88dvh,calc(100dvh-1.5rem))] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-xl sm:max-h-[min(85vh,36rem)]"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="flex max-h-[min(88dvh,calc(100dvh-1.5rem))] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-xl sm:max-h-[min(85vh,36rem)]">
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-4 py-3">
               <h2 id="add-home-title" className="text-base font-semibold text-slate-100">
                 홈 화면에 설치
@@ -160,24 +163,37 @@ export default function AddToHomeScreenButton({ className }: { className?: strin
                 type="button"
                 className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
                 aria-label="닫기"
-                onClick={() => setModalOpen(false)}
+                onClick={() => {
+                  setModalOpen(false);
+                  setModalManualOnly(false);
+                }}
               >
                 <X size={18} />
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-3 [-webkit-overflow-scrolling:touch]">
               <div className="space-y-3 text-sm leading-relaxed text-slate-300">
-                <p>
-                  <strong className="text-slate-100">Android·PC (크롬·웨일·삼성 인터넷 등):</strong> 브라우저가{" "}
-                  <strong className="text-slate-100">홈 화면에 설치</strong>를 지원하면 이 버튼으로{" "}
-                  <strong className="text-slate-100">설치·추가</strong> 안내 화면이 뜰 수 있어요. 플레이 스토어처럼
-                  앱 마켓에서 받는 것과는 달라요.
-                </p>
-                <p>
-                  <strong className="text-slate-100">iPhone·iPad (사파리):</strong> 웹에서 설치 창을 대신 띄울 수
-                  없어, 아래 <strong className="text-slate-100">3. 사파리</strong> 대로 추가해 주세요. 아이폰 크롬도
-                  보통 같은 순서입니다.
-                </p>
+                {modalManualOnly ? (
+                  <p>
+                    <strong className="text-slate-100">지금 브라우저에서는</strong> 자동 설치(이 버튼으로 바로 띄우는
+                    방식)가 막혀 있거나 지원되지 않는 상태예요.{" "}
+                    <strong className="text-slate-100">아래 순서대로 직접 홈 화면에 추가</strong>해 주세요.
+                  </p>
+                ) : (
+                  <>
+                    <p>
+                      <strong className="text-slate-100">Android·PC (크롬·웨일·삼성 인터넷 등):</strong> 브라우저가{" "}
+                      <strong className="text-slate-100">홈 화면에 설치</strong>를 지원하면 이 버튼으로{" "}
+                      <strong className="text-slate-100">설치·추가</strong> 안내 화면이 뜰 수 있어요. 플레이 스토어처럼
+                      앱 마켓에서 받는 것과는 달라요.
+                    </p>
+                    <p>
+                      <strong className="text-slate-100">iPhone·iPad (사파리):</strong> 웹에서 설치 창을 대신 띄울 수
+                      없어, 아래 <strong className="text-slate-100">3. 사파리</strong> 대로 추가해 주세요. 아이폰
+                      크롬도 보통 같은 순서입니다.
+                    </p>
+                  </>
+                )}
                 {samsungInternetLikely() ? (
                   <p className="rounded-lg border border-brand-500/25 bg-brand-500/5 px-3 py-2 text-xs text-brand-100/95">
                     지금 브라우저: <strong>2. 삼성 인터넷</strong>
@@ -244,10 +260,6 @@ export default function AddToHomeScreenButton({ className }: { className?: strin
                   </ol>
                 </section>
               </div>
-              <p className="mt-3 text-xs text-slate-500">
-                설치 메뉴가 없으면 이미 추가했거나 브라우저 정책일 수 있어요. 달력은 하단 내비{" "}
-                <strong className="text-slate-400">식단</strong>에서도 열 수 있습니다.
-              </p>
             </div>
           </div>
         </div>

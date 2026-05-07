@@ -64,6 +64,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /** `auth.authStateReady()` 전에는 `currentUser === null` 깜빡임이 들어와도 로컬 DB 를 지우면 안 됨 */
   const authSessionResolvedRef = useRef(false);
   const prevFirebaseUidRef = useRef<string | undefined>(undefined);
+  const pendingAuthNullTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 사용자가 로그아웃을 눌렀을 때만 즉시 정리 (그 외 Firebase 일시 null 은 디바운스) */
+  const explicitSignOutRef = useRef(false);
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(!firebaseReady);
   const [signInBusy, setSignInBusy] = useState(false);
@@ -115,35 +118,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const auth = getFirebaseAuth();
     void setPersistence(auth, browserLocalPersistence).catch(() => {});
 
+    const cancelPendingAuthNull = () => {
+      if (pendingAuthNullTimerRef.current != null) {
+        clearTimeout(pendingAuthNullTimerRef.current);
+        pendingAuthNullTimerRef.current = null;
+      }
+    };
+
+    const wipeLocalSessionMarkers = async () => {
+      await clearLocalProfileDataPreservingDevicePreferences();
+      if (typeof localStorage !== "undefined") localStorage.removeItem(LAST_FB_UID_KEY);
+      prevFirebaseUidRef.current = undefined;
+      setUser(null);
+    };
+
     const applyAuthUser = async (nextUser: User | null) => {
       const nextUid = nextUser?.uid;
       const prevUid = prevFirebaseUidRef.current;
 
-      if (firebaseReady && !nextUid && authSessionResolvedRef.current) {
-        const hasStoredUid =
-          typeof localStorage !== "undefined" && !!localStorage.getItem(LAST_FB_UID_KEY);
-        const staleCloud = hasStoredUid
-          ? false
-          : !!(await getSettings()).lastCloudSyncAt;
-        if (hasStoredUid || staleCloud) {
+      if (nextUid) {
+        cancelPendingAuthNull();
+        if (prevUid !== undefined && prevUid !== nextUid) {
           await clearLocalProfileDataPreservingDevicePreferences();
           if (typeof localStorage !== "undefined") localStorage.removeItem(LAST_FB_UID_KEY);
-          prevFirebaseUidRef.current = undefined;
-          setUser(null);
-          return;
         }
+        prevFirebaseUidRef.current = nextUid;
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem(LAST_FB_UID_KEY, nextUid);
+        }
+        setUser(nextUser);
+        return;
       }
 
-      if (prevUid !== undefined && prevUid !== nextUid) {
-        await clearLocalProfileDataPreservingDevicePreferences();
-        if (typeof localStorage !== "undefined") localStorage.removeItem(LAST_FB_UID_KEY);
+      if (explicitSignOutRef.current) {
+        explicitSignOutRef.current = false;
+        cancelPendingAuthNull();
+        await wipeLocalSessionMarkers();
+        return;
       }
 
-      prevFirebaseUidRef.current = nextUid;
-      if (nextUid && typeof localStorage !== "undefined") {
-        localStorage.setItem(LAST_FB_UID_KEY, nextUid);
+      if (!authSessionResolvedRef.current) {
+        cancelPendingAuthNull();
+        prevFirebaseUidRef.current = undefined;
+        setUser(null);
+        return;
       }
-      setUser(nextUser);
+
+      const hasStoredUid =
+        typeof localStorage !== "undefined" && !!localStorage.getItem(LAST_FB_UID_KEY);
+      const staleCloud = hasStoredUid
+        ? false
+        : !!(await getSettings()).lastCloudSyncAt;
+
+      const looksLikeSignedInBefore = prevUid !== undefined || hasStoredUid || staleCloud;
+
+      if (!looksLikeSignedInBefore) {
+        cancelPendingAuthNull();
+        prevFirebaseUidRef.current = undefined;
+        setUser(null);
+        return;
+      }
+
+      cancelPendingAuthNull();
+      pendingAuthNullTimerRef.current = window.setTimeout(async () => {
+        pendingAuthNullTimerRef.current = null;
+        try {
+          await auth.authStateReady();
+          if (auth.currentUser != null) return;
+        } catch {
+          /* */
+        }
+        await wipeLocalSessionMarkers();
+      }, 1400);
     };
 
     const unsubAuth = onAuthStateChanged(auth, (u) => void applyAuthUser(u));
@@ -167,6 +213,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener("pageshow", onShow);
 
     return () => {
+      cancelPendingAuthNull();
       unsubAuth();
       unsubToken();
       timeouts.forEach(clearTimeout);
@@ -208,13 +255,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshUser]);
 
   const signOutApp = useCallback(async () => {
+    if (!firebaseReady) return;
+    explicitSignOutRef.current = true;
     try {
       const auth = getFirebaseAuth();
       await signOut(auth);
     } catch (e) {
+      explicitSignOutRef.current = false;
       console.error("[auth] 로그아웃", e);
     }
-  }, []);
+  }, [firebaseReady]);
 
   const value = useMemo(
     () => ({
