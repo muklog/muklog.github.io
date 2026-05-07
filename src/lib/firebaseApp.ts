@@ -4,7 +4,7 @@ import {
   initializeFirestore,
   memoryLocalCache,
   persistentLocalCache,
-  persistentSingleTabManager,
+  persistentMultipleTabManager,
   type Firestore,
 } from "firebase/firestore";
 
@@ -49,10 +49,11 @@ export function initFirebase(): FirebaseApp | null {
     experimentalAutoDetectLongPolling: true as const,
     localCache: memoryLocalCache(),
   };
+  /** 데스크톱: IndexedDB 영속 캐시 + 멀티 탭 동기화 — 단일 탭 전용 잠금이면 다른 탭·PWA·새 창에서 exclusive access 오류 → 메모리 폴백·permission 레이스 유발 */
   const desktopTryOpts = {
     experimentalAutoDetectLongPolling: true as const,
     localCache: persistentLocalCache({
-      tabManager: persistentSingleTabManager({}),
+      tabManager: persistentMultipleTabManager(),
     }),
   };
 
