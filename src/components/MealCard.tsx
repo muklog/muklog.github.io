@@ -218,12 +218,14 @@ export function MealItemCardsCarousel({
     <div className="w-full">
       <div
         ref={scrollerRef}
+        data-mealog-carousel-scroller
         onScroll={() => requestAnimationFrame(syncSlideFromScroll)}
         className="flex w-full snap-x snap-mandatory overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {items.map((it, idx) => (
           <div
             key={it.id}
+            data-mealog-carousel-slide={String(idx)}
             className="min-w-0 w-full shrink-0 flex-[0_0_100%] snap-center snap-always"
           >
             {renderSlide(it, idx)}

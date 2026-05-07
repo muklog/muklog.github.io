@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useFeedStream, type FeedAuthor, type FeedEntry } from "../contexts/FeedStreamContext";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Home, Loader2, Plus, Rss, Share2, Sparkles, UserPlus } from "lucide-react";
+import { Loader2, Plus, Rss, Share2, Sparkles, UserPlus } from "lucide-react";
 import { getAnalysisProfileForUser, getSettings } from "../lib/db";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { MealItemCard, MealItemCardsCarousel, MealItemEditDialog } from "../components/MealCard";
@@ -19,6 +19,7 @@ import { analyzeMealImage } from "../lib/ai";
 import { shareMealCardFromElement } from "../lib/shareMealCardImage";
 import { getAppShareAbsoluteUrl } from "../lib/siteUrl";
 import FeedAlertsHeaderIcons from "../components/FeedAlertsHeaderIcons";
+import AddToHomeScreenButton from "../components/AddToHomeScreenButton";
 import { MEAL_SLOT_EMOJI, MEAL_SLOT_LABELS, type MealItem } from "../types";
 import { tabLoadingMessage } from "../lib/tabLoadingMessage";
 
@@ -108,12 +109,7 @@ export default function FeedPage() {
               <span className="invisible inline-flex h-10 w-10 shrink-0" aria-hidden />
             )}
           </div>
-          <Link
-            to="/home"
-            className="btn-secondary inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap py-2 pl-3 pr-3 text-sm"
-          >
-            <Home size={14} className="shrink-0" /> 식단
-          </Link>
+          <AddToHomeScreenButton />
         </div>
       </header>
 
@@ -207,10 +203,24 @@ interface FeedCardProps {
   myApiKey: string | undefined;
 }
 
+function queryCarouselSlideRoots(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>("[data-mealog-carousel-slide]")];
+}
+
+function activeCarouselIdxFromDom(root: HTMLElement): number | null {
+  const scroller = root.querySelector<HTMLElement>("[data-mealog-carousel-scroller]");
+  if (!scroller) return null;
+  const w = scroller.clientWidth;
+  if (w <= 0) return null;
+  return Math.max(0, Math.round(scroller.scrollLeft / w));
+}
+
 function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: FeedCardProps) {
   const { author, meal, isMine } = entry;
   const items = meal.items ?? [];
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  /** 공유·캡처 시 현재 보이는 슬라이드와 맞춤 */
+  const [carouselSlideIdx, setCarouselSlideIdx] = useState(0);
   /** 피드에서 사진 재분석 중일 때 버튼 스피너만 씀 (전 카드 분석 중 UI 없음) */
   const [imageReanalyzeBusyId, setImageReanalyzeBusyId] = useState<string | null>(null);
   const [shareBusy, setShareBusy] = useState(false);
@@ -221,6 +231,24 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
     const el = mealShareRef.current;
     if (!el || shareBusy || items.length === 0) return;
     setShareBusy(true);
+    const slides = queryCarouselSlideRoots(el);
+    const restore: Array<{ node: HTMLElement; display: string; position: string }> = [];
+    if (items.length > 1 && slides.length > 1) {
+      const fromDom = activeCarouselIdxFromDom(el);
+      const activeIdx =
+        fromDom !== null ? Math.min(fromDom, slides.length - 1) : carouselSlideIdx;
+      slides.forEach((node, i) => {
+        if (i !== activeIdx) {
+          restore.push({
+            node,
+            display: node.style.display,
+            position: node.style.position,
+          });
+          node.style.display = "none";
+          node.style.position = "absolute";
+        }
+      });
+    }
     try {
       const promoUrl = getAppShareAbsoluteUrl();
       await shareMealCardFromElement(el, {
@@ -233,6 +261,10 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
       console.error("[FeedCard] share", e);
       alert(e instanceof Error ? e.message : "이미지를 만들지 못했습니다.");
     } finally {
+      for (const r of restore) {
+        r.node.style.display = r.display;
+        r.node.style.position = r.position;
+      }
       setShareBusy(false);
     }
   }
@@ -351,6 +383,7 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
         <div className="space-y-3 p-3">
           <MealItemCardsCarousel
             items={items}
+            onActiveSlideChange={setCarouselSlideIdx}
             renderSlide={(it, idx) => (
               <MealItemCard
                 item={it}
