@@ -24,6 +24,7 @@ import DmChatPage from "./pages/DmChatPage";
 import BottomNav from "./components/BottomNav";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { DmRealtimeProvider } from "./contexts/DmRealtimeContext";
+import { tabLoadingMessage } from "./lib/tabLoadingMessage";
 import type { AppSettings } from "./types";
 
 /** 온보딩 완료 후 Dexie userCount 가 잠깐 0인 타이밍에 /onboarding 으로 튕기지 않도록, 완료 플래그를 우선한다. */
@@ -214,7 +215,7 @@ export default function App() {
                   aria-hidden
                 />
                 {ptr.pendingReload
-                  ? "피드를 불러오는 중…"
+                  ? tabLoadingMessage(location.pathname)
                   : ptr.armed
                     ? "놓으면 새로고침"
                     : "당겨서 새로고침"}

@@ -1,8 +1,5 @@
 import { type RefObject, useLayoutEffect, useRef, useState } from "react";
-import {
-  armPullRefreshBeforeReload,
-  mountPullRefreshSplashNow,
-} from "../lib/pullRefreshSplash";
+import { armPullRefreshBeforeReload } from "../lib/pullRefreshSplash";
 
 /** 손가락 이동(px)으로 새로고침 여부 판단 — 시각적 당김은 damp 적용 */
 export const PULL_TO_REFRESH_THRESHOLD_PX = 72;
@@ -132,7 +129,6 @@ export function usePullToRefresh(
 
         if (go) {
           armPullRefreshBeforeReload();
-          mountPullRefreshSplashNow();
           setPendingReload(true);
           setPullPx((v) => Math.max(v, 56));
           void document.body.offsetHeight;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useFeedStream, type FeedAuthor, type FeedEntry } from "../contexts/FeedStreamContext";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -20,6 +20,7 @@ import { shareMealCardFromElement } from "../lib/shareMealCardImage";
 import { getAppShareAbsoluteUrl } from "../lib/siteUrl";
 import FeedAlertsHeaderIcons from "../components/FeedAlertsHeaderIcons";
 import { MEAL_SLOT_EMOJI, MEAL_SLOT_LABELS, type MealItem } from "../types";
+import { tabLoadingMessage } from "../lib/tabLoadingMessage";
 
 /**
  * 피드 탭 — 스트림은 App 의 FeedStreamProvider 에서 구독하고, 여기서는 렌더링만 합니다.
@@ -30,6 +31,7 @@ const FEED_INITIAL_VISIBLE = 3;
 const FEED_LOAD_MORE_COUNT = 3;
 
 export default function FeedPage() {
+  const { pathname } = useLocation();
   const { user, firebaseReady, loading: authLoading } = useAuth();
   const fs = useFeedStream();
   const entries = fs?.entries ?? [];
@@ -144,49 +146,53 @@ export default function FeedPage() {
         </Link>
       )}
 
-      {!streamReady && (
-        <div
-          className="card flex flex-col items-center justify-center gap-3 py-14 text-center"
-          aria-busy
-          aria-live="polite"
-        >
-          <Loader2 className="h-8 w-8 animate-spin text-brand-400" aria-hidden />
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-slate-200">피드를 불러오는 중…</p>
-            {myUid && (
-              <p className="text-xs text-slate-500">친구와 공유된 식단을 함께 가져오고 있어요.</p>
-            )}
+      {/* 식단 카드 목록이 들어갈 영역만 로딩 — 헤더·배너는 그대로 */}
+      <section className="flex flex-col gap-4" aria-busy={!streamReady}>
+        {!streamReady ? (
+          <div
+            className="card flex min-h-[11rem] flex-col items-center justify-center gap-3 px-4 py-6 text-center"
+            aria-live="polite"
+          >
+            <Loader2 className="h-7 w-7 shrink-0 animate-spin text-brand-400" aria-hidden />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-slate-200">{tabLoadingMessage(pathname)}</p>
+              {myUid && (
+                <p className="text-xs text-slate-500">친구와 공유된 식단을 함께 가져오고 있어요.</p>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <>
+            {entries.length === 0 && (
+              <p className="card p-6 text-center text-sm text-slate-400">
+                <Sparkles size={16} className="mb-0.5 mr-1 inline text-brand-400" />
+                아직 기록이 없어요. 오늘의 첫 끼니를 찍어 올려볼까요?
+              </p>
+            )}
 
-      {streamReady && entries.length === 0 && (
-        <p className="card p-6 text-center text-sm text-slate-400">
-          <Sparkles size={16} className="mb-0.5 mr-1 inline text-brand-400" />
-          아직 기록이 없어요. 오늘의 첫 끼니를 찍어 올려볼까요?
-        </p>
-      )}
+            {entries.length > 0 && (
+              <div className="space-y-4">
+                {visibleEntries.map((e) => (
+                  <FeedCard
+                    key={`${e.author.uid}_${e.meal.id}`}
+                    entry={e}
+                    showSocial={!!myUid}
+                    myFirebaseUid={myUid}
+                    myUserId={myUserId}
+                    myApiKey={apiKey}
+                  />
+                ))}
+              </div>
+            )}
 
-      {streamReady && entries.length > 0 && (
-        <div className="space-y-4">
-          {visibleEntries.map((e) => (
-            <FeedCard
-              key={`${e.author.uid}_${e.meal.id}`}
-              entry={e}
-              showSocial={!!myUid}
-              myFirebaseUid={myUid}
-              myUserId={myUserId}
-              myApiKey={apiKey}
-            />
-          ))}
-        </div>
-      )}
-
-      {streamReady && visibleCount < entries.length && (
-        <div ref={sentinelRef} className="flex justify-center py-6" aria-hidden>
-          <span className="text-xs text-slate-500">더 불러오는 중…</span>
-        </div>
-      )}
+            {visibleCount < entries.length && (
+              <div ref={sentinelRef} className="flex justify-center py-6" aria-hidden>
+                <span className="text-xs text-slate-500">더 불러오는 중…</span>
+              </div>
+            )}
+          </>
+        )}
+      </section>
     </div>
   );
 }
@@ -361,8 +367,11 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
               />
             )}
           />
-        {items.length > 0 && (
+        {items.length >= 2 && (
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+            <span className="rounded-full bg-slate-800/60 px-2 py-0.5 text-slate-300">
+              사진 {items.length}장
+            </span>
             {avgRating !== undefined && (
               <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-300">
                 ★ 평균 {avgRating.toFixed(1)}
@@ -371,11 +380,6 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
             {totalCalories > 0 && (
               <span className="rounded-full bg-slate-800/60 px-2 py-0.5">
                 🔥 {Math.round(totalCalories)} kcal
-              </span>
-            )}
-            {items.length > 1 && (
-              <span className="rounded-full bg-slate-800/60 px-2 py-0.5">
-                사진 {items.length}장
               </span>
             )}
           </div>
