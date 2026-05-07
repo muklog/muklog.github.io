@@ -54,14 +54,80 @@ export function userFacingStorageErrorMessage(err: unknown): string {
   return "저장에 실패했어요. 새로고침 후 다시 시도해 주세요.";
 }
 
-async function recoverDexieConnection(dexieDb: Dexie): Promise<void> {
+/**
+ * 네이티브 IndexedDB 연결이 끊긴 뒤에도 Dexie 는 열린 상태로 남는 경우가 있어,
+ * 닫았다가 다시 연다. 호출은 직렬 큐로 묶어 동시에 두 번 닫기/열기가 겹치지 않게 한다.
+ */
+async function doRecoverDexieConnection(dexieDb: Dexie): Promise<void> {
   try {
     dexieDb.close();
   } catch {
     /* noop */
   }
-  await sleep(isAppleMobileUa() ? 110 : 70);
-  await dexieDb.open();
+  await sleep(isAppleMobileUa() ? 120 : 75);
+  const openDelaysMs = isAppleMobileUa()
+    ? [0, 90, 180, 340, 520, 850, 1300]
+    : [0, 70, 160, 340];
+  let lastErr: unknown;
+  for (let i = 0; i < openDelaysMs.length; i++) {
+    const d = openDelaysMs[i];
+    if (d > 0) await sleep(d);
+    try {
+      await dexieDb.open();
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (!isTransientIndexedDbError(e)) throw e;
+    }
+  }
+  throw lastErr;
+}
+
+let recoverChain = Promise.resolve();
+
+export async function recoverDexieConnection(dexieDb: Dexie): Promise<void> {
+  const run = recoverChain.then(() => doRecoverDexieConnection(dexieDb));
+  recoverChain = run.catch(() => {
+    /* 다음 복구 요청이 체인에서 끊기지 않도록 */
+  });
+  await run;
+}
+
+/**
+ * Safari(iOS) 등에서 탭이 백그라운드로 갔다 오면 IndexedDB 서버 연결이 끊긴 채로 남는 경우가 많아,
+ * 포그라운드 복귀·bfcache 복원 시 선제적으로 한 번 재연결한다.
+ */
+export function installIndexedDbLifecycleHandlers(dexieDb: Dexie): void {
+  if (typeof document === "undefined" || typeof window === "undefined") return;
+
+  let wasHidden = false;
+  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const scheduleReconnect = () => {
+    if (debounceTimer !== undefined) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = undefined;
+      void recoverDexieConnection(dexieDb).catch((e) => {
+        console.warn("[idb] lifecycle 재연결 실패", e);
+      });
+    }, 280);
+  };
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      wasHidden = true;
+      return;
+    }
+    if (document.visibilityState === "visible" && wasHidden) {
+      wasHidden = false;
+      scheduleReconnect();
+    }
+  });
+
+  window.addEventListener("pageshow", (ev: Event) => {
+    const pe = ev as PageTransitionEvent;
+    if (pe.persisted) scheduleReconnect();
+  });
 }
 
 export async function withIndexedDbRetry<T>(
@@ -88,7 +154,8 @@ export async function withIndexedDbRetry<T>(
     } catch (e) {
       lastErr = e;
       if (attempt === retries || !isTransientIndexedDbError(e)) throw e;
-      const recoverFrom = appleMobile ? 1 : 2;
+      /** iOS 는 첫 실패 직후부터 네이티브 연결 재수립이 안전하다. 데스크톱은 노이즈 줄이려 2번째부터 */
+      const recoverFrom = appleMobile ? 0 : 2;
       if (attempt >= recoverFrom) await recoverDexieConnection(dexieDb);
       await sleep(delaysMs[Math.min(attempt, delaysMs.length - 1)] ?? 150);
     }
