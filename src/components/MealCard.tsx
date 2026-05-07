@@ -30,6 +30,10 @@ interface ItemCardProps {
   index: number;
   readOnly?: boolean;
   canAnalyze?: boolean;
+  /** true 면 이미지 위 전체 분석 중 오버레이 표시 (피드 등에서는 끌 수 있음) */
+  showPhotoAnalyzingOverlay?: boolean;
+  /** 재분석 API 진행 중 — 버튼에만 스피너 (카드 전체 대신) */
+  reanalyzeBusy?: boolean;
   onReanalyze?: () => void;
   onEdit?: () => void;
   onRemove?: () => void;
@@ -40,6 +44,8 @@ export function MealItemCard({
   index,
   readOnly = false,
   canAnalyze = false,
+  showPhotoAnalyzingOverlay = true,
+  reanalyzeBusy = false,
   onReanalyze,
   onEdit,
   onRemove,
@@ -62,7 +68,7 @@ export function MealItemCard({
             사진 없음
           </div>
         )}
-        {item.analysisStatus === "analyzing" && (
+        {showPhotoAnalyzingOverlay && item.analysisStatus === "analyzing" && (
           <div
             className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950/60 backdrop-blur-[2px]"
             aria-busy
@@ -90,6 +96,7 @@ export function MealItemCard({
         item={item}
         readOnly={readOnly}
         canAnalyze={canAnalyze}
+        reanalyzeBusy={reanalyzeBusy}
         onReanalyze={onReanalyze}
         onEdit={onEdit}
       />
@@ -217,6 +224,8 @@ interface AnalysisProps {
   item: MealItem;
   readOnly?: boolean;
   canAnalyze?: boolean;
+  /** 재분석 요청 진행 중 — 해당 버튼에 스피너만 */
+  reanalyzeBusy?: boolean;
   onReanalyze?: () => void;
   onEdit?: () => void;
 }
@@ -244,6 +253,7 @@ export function ItemAnalysisBlock({
   item,
   readOnly = false,
   canAnalyze = false,
+  reanalyzeBusy = false,
   onReanalyze,
   onEdit,
 }: AnalysisProps) {
@@ -329,8 +339,21 @@ export function ItemAnalysisBlock({
                 </button>
               )}
               {canAnalyze && onReanalyze && (
-                <button onClick={onReanalyze} className="inline-flex items-center gap-1 hover:text-slate-300">
-                  <RefreshCw size={11} /> 다시 분석
+                <button
+                  type="button"
+                  onClick={onReanalyze}
+                  disabled={reanalyzeBusy}
+                  className={cls(
+                    "inline-flex items-center gap-1 hover:text-slate-300 disabled:pointer-events-none",
+                    reanalyzeBusy && "text-slate-400",
+                  )}
+                >
+                  {reanalyzeBusy ? (
+                    <Loader2 size={11} className="animate-spin text-brand-400" aria-hidden />
+                  ) : (
+                    <RefreshCw size={11} />
+                  )}
+                  다시 분석
                 </button>
               )}
             </div>
@@ -372,8 +395,18 @@ export function ItemAnalysisBlock({
         {!readOnly && (
           <div className="flex gap-1.5">
             {canAnalyze && onReanalyze && (
-              <button onClick={onReanalyze} className="btn-secondary flex-1 py-2 text-sm">
-                <RefreshCw size={14} /> 다시 시도
+              <button
+                type="button"
+                onClick={onReanalyze}
+                disabled={reanalyzeBusy}
+                className="btn-secondary flex-1 py-2 text-sm disabled:opacity-60"
+              >
+                {reanalyzeBusy ? (
+                  <Loader2 size={14} className="animate-spin" aria-hidden />
+                ) : (
+                  <RefreshCw size={14} />
+                )}
+                다시 시도
               </button>
             )}
             {onEdit && (
@@ -392,8 +425,18 @@ export function ItemAnalysisBlock({
   return (
     <div className="flex gap-1.5">
       {canAnalyze && onReanalyze && (
-        <button onClick={onReanalyze} className="btn-secondary flex-1 py-2 text-sm">
-          <Sparkles size={14} /> AI 분석 시작
+        <button
+          type="button"
+          onClick={onReanalyze}
+          disabled={reanalyzeBusy}
+          className="btn-secondary flex-1 py-2 text-sm disabled:opacity-60"
+        >
+          {reanalyzeBusy ? (
+            <Loader2 size={14} className="animate-spin" aria-hidden />
+          ) : (
+            <Sparkles size={14} />
+          )}
+          AI 분석 시작
         </button>
       )}
       {onEdit && (

@@ -38,8 +38,10 @@ export async function updateMealItem(
   mealId: string,
   itemId: string,
   transform: (it: MealItem) => MealItem,
+  options?: { bumpMealUpdatedAt?: boolean },
 ): Promise<void> {
   const now = Date.now();
+  const bumpMeal = options?.bumpMealUpdatedAt !== false;
   /** 성공 후 동기화 정책용 */
   let nextItemSnapshot: MealItem | undefined;
 
@@ -54,7 +56,11 @@ export async function updateMealItem(
         it.id === itemId ? { ...transform(it), updatedAt: now } : it,
       );
       nextItemSnapshot = nextItems.find((it) => it.id === itemId);
-      await db.meals.put({ ...normalized, items: nextItems, updatedAt: now });
+      await db.meals.put({
+        ...normalized,
+        items: nextItems,
+        updatedAt: bumpMeal ? now : normalized.updatedAt,
+      });
       return true;
     });
   }
