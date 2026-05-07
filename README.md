@@ -84,13 +84,26 @@ npm run dev
 3. **도메인 추가** → `mealog.github.io` 입력 후 저장  
 4. (선택) 예전에 `*.github.io` 만 있었다면 기존 `gogojeje1022.github.io` 는 당분간 두어도 됩니다.
 
-**GitHub Actions 빌드**는 새 저장소(`mealog/mealog.github.io`)에도 예전과 **동일한 이름**의 Secrets 가 필요합니다.
+**GitHub Actions 빌드**는 새 저장소(`mealog/mealog.github.io`)에도 예전과 **동일한 이름**의 **Repository secrets** 가 필요합니다. (**Variables** 탭이 아니라 **Secrets** 입니다.)
 
-- 저장소 → **Settings** → **Secrets and variables** → **Actions**  
-- 아래 키를 **기존 `healthhealth` 저장소에서 복사**해 동일하게 등록:  
-  `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`
+- 저장소 → **Settings** → **Secrets and variables** → **Actions** → **Repository secrets**
 
-Secrets 없으면 빌드는 되어도 **클라우드 로그인·동기화 UI가 비활성**될 수 있습니다. 등록 후 **Actions** 에서 실패한 워크플로가 있으면 **Re-run** 하세요.
+각 항목 옆 **연필(Update)** 으로 열어 **Firebase에 나온 값만** 다시 붙여 넣고 **Update secret** 을 누르세요. GitHub는 저장 후 값을 다시 보여 주지 않습니다 — 비었는지는 배포 워크플로 로그의 **「Firebase Secrets 채워졌는지 확인」** 단계 경고로 확인합니다.
+
+| Secret 이름 | Firebase 웹 앱 `firebaseConfig` |
+|-------------|--------------------------------|
+| `VITE_FIREBASE_API_KEY` | `apiKey` |
+| `VITE_FIREBASE_AUTH_DOMAIN` | `authDomain` |
+| `VITE_FIREBASE_PROJECT_ID` | `projectId` |
+| `VITE_FIREBASE_APP_ID` | `appId` |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | `messagingSenderId` |
+| `VITE_FIREBASE_STORAGE_BUCKET` | `storageBucket` (선택, 넣는 것 권장) |
+
+클라우드 로그인을 쓰려면 **위 표에서 맨 위 네 개**는 반드시 채워야 합니다.
+
+값 위치: Firebase Console → **프로젝트 설정(톱니바퀴)** → **일반** → **내 앱**에서 웹 앱 선택 → **Firebase SDK snippet** 의 **구성** 객체.
+
+등록 후 **Actions** 에서 워크플로를 **Re-run workflow** 하세요.
 
 ### 커스텀 도메인 사용시
 

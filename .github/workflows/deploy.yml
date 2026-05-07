@@ -47,7 +47,41 @@ jobs:
             echo "base=/$REPO_NAME/" >> "$GITHUB_OUTPUT"
           fi
 
-      # GitHub 저장소 Settings → Secrets: VITE_FIREBASE_* (웹 앱 구성 값). 없으면 빌드는 되나 클라우드 로그인 UI는 비활성.
+      # GitHub 저장소 Settings → Secrets and variables → Actions → Repository secrets
+      # 이름만 만들고 값을 안 넣으면 빌드는 되지만 앱에서 Firebase 가 꺼진 것처럼 동작합니다.
+      # 값 확인: Actions 실행 로그에서 아래 단계의 경고를 보면 됩니다(값 자체는 절대 출력 안 함).
+      - name: Firebase Secrets 채워졌는지 확인
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+        run: |
+          missing=0
+          need() {
+            name="$1"
+            val="$2"
+            if [ -z "${val:-}" ]; then
+              echo "::warning::$name — 비어 있습니다. Settings → Secrets → Actions 에서 해당 이름을 연필(업데이트)으로 열고 Firebase 값을 붙여넣어 저장하세요."
+              missing=1
+            fi
+          }
+          need "VITE_FIREBASE_API_KEY" "$VITE_FIREBASE_API_KEY"
+          need "VITE_FIREBASE_AUTH_DOMAIN" "$VITE_FIREBASE_AUTH_DOMAIN"
+          need "VITE_FIREBASE_PROJECT_ID" "$VITE_FIREBASE_PROJECT_ID"
+          need "VITE_FIREBASE_APP_ID" "$VITE_FIREBASE_APP_ID"
+          if [ -z "${VITE_FIREBASE_MESSAGING_SENDER_ID:-}" ]; then
+            echo "::notice::VITE_FIREBASE_MESSAGING_SENDER_ID 가 비어 있음 — 가능하면 Firebase 웹 앱 구성의 messagingSenderId 를 넣는 것을 권장합니다."
+          fi
+          if [ -z "${VITE_FIREBASE_STORAGE_BUCKET:-}" ]; then
+            echo "::notice::VITE_FIREBASE_STORAGE_BUCKET 가 비어 있음 — 선택 사항입니다. 있으면 storageBucket 도 넣으세요."
+          fi
+          if [ "$missing" -ne 0 ]; then
+            echo "::notice::Firebase Console → 프로젝트 설정(톱니) → 일반 → 내 앱 → 웹 앱 → Firebase SDK 스니펫의 firebaseConfig 객체와 이름을 매칭해 입력합니다."
+          fi
+
       - name: Build
         env:
           VITE_BASE_PATH: ${{ steps.base.outputs.base }}
