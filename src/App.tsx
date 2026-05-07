@@ -37,6 +37,8 @@ export default function App() {
   const isOnboardingRoute = location.pathname.startsWith("/onboarding");
   const isSettingsRoute = location.pathname.startsWith("/settings");
   const isInviteRoute = location.pathname.startsWith("/friends/invite");
+  /** DM 대화방은 안쪽 메시지 영역이 스크롤 — 풀투새프레시와 충돌하므로 이 라우트만 끈다 */
+  const isDmThreadRoute = /^\/messages\/[^/]+$/.test(location.pathname);
 
   const { firebaseReady, user: firebaseUser, loading: authLoading } = useAuth();
   const [hydrationTimedOut, setHydrationTimedOut] = useState(false);
@@ -81,6 +83,7 @@ export default function App() {
    */
   const pullRefreshEnabled =
     gate !== undefined &&
+    !isDmThreadRoute &&
     !(
       shouldRedirectToOnboarding(gate.settings, gate.userCount) &&
       !isOnboardingRoute &&
@@ -177,7 +180,7 @@ export default function App() {
         >
           <main
             ref={mainRef}
-            className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-auto overflow-x-hidden bg-slate-950 pb-24 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]"
+            className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain overflow-x-hidden bg-slate-950 pb-24 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]"
           >
           {/* 풀투새로고침: 레이아웃 높이 0 유지 · absolute 로 가로 중앙 정렬 · motion 만 별도 레이어 */}
           <div

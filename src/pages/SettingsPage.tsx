@@ -10,6 +10,7 @@ import {
   LogIn,
   LogOut,
   Palette,
+  RefreshCw,
   Trash2,
   TriangleAlert,
   UserRound,
@@ -25,8 +26,9 @@ import {
 import { pingGemini } from "../lib/ai";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { normalizeTheme, persistTheme } from "../lib/theme";
-import { THEME_IDS, THEME_LABELS, type ThemeId, type User } from "../types";
+import { THEME_IDS, THEME_LABELS, type ThemeId } from "../types";
 import { cls } from "../lib/utils";
+import { syncCloudWithLocal } from "../lib/cloudSync";
 import { wipeMyCloudData } from "../lib/wipeCloud";
 import { isEmbeddedBrowserLikelyBlockingGoogleOAuth } from "../lib/inAppBrowser";
 import EmbeddedGoogleLoginNotice from "../components/EmbeddedGoogleLoginNotice";
@@ -59,6 +61,8 @@ export default function SettingsPage() {
     | { kind: "fail"; msg: string }
   >({ kind: "idle" });
   const [keySavedFlash, setKeySavedFlash] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncFlash, setSyncFlash] = useState<null | { kind: "ok" | "err"; text: string }>(null);
 
   const oauthInAppBlocked =
     typeof navigator !== "undefined" && isEmbeddedBrowserLikelyBlockingGoogleOAuth();
@@ -93,11 +97,22 @@ export default function SettingsPage() {
     }
   }
 
-  async function changeColor(u: User, color: string) {
-    await runDexie(() =>
-      db.users.put({ ...u, color, updatedAt: Date.now() }),
-    );
-    afterUserDataMutation();
+  async function manualCloudSync() {
+    if (!firebaseReady || !user || syncBusy) return;
+    setSyncBusy(true);
+    setSyncFlash(null);
+    try {
+      await syncCloudWithLocal();
+      setSyncFlash({ kind: "ok", text: "클라우드와 맞춰 저장했어요." });
+    } catch (e) {
+      setSyncFlash({
+        kind: "err",
+        text: e instanceof Error ? e.message : "동기화에 실패했어요.",
+      });
+    } finally {
+      setSyncBusy(false);
+      window.setTimeout(() => setSyncFlash(null), 4000);
+    }
   }
 
   async function wipeAll() {
@@ -240,29 +255,44 @@ export default function SettingsPage() {
         {profileUser ? (
           <div className="space-y-4">
             <ProfileIdentitySection user={profileUser} authUser={user} />
-            <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
-              <p className="mb-2 text-[11px] text-slate-500">
-                피드·식단 등에서 내 항목을 구분할 때 쓰이는 색이에요.
-              </p>
-              <div className="flex items-center gap-3">
-                <span className="shrink-0 text-xs text-slate-400">식별 색</span>
-                <label className="relative shrink-0 cursor-pointer">
-                  <span
-                    className="flex h-10 w-10 items-center justify-center rounded-xl text-base font-bold text-white shadow-inner"
-                    style={{ backgroundColor: profileUser.color }}
-                  >
-                    {profileUser.name.slice(0, 1)}
-                  </span>
-                  <input
-                    type="color"
-                    value={profileUser.color}
-                    onChange={(e) => changeColor(profileUser, e.target.value)}
-                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                    aria-label="식별 색 변경"
-                  />
-                </label>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-slate-200">클라우드 동기화</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  마지막 동기화:{" "}
+                  {settings?.lastCloudSyncAt && Number.isFinite(settings.lastCloudSyncAt)
+                    ? new Date(settings.lastCloudSyncAt).toLocaleString("ko-KR", {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      })
+                    : "기록 없음"}
+                </p>
               </div>
+              <button
+                type="button"
+                disabled={!firebaseReady || !user || syncBusy}
+                onClick={() => void manualCloudSync()}
+                className="btn-secondary inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl p-0 disabled:opacity-50"
+                aria-label="클라우드와 지금 동기화"
+                title="클라우드와 지금 동기화"
+              >
+                {syncBusy ? (
+                  <Loader2 size={20} className="animate-spin text-brand-400" aria-hidden />
+                ) : (
+                  <RefreshCw size={20} className="text-brand-400" aria-hidden />
+                )}
+              </button>
             </div>
+            {syncFlash && (
+              <p
+                className={cls(
+                  "text-xs",
+                  syncFlash.kind === "ok" ? "text-emerald-400" : "text-rose-400",
+                )}
+              >
+                {syncFlash.text}
+              </p>
+            )}
           </div>
         ) : (
           <p className="text-sm text-slate-500">프로필을 불러오는 중이에요.</p>
