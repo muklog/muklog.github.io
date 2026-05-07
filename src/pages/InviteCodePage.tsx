@@ -141,6 +141,9 @@ export default function InviteCodePage() {
           이 링크는 <strong className="text-slate-100">내가 만들어 공유할 초대</strong>예요.
         </p>
         <p className="text-xs text-slate-500">
+          받는 사람이 수락하면 서로의 식단(달력)이 맞팔로 공개되고, 피드에서도 서로 기록을 볼 수 있어요.
+        </p>
+        <p className="text-xs text-slate-500">
           받는 사람에게 카카오톡·문자 등으로 보내 주세요. 본인이 수락할 수는 없어요.
         </p>
         <Link to="/friends" className="btn-primary block w-full py-2 text-center text-sm">
@@ -200,11 +203,17 @@ export default function InviteCodePage() {
     return (
       <Shell>
         <p className="text-sm text-emerald-200">
-          수락했어요. 이제 {invite.fromName}님이 내 식단 기록을 볼 수 있어요.
+          수락했어요. {invite.fromName}님과 <strong className="text-emerald-100">서로의 식단(달력)</strong>을 볼
+          수 있는 맞팔이 됐어요. <strong className="text-emerald-100">피드</strong>에서도 친구 기록이 보여요.
         </p>
-        <Link to="/friends" className="btn-primary block w-full py-2 text-center text-sm">
-          친구 탭으로
-        </Link>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Link to="/" className="btn-primary block flex-1 py-2 text-center text-sm">
+            피드로
+          </Link>
+          <Link to="/friends" className="btn-secondary block flex-1 py-2 text-center text-sm">
+            친구 탭으로
+          </Link>
+        </div>
       </Shell>
     );
   }
@@ -240,8 +249,8 @@ export default function InviteCodePage() {
 
       <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-[11px] text-slate-400">
         <p>
-          수락하면 내 <strong className="text-slate-200">식단(달력) 기록</strong>이 {invite.fromName}님에게
-          공개돼요.
+          수락하면 {invite.fromName}님과 <strong className="text-slate-200">서로의 식단(달력) 기록</strong>이
+          맞팔로 공개돼요. 친구의 새 기록은 <strong className="text-slate-200">피드</strong>에서도 볼 수 있어요.
         </p>
         <p className="mt-1 text-slate-500">건강 기록은 앱에서 친구와 공유되지 않아요.</p>
       </div>

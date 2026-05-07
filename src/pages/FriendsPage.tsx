@@ -212,22 +212,18 @@ function FriendsTab({
     });
   }, [friendUids]);
 
-  const showOneWayMutualHint =
-    rows !== null &&
-    rows.length === 1 &&
-    rows[0] != null &&
-    !(rows[0].incoming && rows[0].outgoing);
+  const showNonMutualHint =
+    rows !== null && rows.some((r) => !(r.incoming && r.outgoing));
 
   return (
     <>
       <LinkInviteCard />
-      {showOneWayMutualHint ? (
+      {showNonMutualHint ? (
         <div className="rounded-xl border border-sky-500/25 bg-sky-500/5 px-3 py-2.5 text-[11px] leading-relaxed text-sky-100/90">
           <p>
-            지금은 이 친구와 <strong className="text-sky-50">한 방향</strong>만 연결돼 있어요.{" "}
-            <strong className="text-sky-50">맞팔</strong>을 다시 맺으려면 위에서{" "}
-            <strong className="text-sky-50">초대 링크를 새로 만들어</strong> 상대에게 보내 주세요. 상대가 보낸
-            링크로 내가 수락하는 경우도 있어요.
+            <strong className="text-sky-50">맞팔이 아닌 친구</strong>가 있어요. 서로 식단(달력)을 다시 맞팔로
+            연결하려면 위에서 <strong className="text-sky-50">초대 링크를 새로 만들어</strong> 보내 주세요.
+            상대가 보낸 링크로 내가 수락하는 경우도 있어요.
           </p>
         </div>
       ) : null}
@@ -238,7 +234,8 @@ function FriendsTab({
         )}
         {rows?.length === 0 && (
           <p className="card p-4 text-center text-xs text-slate-500">
-            아직 친구가 없어요. 위에서 초대 링크를 만들어 공유해 보세요.
+            아직 친구가 없어요. 위에서 초대 링크를 만들어 보내면, 상대가 수락할 때 맞팔로 연결되고 피드에서도
+            서로 식단을 볼 수 있어요.
           </p>
         )}
         {rows?.map((r) => (
@@ -313,7 +310,7 @@ function LinkInviteCard() {
       if (navigator.share) {
         await navigator.share({
           title: "밀로그 친구 초대",
-          text: "내 식단을 볼 수 있도록 초대했어요. 링크에서 수락해 주세요.",
+          text: "밀로그에서 맞팔로 식단을 서로 볼 수 있어요. 링크에서 수락해 주세요.",
           url: lastLink,
         });
       } else {
@@ -333,7 +330,8 @@ function LinkInviteCard() {
         링크로 초대 (카카오톡·문자)
       </h3>
       <p className="text-[11px] text-slate-400">
-        1회용 초대 링크를 만들어 상대에게 보내면 링크로 수락할 수 있어요. 링크는 약{" "}
+        상대가 링크로 수락하면 <strong className="text-slate-200">서로의 식단(달력)</strong>이 맞팔로
+        공개돼요. 친구의 새 기록은 <strong className="text-slate-200">피드</strong>에서도 볼 수 있어요. 링크는 약{" "}
         <strong className="text-slate-200">{INVITE_VALID_HOURS}시간</strong> 동안 유효하고, 한 번
         수락되면 더 이상 쓸 수 없어요.
       </p>
@@ -353,7 +351,7 @@ function LinkInviteCard() {
       )}
       {lastLink && (
         <div className="space-y-2 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3 text-xs text-emerald-100/90">
-          <p className="font-medium">아래 링크를 보내 주세요.</p>
+          <p className="font-medium">아래 링크를 보내 주세요. 수락하면 맞팔·피드에서 서로 식단이 보여요.</p>
           <p className="break-all rounded-lg bg-slate-900/60 px-2 py-1.5 font-mono text-[11px] text-slate-300">
             {lastLink}
           </p>
@@ -521,8 +519,9 @@ function FriendCard({
         </div>
         {!incoming && (
           <p className="rounded-lg bg-slate-900/50 px-2 py-1.5 text-center text-[11px] leading-relaxed text-slate-400">
-            상대 식단을 보고 싶다면 위에서 <strong className="text-slate-300">초대 링크</strong>를 만들어 보내거나,
-            상대가 보낸 링크로 수락해 주세요.
+            상대 식단을 내가 보거나 <strong className="text-slate-300">맞팔</strong>을 맞추려면 위에서{" "}
+            <strong className="text-slate-300">초대 링크</strong>를 만들어 보내거나, 상대가 보낸 링크로
+            수락해 주세요.
           </p>
         )}
       </div>

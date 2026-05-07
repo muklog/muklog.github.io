@@ -58,8 +58,8 @@ export default function FriendProfilePage() {
     return (
       <Shell>
         <p className="mb-3">
-          연결된 친구가 아니에요. 친구 탭에서 <strong className="text-slate-200">초대 링크</strong>로 맞추거나, 상대가 보낸 링크로
-          수락해 주세요.
+          연결된 친구가 아니에요. 친구 탭에서 <strong className="text-slate-200">초대 링크</strong>를 보내
+          맞팔을 맞추거나, 상대가 보낸 링크로 수락해 주세요. 맞팔이 되면 피드에서도 서로 식단을 볼 수 있어요.
         </p>
         <div className="flex gap-2">
           <button

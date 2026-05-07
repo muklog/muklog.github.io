@@ -568,7 +568,7 @@ export function secureRandomInviteId(): string {
 
 /**
  * 1회용(또는 만료 전까지) 초대 문서 생성 — `/friendInviteCodes/{id}`.
- * 수락 시 수락자가 owner, 발급자가 viewer 가 되는 share 가 생깁니다.
+ * 수락 시 맞팔용 share 두 방향이 생깁니다(수락자↔발급자).
  */
 export async function createFriendInviteCode(
   localUser?: User | null,
@@ -612,7 +612,7 @@ export async function createFriendInviteCode(
 }
 
 /**
- * 초대 링크를 수락 — 트랜잭션으로 invite 사용 처리 + share 생성(또는 기존 share 유지).
+ * 초대 링크를 수락 — invite 사용 처리 + 맞팔용 양방향 shares 생성(또는 기존 share 유지).
  */
 export async function acceptFriendInviteCode(
   codeId: string,

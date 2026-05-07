@@ -136,7 +136,7 @@ export default function FeedPage() {
               친구를 더하고 서로의 식단을 응원해요
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              친구가 공개를 수락하면 여기에서 최신 식단이 바로 보여요.
+              초대 링크로 친구가 수락하면 서로의 식단이 맞팔로 공개되고, 여기 피드에서도 볼 수 있어요.
             </p>
           </div>
         </Link>
