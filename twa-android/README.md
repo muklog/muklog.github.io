@@ -8,6 +8,10 @@
 1. **JDK 17** (예: [Microsoft Build of OpenJDK 17](https://learn.microsoft.com/java/openjdk/download)) 설치 후 `java -version`, `keytool` 사용 가능해야 합니다.
 2. **Node.js** (이미 웹 개발에 쓰는 버전이면 됩니다).
 
+질문이 나오면 **JDK 자동 설치**: 이미 PC에 JDK 17을 썼다면 **`n`** (No) — Bubblewrap이 또 JDK를 받지 않습니다. **`Y`는 중복 설치**에 가깝습니다.
+
+`setup-and-build.ps1`는 `JAVA_HOME`을 잡고, 첫 질문에 자동으로 `n`을 넣도록 되어 있습니다.
+
 ## 한 번에 빌드
 
 ```powershell
