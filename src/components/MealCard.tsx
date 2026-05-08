@@ -276,6 +276,55 @@ function mealItemHasSyncedAnalysisPayload(item: MealItem): boolean {
   return typeof item.rating === "number" && item.rating >= 1;
 }
 
+const MACRO_ROWS: {
+  key: "carbs" | "protein" | "fat" | "sugar";
+  label: string;
+  barClass: string;
+}[] = [
+  { key: "carbs", label: "탄수", barClass: "bg-amber-400" },
+  { key: "protein", label: "단백질", barClass: "bg-sky-400" },
+  { key: "fat", label: "지방", barClass: "bg-emerald-400" },
+  { key: "sugar", label: "당", barClass: "bg-fuchsia-400" },
+];
+
+/** 탄·단·지·당 g 합 대비 각각의 비율을 가로 막대로 표시 */
+function NutritionMacroBars({ nutrition }: { nutrition: NonNullable<MealItem["nutrition"]> }) {
+  const values: Array<(typeof MACRO_ROWS)[number] & { g: number }> = [];
+  for (const row of MACRO_ROWS) {
+    const raw = nutrition[row.key];
+    if (typeof raw === "number" && raw > 0) values.push({ ...row, g: raw });
+  }
+
+  if (values.length === 0) return null;
+
+  const total = values.reduce((s, row) => s + row.g, 0);
+  const denom = total > 0 ? total : 1;
+
+  return (
+    <div className="space-y-1.5" role="group" aria-label="영양소 비율 (그램 기준)">
+      {values.map((row) => {
+        const pct = Math.round((row.g / denom) * 1000) / 10;
+        const widthPct = total > 0 ? (row.g / total) * 100 : 0;
+        return (
+          <div key={row.key} className="flex items-center gap-2">
+            <span className="w-[3.25rem] shrink-0 text-[10px] text-slate-400">{row.label}</span>
+            <div className="relative h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-700/85">
+              <div
+                className={cls("h-full min-w-px rounded-full transition-[width]", row.barClass)}
+                style={{ width: `${widthPct}%` }}
+              />
+            </div>
+            <span className="shrink-0 text-[10px] tabular-nums text-slate-300">
+              {row.g}g
+              <span className="text-slate-500"> ({pct}%)</span>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ItemAnalysisBlock({
   item,
   readOnly = false,
@@ -313,37 +362,23 @@ export function ItemAnalysisBlock({
           </p>
         )}
         {item.nutrition && (
-          <div className="flex flex-wrap gap-1.5">
-            {item.nutrition.calories !== undefined && (
-              <span className="chip bg-slate-700/60 text-slate-200">
-                🔥 {item.nutrition.calories}kcal
-              </span>
+          <div className="space-y-2">
+            <NutritionMacroBars nutrition={item.nutrition} />
+            {(item.nutrition.calories !== undefined ||
+              (item.nutrition.healthTags?.length ?? 0) > 0) && (
+              <div className="flex flex-wrap gap-1.5">
+                {item.nutrition.calories !== undefined && (
+                  <span className="chip bg-slate-700/60 text-slate-200">
+                    🔥 {item.nutrition.calories}kcal
+                  </span>
+                )}
+                {item.nutrition.healthTags?.map((t) => (
+                  <span key={t} className="chip bg-brand-500/15 text-brand-300">
+                    #{t}
+                  </span>
+                ))}
+              </div>
             )}
-            {item.nutrition.carbs !== undefined && (
-              <span className="chip bg-slate-700/60 text-slate-200">
-                🌾 탄수 {item.nutrition.carbs}g
-              </span>
-            )}
-            {item.nutrition.protein !== undefined && (
-              <span className="chip bg-slate-700/60 text-slate-200">
-                💪 단백질 {item.nutrition.protein}g
-              </span>
-            )}
-            {item.nutrition.fat !== undefined && (
-              <span className="chip bg-slate-700/60 text-slate-200">
-                🥑 지방 {item.nutrition.fat}g
-              </span>
-            )}
-            {item.nutrition.sugar !== undefined && (
-              <span className="chip bg-slate-700/60 text-slate-200">
-                🍬 당 {item.nutrition.sugar}g
-              </span>
-            )}
-            {item.nutrition.healthTags?.map((t) => (
-              <span key={t} className="chip bg-brand-500/15 text-brand-300">
-                #{t}
-              </span>
-            ))}
           </div>
         )}
         {!readOnly && (
