@@ -22,8 +22,8 @@ export default defineConfig(({ command }) => ({
       /** PNG 192·512 포함 — 크롬/웨일은 여기 빠지면 설치 플로우·스플래시가 깨지는 경우가 많음 (삼성 브라우저만 우연히 너그러운 현상 줄이기). */
       includeAssets: ["favicon.svg", "pwa-192.png", "pwa-512.png"],
       manifest: {
-        name: "밀로그 — 식단·건강 기록",
-        short_name: "밀로그",
+        name: "먹로그 — 식단·건강 기록",
+        short_name: "먹로그",
         description: "달력·식단·AI 분석과 친구 피드 — 한 기기에서는 내 기록 중심",
         theme_color: "#10b981",
         background_color: "#0f172a",

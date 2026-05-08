@@ -262,7 +262,7 @@ export default function OnboardingPage() {
           ✨ 시작하기
         </div>
         <h1 className="text-3xl font-bold leading-tight">
-          밀로그에
+          먹로그에
           <br />
           오신 것을 환영해요
         </h1>

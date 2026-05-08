@@ -44,7 +44,7 @@ export default function FirebaseLoginCard() {
         <p className="mt-2 text-[11px] leading-relaxed text-amber-200/75">
           Firebase Console → Authentication →{" "}
           <strong className="font-medium text-amber-100/85">승인된 도메인</strong>에 이 사이트 호스트(예:{" "}
-          <code className="rounded bg-black/25 px-1">mealog.github.io</code>)도 추가해야 로그인이 동작합니다.
+          <code className="rounded bg-black/25 px-1">muklog.github.io</code>)도 추가해야 로그인이 동작합니다.
         </p>
       </section>
     );

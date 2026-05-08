@@ -313,8 +313,8 @@ function LinkInviteCard() {
     try {
       if (navigator.share) {
         await navigator.share({
-          title: "밀로그 친구 초대",
-          text: "밀로그에서 맞팔로 식단을 서로 볼 수 있어요. 링크에서 수락해 주세요.",
+          title: "먹로그 친구 초대",
+          text: "먹로그에서 맞팔로 식단을 서로 볼 수 있어요. 링크에서 수락해 주세요.",
           url: lastLink,
         });
       } else {

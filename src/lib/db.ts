@@ -1,4 +1,4 @@
-/** IndexedDB 이름이 바뀌면 예전 DB 파일은 브라우저에 남습니다. 같은 출처에서는 `migrateLegacyIndexedDbIfEmpty` 로 `healthhealth` → `mealog` 복사를 시도합니다. */
+/** IndexedDB 이름이 바뀌면 예전 DB 파일은 브라우저에 남습니다. 같은 출처에서는 `migrateLegacyIndexedDbIfEmpty` 로 `healthhealth` → `muklog`, 이어서 예전 이름 `mealog` → `muklog` 복사를 시도합니다. */
 import Dexie, { type Table } from "dexie";
 import type { AppSettings, HealthRecord, Meal, MealItem, User } from "../types";
 import { isTransientIndexedDbError, withIndexedDbRetry } from "./idbRetry";
@@ -75,48 +75,53 @@ export function normalizeMeal(m: Meal | (LegacyMealV1 & { items?: MealItem[] }))
   };
 }
 
-class MealogDB extends Dexie {
+/** Dexie 인스턴스에 먹로그 스키마 v1·v2 를 붙인다. (현재 DB·레거시 `healthhealth`·이전 이름 `mealog` 공통) */
+function applyMuklogDexieVersions(d: Dexie) {
+  d.version(1).stores({
+    users: "id, name, createdAt",
+    meals: "id, userId, date, slot, [userId+date], [date+slot], createdAt",
+    health: "id, userId, type, recordDate, createdAt",
+    settings: "id",
+  });
+  d.version(2)
+    .stores({
+      users: "id, name, createdAt",
+      meals:
+        "id, userId, date, slot, [userId+date], [date+slot], createdAt, updatedAt",
+      health: "id, userId, type, recordDate, createdAt",
+      settings: "id",
+    })
+    .upgrade(async (tx) => {
+      const table = tx.table<LegacyMealV1>("meals");
+      await table.toCollection().modify((rec) => {
+        const current = rec as LegacyMealV1 & { items?: MealItem[] };
+        if (Array.isArray(current.items)) return;
+        current.items = legacyMealToItems(current);
+        delete current.photo;
+        delete current.thumbnail;
+        delete current.menuText;
+        delete current.rating;
+        delete current.aiComment;
+        delete current.nutrition;
+        delete current.analysisStatus;
+        delete current.analysisError;
+      });
+    });
+}
+
+class MuklogDB extends Dexie {
   users!: Table<User, string>;
   meals!: Table<Meal, string>;
   health!: Table<HealthRecord, string>;
   settings!: Table<AppSettings, string>;
 
   constructor() {
-    super("mealog");
-    this.version(1).stores({
-      users: "id, name, createdAt",
-      meals: "id, userId, date, slot, [userId+date], [date+slot], createdAt",
-      health: "id, userId, type, recordDate, createdAt",
-      settings: "id",
-    });
-    // v2: Meal 을 items[] 구조로 바꾸면서 기존 레코드를 정규화한다.
-    this.version(2)
-      .stores({
-        users: "id, name, createdAt",
-        meals: "id, userId, date, slot, [userId+date], [date+slot], createdAt, updatedAt",
-        health: "id, userId, type, recordDate, createdAt",
-        settings: "id",
-      })
-      .upgrade(async (tx) => {
-        const table = tx.table<LegacyMealV1>("meals");
-        await table.toCollection().modify((rec) => {
-          const current = rec as LegacyMealV1 & { items?: MealItem[] };
-          if (Array.isArray(current.items)) return;
-          current.items = legacyMealToItems(current);
-          delete current.photo;
-          delete current.thumbnail;
-          delete current.menuText;
-          delete current.rating;
-          delete current.aiComment;
-          delete current.nutrition;
-          delete current.analysisStatus;
-          delete current.analysisError;
-        });
-      });
+    super("muklog");
+    applyMuklogDexieVersions(this);
   }
 }
 
-export const db = new MealogDB();
+export const db = new MuklogDB();
 
 export const SETTINGS_KEY = "settings" as const;
 
@@ -317,83 +322,62 @@ export async function getAnalysisProfileForUser(
 
 const LEGACY_IDB_NAME = "healthhealth";
 
+const RENAMED_PREVIOUS_IDB_NAME = "mealog";
+
 /**
- * IndexedDB DB 이름만 `mealog` 로 바뀐 뒤에도 호스트가 같으면 예전 `healthhealth` DB 가 남아 있습니다.
- * 현재 DB가 비어 있을 때 한 번만 예전 테이블을 복사합니다.
+ * 예전 `healthhealth` 또는 리브랜드 직전 `mealog` 이름 DB 가 같은 출처에 남아 있으면,
+ * 현재 `muklog` DB 가 비어 있을 때 한 번만 복사합니다.
  * (출처(origin)가 다르면 브라우저가 DB를 분리해 두므로 이 함수만으로는 다른 도메인 데이터를 읽을 수 없습니다.)
  */
+async function copyDexieSourceIntoCurrentDbIfStillEmpty(fromDbName: string): Promise<boolean> {
+  if (!(await Dexie.exists(fromDbName))) return false;
+  await db.open();
+  const [nu, nm] = await Promise.all([db.users.count(), db.meals.count()]);
+  if (nu > 0 || nm > 0) return false;
+
+  const Src = new Dexie(fromDbName);
+  applyMuklogDexieVersions(Src);
+
+  await Src.open();
+  const users = await Src.table("users").toArray();
+  const mealsRaw = await Src.table("meals").toArray();
+  const health = await Src.table("health").toArray();
+  const settingsRow = await Src.table("settings").get(SETTINGS_KEY);
+  await Src.close();
+
+  const hasAny =
+    users.length > 0 ||
+    mealsRaw.length > 0 ||
+    health.length > 0 ||
+    settingsRow != null;
+  if (!hasAny) return false;
+
+  await runDexie(async () => {
+    await db.transaction("rw", db.users, db.meals, db.health, db.settings, async () => {
+      if (users.length > 0) await db.users.bulkPut(users as User[]);
+      if (mealsRaw.length > 0) {
+        await db.meals.bulkPut(
+          (mealsRaw as Meal[]).map((m) => normalizeMeal(m)),
+        );
+      }
+      if (health.length > 0) await db.health.bulkPut(health as HealthRecord[]);
+      if (settingsRow != null) {
+        await db.settings.put({ ...(settingsRow as AppSettings), id: SETTINGS_KEY });
+      }
+    });
+  });
+  console.info(`[db] IndexedDB (${fromDbName}) → muklog 복사 완료`);
+  void import("./autoCloudSync").then((m) => {
+    m.ensureAutoCloudSyncListeners();
+    m.requestAutoCloudSync({ immediate: true });
+  });
+  return true;
+}
+
 export async function migrateLegacyIndexedDbIfEmpty(): Promise<void> {
   try {
-    if (!(await Dexie.exists(LEGACY_IDB_NAME))) return;
-    await db.open();
-    const [nu, nm] = await Promise.all([db.users.count(), db.meals.count()]);
-    if (nu > 0 || nm > 0) return;
-
-    const Legacy = new Dexie(LEGACY_IDB_NAME);
-    Legacy.version(1).stores({
-      users: "id, name, createdAt",
-      meals: "id, userId, date, slot, [userId+date], [date+slot], createdAt",
-      health: "id, userId, type, recordDate, createdAt",
-      settings: "id",
-    });
-    Legacy.version(2)
-      .stores({
-        users: "id, name, createdAt",
-        meals:
-          "id, userId, date, slot, [userId+date], [date+slot], createdAt, updatedAt",
-        health: "id, userId, type, recordDate, createdAt",
-        settings: "id",
-      })
-      .upgrade(async (tx) => {
-        const table = tx.table<LegacyMealV1>("meals");
-        await table.toCollection().modify((rec) => {
-          const current = rec as LegacyMealV1 & { items?: MealItem[] };
-          if (Array.isArray(current.items)) return;
-          current.items = legacyMealToItems(current as LegacyMealV1);
-          delete current.photo;
-          delete current.thumbnail;
-          delete current.menuText;
-          delete current.rating;
-          delete current.aiComment;
-          delete current.nutrition;
-          delete current.analysisStatus;
-          delete current.analysisError;
-        });
-      });
-
-    await Legacy.open();
-    const users = await Legacy.table("users").toArray();
-    const mealsRaw = await Legacy.table("meals").toArray();
-    const health = await Legacy.table("health").toArray();
-    const settingsRow = await Legacy.table("settings").get(SETTINGS_KEY);
-    await Legacy.close();
-
-    const hasAny =
-      users.length > 0 ||
-      mealsRaw.length > 0 ||
-      health.length > 0 ||
-      settingsRow != null;
-    if (!hasAny) return;
-
-    await runDexie(async () => {
-      await db.transaction("rw", db.users, db.meals, db.health, db.settings, async () => {
-        if (users.length > 0) await db.users.bulkPut(users as User[]);
-        if (mealsRaw.length > 0) {
-          await db.meals.bulkPut(
-            (mealsRaw as Meal[]).map((m) => normalizeMeal(m)),
-          );
-        }
-        if (health.length > 0) await db.health.bulkPut(health as HealthRecord[]);
-        if (settingsRow != null) {
-          await db.settings.put({ ...(settingsRow as AppSettings), id: SETTINGS_KEY });
-        }
-      });
-    });
-    console.info("[db] 레거시 IndexedDB(healthhealth) → mealog 복사 완료");
-    void import("./autoCloudSync").then((m) => {
-      m.ensureAutoCloudSyncListeners();
-      m.requestAutoCloudSync({ immediate: true });
-    });
+    await copyDexieSourceIntoCurrentDbIfStillEmpty(LEGACY_IDB_NAME);
+    await copyDexieSourceIntoCurrentDbIfStillEmpty(RENAMED_PREVIOUS_IDB_NAME);
   } catch (e) {
     console.warn("[db] 레거시 IndexedDB 복사 실패", e);
   }

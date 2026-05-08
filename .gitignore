@@ -30,3 +30,7 @@ dev-dist
 
 # TS incremental build cache
 *.tsbuildinfo
+
+# Bubblewrap 안드로이드 패키지(서명 포함될 수 있음) — 보통 레포 바깥에 만들고, 디렉터리명을 로컬에만 둠
+android-shell/
+bubblewrap-output/

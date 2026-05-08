@@ -1,5 +1,5 @@
-# 배포 URL: 조직/유저가 mealog 일 때 저장소 이름이 mealog.github.io 이어야
-# https://mealog.github.io/ (루트). 저장소 이름이 mealog 면 https://mealog.github.io/mealog/ 만 됨.
+# 배포 URL: `<USER>.github.io` 특수 저장소면 루트(/)에 배포(https://muklog.github.io/).
+# 그 외 이름이면 https://<user>.github.io/<repo>/ 경로에 배포됩니다.
 name: Deploy to GitHub Pages
 
 on:

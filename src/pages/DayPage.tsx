@@ -163,10 +163,10 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
     try {
       const promoUrl = getAppShareAbsoluteUrl();
       await shareMealCardFromElement(el, {
-        filename: `mealog-meal-${Date.now()}.png`,
+        filename: `muklog-meal-${Date.now()}.png`,
         promoUrl,
-        shareTitle: "밀로그 식단",
-        shareText: `밀로그에서 기록한 식단이에요 — ${promoUrl}`,
+        shareTitle: "먹로그 식단",
+        shareText: `먹로그에서 기록한 식단이에요 — ${promoUrl}`,
       });
     } catch (e) {
       console.error("[SlotSection] share", e);

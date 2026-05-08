@@ -167,7 +167,7 @@ function computeWatermarkLayout(
   const ctx = scratch.getContext("2d")!;
   const fontPxStart = Math.max(10, Math.round(11 * scaleRef));
   const minFont = Math.max(8, Math.round(8 * scaleRef));
-  const fullSingle = `밀로그 — ${watermarkHostAndPath}`;
+  const fullSingle = `먹로그 — ${watermarkHostAndPath}`;
 
   let chosenFont = minFont;
   let lines: string[] = [fullSingle];
@@ -177,8 +177,8 @@ function computeWatermarkLayout(
     let candidate: string[];
     if (ctx.measureText(fullSingle).width <= maxW) {
       candidate = [fullSingle];
-    } else if (ctx.measureText("밀로그").width <= maxW) {
-      candidate = ["밀로그", ...greedyWrapLine(ctx, watermarkHostAndPath, maxW)];
+    } else if (ctx.measureText("먹로그").width <= maxW) {
+      candidate = ["먹로그", ...greedyWrapLine(ctx, watermarkHostAndPath, maxW)];
     } else {
       candidate = greedyWrapLine(ctx, fullSingle, maxW);
     }
@@ -355,8 +355,8 @@ export async function shareMealCardFromElement(
   if (typeof navigator.share === "function") {
     const payload: ShareData = {
       files: [file],
-      title: opts.shareTitle ?? "밀로그 식단",
-      text: opts.shareText ?? `밀로그 식단 기록 — ${opts.promoUrl}`,
+      title: opts.shareTitle ?? "먹로그 식단",
+      text: opts.shareText ?? `먹로그 식단 기록 — ${opts.promoUrl}`,
     };
     try {
       // canShare 는 일부 브라우저에서 파일 공유를 거짓으로 막아 첫 탭이 곧바로 다운로드로 가는 경우가 있어,

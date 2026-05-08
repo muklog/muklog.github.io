@@ -1,6 +1,7 @@
 import { DEFAULT_THEME, THEME_IDS, type ThemeId } from "../types";
 
-const STORAGE_KEY = "mealog_theme";
+const STORAGE_KEY = "muklog_theme";
+const LEGACY_THEME_STORAGE_KEY = "mealog_theme";
 
 /** localStorage 또는 알 수 없는 값(과거 "default" 등)을 안전하게 ThemeId 로 정규화. */
 export function normalizeTheme(v: unknown): ThemeId {
@@ -20,6 +21,7 @@ export function applyTheme(t: ThemeId): void {
   document.documentElement.dataset.theme = t;
   try {
     localStorage.setItem(STORAGE_KEY, t);
+    localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
   } catch {
     // private mode 등 — 무시
   }
@@ -29,7 +31,15 @@ export function applyTheme(t: ThemeId): void {
 export function getCachedTheme(): ThemeId {
   if (typeof localStorage === "undefined") return DEFAULT_THEME;
   try {
-    return normalizeTheme(localStorage.getItem(STORAGE_KEY));
+    const cur = localStorage.getItem(STORAGE_KEY);
+    if (cur != null && cur !== "") return normalizeTheme(cur);
+    const legacy = localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+    if (legacy != null && legacy !== "") {
+      const t = normalizeTheme(legacy);
+      localStorage.setItem(STORAGE_KEY, t);
+      return t;
+    }
+    return DEFAULT_THEME;
   } catch {
     return DEFAULT_THEME;
   }

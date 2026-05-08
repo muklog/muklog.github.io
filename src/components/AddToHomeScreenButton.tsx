@@ -1,12 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Home, Loader2, Plus, X } from "lucide-react";
+import { Home, Info, Plus, X } from "lucide-react";
 import { cls } from "../lib/utils";
-
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: string }>;
-};
 
 function standaloneDisplay(): boolean {
   if (typeof window === "undefined") return false;
@@ -27,22 +22,7 @@ function samsungInternetLikely(): boolean {
   return /SamsungBrowser/i.test(navigator.userAgent);
 }
 
-/** beforeinstallprompt 가 deferredRef 에 잡힐 때까지 폴링 (크롬 첫 로드·SW 등록 직후 이벤트 지연 대응) */
-async function waitForDeferredInstallPrompt(
-  getDeferred: () => BeforeInstallPromptEvent | null,
-  maxMs: number,
-  stepMs: number,
-): Promise<BeforeInstallPromptEvent | null> {
-  const end = Date.now() + maxMs;
-  while (Date.now() < end) {
-    const ev = getDeferred();
-    if (ev) return ev;
-    await new Promise((r) => setTimeout(r, stepMs));
-  }
-  return getDeferred();
-}
-
-/** 집+플러스 아이콘 — 피드 상단에서 홈 화면 설치 유도 */
+/** 집+플러스 아이콘 — 피드 상단에서 웹 이용 안내(수동 추가) 유도 */
 function HomePlusGlyph({ className }: { className?: string }) {
   return (
     <span
@@ -57,22 +37,12 @@ function HomePlusGlyph({ className }: { className?: string }) {
   );
 }
 
+/**
+ * 피드 상단 — 자동 설치(beforeinstallprompt·prompt)는 호출하지 않음.
+ * 정식 앱은 플레이 스토어 유도 예정이며, 웹은 아래 안내대로 사용자가 직접 홈에 추가.
+ */
 export default function AddToHomeScreenButton({ className }: { className?: string }) {
   const [modalOpen, setModalOpen] = useState(false);
-  /** true: 버튼으로 자동 설치 불가 → 수동으로 홈에 추가 안내 */
-  const [modalManualOnly, setModalManualOnly] = useState(false);
-  const [installBusy, setInstallBusy] = useState(false);
-  const deferredRef = useRef<BeforeInstallPromptEvent | null>(null);
-
-  useEffect(() => {
-    void navigator.serviceWorker?.ready.catch(() => {});
-    const onBip = (e: Event) => {
-      e.preventDefault();
-      deferredRef.current = e as BeforeInstallPromptEvent;
-    };
-    window.addEventListener("beforeinstallprompt", onBip);
-    return () => window.removeEventListener("beforeinstallprompt", onBip);
-  }, []);
 
   if (standaloneDisplay()) {
     return (
@@ -88,59 +58,20 @@ export default function AddToHomeScreenButton({ className }: { className?: strin
     );
   }
 
-  function openManualModal(manualOnly: boolean) {
-    setModalManualOnly(manualOnly);
-    setModalOpen(true);
-  }
-
-  async function onAddClick() {
-    if (iosLikely()) {
-      openManualModal(false);
-      return;
-    }
-
-    let ev = deferredRef.current;
-    if (!ev) {
-      setInstallBusy(true);
-      try {
-        await navigator.serviceWorker?.ready.catch(() => {});
-        ev =
-          deferredRef.current ??
-          (await waitForDeferredInstallPrompt(() => deferredRef.current, 3_000, 100));
-      } finally {
-        setInstallBusy(false);
-      }
-    }
-
-    if (ev) {
-      deferredRef.current = null;
-      try {
-        await ev.prompt();
-        void ev.userChoice.catch(() => {});
-      } catch {
-        openManualModal(true);
-      }
-      return;
-    }
-    openManualModal(true);
-  }
-
   return (
     <>
       <button
         type="button"
-        onClick={() => void onAddClick()}
-        disabled={installBusy}
-        aria-busy={installBusy}
+        onClick={() => setModalOpen(true)}
         className={cls(
-          "btn-secondary inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap py-2 pl-2.5 pr-2.5 text-sm sm:pl-3 sm:pr-3 disabled:opacity-70",
+          "btn-secondary inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap py-2 pl-2.5 pr-2.5 text-sm sm:pl-3 sm:pr-3",
           className,
         )}
-        title="휴대폰 홈 화면에 밀로그 설치"
-        aria-label="홈 화면에 앱 설치"
+        title="웹에서 먹로그 쓰는 방법"
+        aria-label="앱 이용 안내"
       >
-        {installBusy ? <Loader2 size={18} className="h-[18px] w-[18px] shrink-0 animate-spin" /> : <HomePlusGlyph />}
-        <span className="max-[359px]:sr-only">{installBusy ? "로딩 중…" : "홈에 설치"}</span>
+        <HomePlusGlyph />
+        <span className="max-[359px]:sr-only">앱 안내</span>
       </button>
 
       {modalOpen ? (
@@ -157,43 +88,38 @@ export default function AddToHomeScreenButton({ className }: { className?: strin
           <div className="flex max-h-[min(88dvh,calc(100dvh-1.5rem))] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-xl sm:max-h-[min(85vh,36rem)]">
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-4 py-3">
               <h2 id="add-home-title" className="text-base font-semibold text-slate-100">
-                홈 화면에 설치
+                앱 이용 안내
               </h2>
               <button
                 type="button"
                 className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
                 aria-label="닫기"
-                onClick={() => {
-                  setModalOpen(false);
-                  setModalManualOnly(false);
-                }}
+                onClick={() => setModalOpen(false)}
               >
                 <X size={18} />
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-3 [-webkit-overflow-scrolling:touch]">
               <div className="space-y-3 text-sm leading-relaxed text-slate-300">
-                {modalManualOnly ? (
-                  <p>
-                    <strong className="text-slate-100">지금 브라우저에서는</strong> 자동 설치(이 버튼으로 바로 띄우는
-                    방식)가 막혀 있거나 지원되지 않는 상태예요.{" "}
-                    <strong className="text-slate-100">아래 순서대로 직접 홈 화면에 추가</strong>해 주세요.
-                  </p>
-                ) : (
-                  <>
-                    <p>
-                      <strong className="text-slate-100">Android·PC (크롬·웨일·삼성 인터넷 등):</strong> 브라우저가{" "}
-                      <strong className="text-slate-100">홈 화면에 설치</strong>를 지원하면 이 버튼으로{" "}
-                      <strong className="text-slate-100">설치·추가</strong> 안내 화면이 뜰 수 있어요. 플레이 스토어처럼
-                      앱 마켓에서 받는 것과는 달라요.
-                    </p>
-                    <p>
-                      <strong className="text-slate-100">iPhone·iPad (사파리):</strong> 웹에서 설치 창을 대신 띄울 수
-                      없어, 아래 <strong className="text-slate-100">3. 사파리</strong> 대로 추가해 주세요. 아이폰
-                      크롬도 보통 같은 순서입니다.
-                    </p>
-                  </>
-                )}
+                <p className="flex gap-2 rounded-lg border border-brand-500/25 bg-brand-500/8 px-3 py-2.5 text-xs text-brand-100/95">
+                  <Info size={16} className="mt-0.5 shrink-0 text-brand-400" aria-hidden />
+                  <span>
+                    정식 앱은 <strong className="text-slate-100">구글 플레이 스토어</strong>에서 받는 방향으로 안내할
+                    예정이에요. 지금은 웹으로 이용 중이시라면, 아래 순서대로{" "}
+                    <strong className="text-slate-100">브라우저에서 직접</strong> 홈 화면에 추가해 주세요. (이
+                    화면에서 자동 설치를 띄우지는 않아요.)
+                  </span>
+                </p>
+                <p>
+                  <strong className="text-slate-100">Android·PC (크롬·웨일·삼성 인터넷 등):</strong> 메뉴에서{" "}
+                  <strong className="text-slate-100">앱 설치</strong> 또는{" "}
+                  <strong className="text-slate-100">홈 화면에 추가</strong>를 찾아 진행해 주세요.
+                </p>
+                <p>
+                  <strong className="text-slate-100">iPhone·iPad (사파리):</strong> 아래{" "}
+                  <strong className="text-slate-100">3. 사파리</strong> 순서대로 추가해 주세요. 아이폰 크롬도 보통
+                  비슷합니다.
+                </p>
                 {samsungInternetLikely() ? (
                   <p className="rounded-lg border border-brand-500/25 bg-brand-500/5 px-3 py-2 text-xs text-brand-100/95">
                     지금 브라우저: <strong>2. 삼성 인터넷</strong>

@@ -25,7 +25,28 @@ import { getFirebaseAuth, initFirebase, isFirebaseConfigured } from "../lib/fire
 import { upsertMyPublicProfile } from "../lib/friends";
 
 /** 로그인했던 흔적은 있는데 Firebase 세션이 없을 때(쿠키만 삭제 등) 로컬 DB 정리용 */
-const LAST_FB_UID_KEY = "mealog_last_fb_uid";
+const LAST_FB_UID_KEY = "muklog_last_fb_uid";
+const LEGACY_LAST_FB_UID_KEY = "mealog_last_fb_uid";
+
+function clearLastFbUidStored(): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.removeItem(LAST_FB_UID_KEY);
+  localStorage.removeItem(LEGACY_LAST_FB_UID_KEY);
+}
+
+function getLastFbUidStored(): string | null {
+  if (typeof localStorage === "undefined") return null;
+  return (
+    localStorage.getItem(LAST_FB_UID_KEY) ??
+    localStorage.getItem(LEGACY_LAST_FB_UID_KEY)
+  );
+}
+
+function setLastFbUidStored(uid: string): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(LAST_FB_UID_KEY, uid);
+  localStorage.removeItem(LEGACY_LAST_FB_UID_KEY);
+}
 
 function formatSignInError(e: unknown): string {
   const o = e as { code?: string; message?: string };
@@ -127,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const wipeLocalSessionMarkers = async () => {
       await clearLocalProfileDataPreservingDevicePreferences();
-      if (typeof localStorage !== "undefined") localStorage.removeItem(LAST_FB_UID_KEY);
+      clearLastFbUidStored();
       prevFirebaseUidRef.current = undefined;
       setUser(null);
     };
@@ -140,11 +161,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         cancelPendingAuthNull();
         if (prevUid !== undefined && prevUid !== nextUid) {
           await clearLocalProfileDataPreservingDevicePreferences();
-          if (typeof localStorage !== "undefined") localStorage.removeItem(LAST_FB_UID_KEY);
+          clearLastFbUidStored();
         }
         prevFirebaseUidRef.current = nextUid;
         if (typeof localStorage !== "undefined") {
-          localStorage.setItem(LAST_FB_UID_KEY, nextUid);
+          setLastFbUidStored(nextUid);
         }
         setUser(nextUser);
         return;
@@ -165,7 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const hasStoredUid =
-        typeof localStorage !== "undefined" && !!localStorage.getItem(LAST_FB_UID_KEY);
+        typeof localStorage !== "undefined" && !!getLastFbUidStored();
       const staleCloud = hasStoredUid
         ? false
         : !!(await getSettings()).lastCloudSyncAt;

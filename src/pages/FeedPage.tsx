@@ -267,11 +267,11 @@ interface FeedCardProps {
 }
 
 function queryCarouselSlideRoots(root: HTMLElement): HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>("[data-mealog-carousel-slide]")];
+  return [...root.querySelectorAll<HTMLElement>("[data-muklog-carousel-slide]")];
 }
 
 function activeCarouselIdxFromDom(root: HTMLElement): number | null {
-  const scroller = root.querySelector<HTMLElement>("[data-mealog-carousel-scroller]");
+  const scroller = root.querySelector<HTMLElement>("[data-muklog-carousel-scroller]");
   if (!scroller) return null;
   const w = scroller.clientWidth;
   if (w <= 0) return null;
@@ -315,10 +315,10 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
     try {
       const promoUrl = getAppShareAbsoluteUrl();
       await shareMealCardFromElement(el, {
-        filename: `mealog-meal-${Date.now()}.png`,
+        filename: `muklog-meal-${Date.now()}.png`,
         promoUrl,
-        shareTitle: "밀로그 식단",
-        shareText: `밀로그에서 기록한 식단이에요 — ${promoUrl}`,
+        shareTitle: "먹로그 식단",
+        shareText: `먹로그에서 기록한 식단이에요 — ${promoUrl}`,
       });
     } catch (e) {
       console.error("[FeedCard] share", e);

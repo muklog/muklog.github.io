@@ -1,4 +1,4 @@
-# 밀로그 (Mealog)
+# 먹로그 (muklog)
 
 > **달력 기반 식단 + AI 건강 분석** 과 **친구 피드**까지 한곳에 두는 웹앱. 한 기기·한 브라우저에서는 **내 프로필 하나로** 기록하지만, 친구를 맞추면 서로의 식단을 피드에서 볼 수 있습니다.
 > Galaxy S24 같은 모바일에 최적화되어 있고, 노트북 브라우저에서도 잘 작동합니다.
@@ -41,7 +41,7 @@ npm run dev
 
 ### 자동 배포 설정 (1회)
 
-1. **GitHub에서 새 저장소**를 만듭니다. 조직 `mealog` 에 **`mealog.github.io`** 이름 저장소면 `https://mealog.github.io/` 에 바로 배포됩니다. (그 외 프로젝트 저장소면 `https://<owner>.github.io/<repo>/`)
+1. **GitHub에서 새 저장소**를 만듭니다. 예: 조직 `muklog` 에 **`muklog.github.io`** 이름 저장소면 `https://muklog.github.io/` 에 바로 배포됩니다. (그 외 프로젝트 저장소면 `https://<owner>.github.io/<repo>/`)
    - 이미 로컬에 Git이 있다면 README/라이선스만 있는 저장소를 만들 때 **“Add a README” 체크는 끄는 것**이 푸시할 때 덜 헷갈립니다.
 
 2. **반드시 먼저:** GitHub 웹에서 해당 저장소 → **Settings → Pages → Build and deployment → Source** 를 **GitHub Actions** 로 바꿉니다.  
@@ -51,11 +51,13 @@ npm run dev
 
    ```bash
    git branch -M main
-   git remote add origin https://github.com/<YOUR_ID>/<REPO_NAME>.git
+   git remote add origin https://github.com/muklog/muklog.github.io.git
    git add .
    git commit -m "chore: GitHub Pages 배포용 푸시"
    git push -u origin main
    ```
+
+   이미 다른 주소로 `origin`이 연결돼 있으면 `git remote set-url origin https://github.com/muklog/muklog.github.io.git` 로 바꾸면 됩니다.
 
    아직 `git init`을 안 했다면 프로젝트 폴더에서 한 번만 `git init` 후 커밋·푸시하면 됩니다.
 
@@ -66,7 +68,7 @@ npm run dev
    배포 반영까지 **1~3분** 걸릴 수 있습니다.
 
 이후에는 **`main`에 푸시할 때마다** 같은 워크플로가 빌드 후 자동 배포합니다.  
-배포 URL 형태: `https://<YOUR_ID>.github.io/<REPO_NAME>/` (저장소가 `<USER>.github.io` 특수 저장소면 루트 `/` 로 빌드됩니다.)
+배포 URL 형태: 일반 저장소는 `https://<USER>.github.io/<REPO_NAME>/`, 조직/계정의 **`muklog.github.io`** 특수 저장소면 `https://muklog.github.io/` (루트 `/` 로 빌드됩니다.)
 
 ### base path 자동 처리
 
@@ -77,14 +79,14 @@ npm run dev
 
 ### Firebase — 같은 프로젝트, 새 주소만 허용
 
-호스트만 `mealog.github.io` 로 바꿔도 **Firestore·로그인 데이터는 그대로**입니다. 아래만 **Firebase Console** 에서 한 번씩 해 주세요.
+호스트만 `muklog.github.io` 로 바꿔도 **Firestore·로그인 데이터는 그대로**입니다. 아래만 **Firebase Console** 에서 한 번씩 해 주세요.
 
 1. [Firebase Console](https://console.firebase.google.com/) → **본인 프로젝트** (기존과 동일) 선택  
 2. **Authentication** → **Settings** 탭 → **Authorized domains**  
-3. **도메인 추가** → `mealog.github.io` 입력 후 저장  
+3. **도메인 추가** → `muklog.github.io` 입력 후 저장  
 4. (선택) 예전 GitHub Pages 도메인도 Authorized domains 에 남겨 두면 구 주소 북마크가 잠깐 동작할 수 있습니다.
 
-**GitHub Actions 빌드**는 새 저장소(`mealog/mealog.github.io`)에도 예전과 **동일한 이름**의 **Repository secrets** 가 필요합니다. (**Variables** 탭이 아니라 **Secrets** 입니다.)
+**GitHub Actions 빌드**는 새 저장소(`muklog/muklog.github.io`)에도 예전과 **동일한 이름**의 **Repository secrets** 가 필요합니다. (**Variables** 탭이 아니라 **Secrets** 입니다.)
 
 - 저장소 → **Settings** → **Secrets and variables** → **Actions** → **Repository secrets**
 
