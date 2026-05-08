@@ -515,6 +515,11 @@ export function ItemAnalysisBlock({
 
 interface EditDialogProps {
   item: MealItem;
+  /**
+   * - edit: 사진 분석 후 결과를 고치는 흐름
+   * - addManual: 사진 없이 새 항목만 적는 흐름(제목·안내 문구가 «추가»에 맞음)
+   */
+  variant?: "edit" | "addManual";
   /** 저장 후 AI 에게 별점·한줄평 재분석 요청 (텍스트 기반). 구현되어 있지 않으면 버튼 숨김. */
   canReanalyze?: boolean;
   onClose: () => void;
@@ -523,6 +528,7 @@ interface EditDialogProps {
 
 export function MealItemEditDialog({
   item,
+  variant = "edit",
   canReanalyze = false,
   onClose,
   onSave,
@@ -610,7 +616,9 @@ export function MealItemEditDialog({
         className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-slate-800 bg-slate-950 p-4 shadow-xl sm:rounded-2xl"
       >
         <header className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-bold text-slate-100">AI 분석 결과 수정</h2>
+          <h2 className="text-base font-bold text-slate-100">
+            {variant === "addManual" ? "식사 직접 기록" : "AI 분석 결과 수정"}
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -631,7 +639,9 @@ export function MealItemEditDialog({
           )}
           <div className="min-w-0 flex-1">
             <p className="text-[11px] text-slate-400">
-              메뉴·영양 정보를 직접 고치고 원하면 그 값으로 AI 별점을 다시 받을 수 있어요.
+              {variant === "addManual"
+                ? "사진 없이 메뉴와 영양 정보를 적어 저장하면 끼니에 추가돼요. 저장한 뒤에는 필요하면 AI로 별점·한 줄 평을 받을 수 있어요."
+                : "메뉴·영양 정보를 직접 고치고 원하면 그 값으로 AI 별점을 다시 받을 수 있어요."}
             </p>
             {typeof item.rating === "number" && (
               <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-amber-300">

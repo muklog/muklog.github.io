@@ -422,6 +422,7 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
       {editingItem && meal && (
         <MealItemEditDialog
           item={editingItem}
+          variant={editingItem.draft ? "addManual" : "edit"}
           canReanalyze={!!apiKey}
           onClose={() => {
             const id = editingItemId;

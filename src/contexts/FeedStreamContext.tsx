@@ -39,6 +39,15 @@ export interface FeedEntry {
   isMine: boolean;
 }
 
+/** 피드 정렬·「새 글」점은 초안(draft) 편집으로 meal.updatedAt 만 바뀐 경우 올라가지 않게, 공개 항목의 최신 시각만 씁니다. */
+function feedEntryActivityTs(e: FeedEntry): number {
+  const items = e.meal.items;
+  if (!items.length) return e.meal.updatedAt;
+  let m = 0;
+  for (const it of items) m = Math.max(m, it.updatedAt);
+  return m;
+}
+
 type Ctx = {
   entries: FeedEntry[];
   loading: boolean;
@@ -221,7 +230,7 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
         });
       }
     }
-    out.sort((a, b) => b.meal.updatedAt - a.meal.updatedAt);
+    out.sort((a, b) => feedEntryActivityTs(b) - feedEntryActivityTs(a));
     return out;
   }, [
     myMeals,
@@ -236,7 +245,7 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
 
   const entriesMaxUpdatedAt = useMemo(() => {
     let m = 0;
-    for (const e of entries) m = Math.max(m, e.meal.updatedAt);
+    for (const e of entries) m = Math.max(m, feedEntryActivityTs(e));
     return m;
   }, [entries]);
 
