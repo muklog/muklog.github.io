@@ -219,6 +219,23 @@ export async function patchSettings(patch: Partial<AppSettings>): Promise<void> 
   scheduleAutoSyncAfterSettings(patch);
 }
 
+/**
+ * 온보딩에서 Google 계정 id 로 프로필 primary key 를 맞출 때, 식단·건강의 userId 도 같이 옮긴다.
+ */
+export async function migrateLocalProfileAndRecordsToUserId(fromId: string, toId: string): Promise<void> {
+  if (fromId === toId) return;
+  await runDexie(async () => {
+    await db.transaction("rw", db.users, db.meals, db.health, async () => {
+      const row = await db.users.get(fromId);
+      if (!row) return;
+      await db.users.delete(fromId);
+      await db.users.put({ ...row, id: toId, updatedAt: Date.now() });
+      await db.meals.where("userId").equals(fromId).modify({ userId: toId });
+      await db.health.where("userId").equals(fromId).modify({ userId: toId });
+    });
+  });
+}
+
 export function uid(): string {
   // 안전한 32-bit 랜덤 ID
   return (

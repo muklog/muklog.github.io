@@ -326,40 +326,72 @@ function ensureMembersForRemoteOwners(
   return [...byId.values()];
 }
 
+function pickPrimarySelfProfile(pool: User[], firebaseUid: string): User {
+  const byRecency = [...pool].sort(
+    (a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt),
+  );
+  const custom = byRecency.find(
+    (u) => u.name?.trim() && u.name !== "내 프로필",
+  );
+  const base = custom ?? byRecency[0]!;
+  const latest = Math.max(...pool.map((u) => u.updatedAt ?? u.createdAt));
+  return {
+    ...base,
+    id: firebaseUid,
+    updatedAt: Math.max(base.updatedAt ?? base.createdAt, latest),
+  };
+}
+
 /**
- * 활성 프로필 ID 가 실제 식단 userId 와 어긋나면(재온보딩·도메인 변경 직후 등) 피드·달력이 비어 보입니다.
- * 병합 결과 기준으로 한 명의 식단 소유자만 있으면 그 ID 로 맞춥니다.
+ * Dexie 프로필 id(랜덤/재온보딩)와 식단·건강의 userId 가 갈라지면 활성 프로필과 어긋나 빈 피드가 됩니다.
+ * Google 계정(Firebase UID) 한 개로 로컬·원격을 고정한다.
  */
-function reconcileActiveUserIdForCloudMerge(
-  mergedMembers: User[],
-  mergedMeals: Meal[],
-  currentActive: string | undefined,
-): string | undefined {
-  const memberIds = new Set(mergedMembers.map((u) => u.id));
-  const mealUserIds = [...new Set(mergedMeals.map((m) => m.userId))];
+function consolidateToFirebaseProfile(
+  firebaseUid: string,
+  members: User[],
+  meals: Meal[],
+  healthRows: HealthRecord[],
+): { members: User[]; meals: Meal[]; health: HealthRecord[]; activeUserId: string } {
+  const mealUserIds = new Set(meals.map((m) => m.userId));
+  const healthUserIds = new Set(healthRows.map((h) => h.userId));
+  const touchedIds = new Set([...mealUserIds, ...healthUserIds]);
 
-  const activeHasMeals =
-    !!currentActive &&
-    memberIds.has(currentActive) &&
-    mergedMeals.some((m) => m.userId === currentActive);
+  let pool = members.filter((u) => touchedIds.has(u.id));
+  if (pool.length === 0) pool = [...members];
 
-  if (
-    currentActive &&
-    memberIds.has(currentActive) &&
-    (mergedMeals.length === 0 || activeHasMeals)
-  ) {
-    return currentActive;
+  if (pool.length === 0) {
+    pool = [
+      {
+        id: firebaseUid,
+        name: "나",
+        color: "#334155",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ];
   }
 
-  const ownersInMembers = mealUserIds.filter((id) => memberIds.has(id));
-  if (ownersInMembers.length === 1) return ownersInMembers[0];
+  const primary = pickPrimarySelfProfile(pool, firebaseUid);
 
-  if (mergedMembers.length === 1) return mergedMembers[0]!.id;
+  const idMap = new Map<string, string>();
+  for (const u of members) {
+    if (u.id !== firebaseUid) idMap.set(u.id, firebaseUid);
+  }
+  for (const id of mealUserIds) {
+    if (id !== firebaseUid) idMap.set(id, firebaseUid);
+  }
+  for (const id of healthUserIds) {
+    if (id !== firebaseUid) idMap.set(id, firebaseUid);
+  }
 
-  if (currentActive && memberIds.has(currentActive)) return currentActive;
+  const remap = (legacyId: string) => idMap.get(legacyId) ?? legacyId;
 
-  const oldest = [...mergedMembers].sort((a, b) => a.createdAt - b.createdAt)[0];
-  return oldest?.id;
+  return {
+    members: [primary],
+    meals: meals.map((m) => ({ ...m, userId: remap(m.userId) })),
+    health: healthRows.map((h) => ({ ...h, userId: remap(h.userId) })),
+    activeUserId: firebaseUid,
+  };
 }
 
 async function pullMembers(uid: string): Promise<User[]> {
@@ -711,13 +743,19 @@ export async function syncCloudWithLocal(): Promise<void> {
         };
       }
 
+      const consolidated = consolidateToFirebaseProfile(
+        uid,
+        mergedMembers,
+        mergedMeals,
+        mergedHealth,
+      );
+      mergedMembers = consolidated.members;
+      mergedMeals = consolidated.meals;
+      mergedHealth = consolidated.health;
+
       localSettings = {
         ...localSettings,
-        activeUserId: reconcileActiveUserIdForCloudMerge(
-          mergedMembers,
-          mergedMeals,
-          localSettings.activeUserId,
-        ),
+        activeUserId: consolidated.activeUserId,
         id: SETTINGS_KEY,
       };
 

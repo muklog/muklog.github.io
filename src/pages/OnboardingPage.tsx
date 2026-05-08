@@ -9,6 +9,7 @@ import {
   db,
   finishOnboardingSave,
   getSettings,
+  migrateLocalProfileAndRecordsToUserId,
   runDexie,
   uid,
 } from "../lib/db";
@@ -110,10 +111,19 @@ export default function OnboardingPage() {
       const baseUser = baseUserId
         ? await runDexie(() => db.users.get(baseUserId))
         : undefined;
+      /** Google 로그인된 채 프로필을 만들면 Firestore 동기화·식단 소유와 항상 맞도록 Firebase UID 로 고정한다. */
+      const profileId =
+        authUser?.uid ??
+        baseUser?.id ??
+        uid();
 
       if (baseUser) {
+        if (profileId !== baseUser.id) {
+          await migrateLocalProfileAndRecordsToUserId(baseUser.id, profileId);
+        }
         const next: User = {
           ...baseUser,
+          id: profileId,
           name,
           color,
           avatarKind: nextKind,
@@ -124,14 +134,13 @@ export default function OnboardingPage() {
           userRow: next,
           settingsPatch: {
             onboarded: true,
-            activeUserId: next.id,
+            activeUserId: profileId,
             geminiApiKey: apiKey.trim() || settings?.geminiApiKey,
           },
         });
       } else {
-        const id = uid();
         const newUser: User = {
-          id,
+          id: profileId,
           name,
           color,
           avatarKind: nextKind,
@@ -143,7 +152,7 @@ export default function OnboardingPage() {
           userRow: newUser,
           settingsPatch: {
             onboarded: true,
-            activeUserId: id,
+            activeUserId: profileId,
             geminiApiKey: apiKey.trim() || undefined,
           },
         });

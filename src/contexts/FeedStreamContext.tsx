@@ -122,13 +122,17 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
   const [friendPublicByUid, setFriendPublicByUid] = useState<Map<string, PublicProfile>>(
     new Map(),
   );
+  /** publicProfiles 로딩 완료 전에는 share 에 박혀 있는 구글 이름이 잠깐 보였다가 바뀌는 깜빡임을 막는다 */
+  const [friendPublicProfilesReady, setFriendPublicProfilesReady] = useState(false);
   useEffect(() => {
     if (!friendShares?.length) {
       setFriendPublicByUid(new Map());
+      setFriendPublicProfilesReady(true);
       return;
     }
     let cancelled = false;
     const uids = [...new Set(friendShares.map((s) => s.ownerUid))];
+    setFriendPublicProfilesReady(false);
     void (async () => {
       const pairs = await Promise.all(
         uids.map(async (uid) => {
@@ -146,6 +150,7 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
         if (p) next.set(uid, p);
       }
       setFriendPublicByUid(next);
+      setFriendPublicProfilesReady(true);
     })();
     return () => {
       cancelled = true;
@@ -283,6 +288,13 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
   }, [emptyOutgoingAwaitingServer]);
 
   /** 새로고침 직후에는 auth 가 잠깐 user=null 인 프레임이 있어 myUid 없이 loading 이 풀리며 옛 피드가 보였다가 다시 로딩되는 현상 방지 */
+  const awaitingFriendPublicProfiles =
+    feedFirestoreLive &&
+    firebaseReady &&
+    myUid !== undefined &&
+    (friendShares?.length ?? 0) > 0 &&
+    !friendPublicProfilesReady;
+
   const loading =
     authLoading ||
     myMeals === undefined ||
@@ -291,7 +303,8 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
       myUid !== undefined &&
       friendShares === null) ||
     awaitingFriendMealSnapshots ||
-    emptyOutgoingAwaitingServer;
+    emptyOutgoingAwaitingServer ||
+    awaitingFriendPublicProfiles;
 
   useEffect(() => {
     if (loading) return;
