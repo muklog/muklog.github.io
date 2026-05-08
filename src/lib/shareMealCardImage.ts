@@ -3,8 +3,11 @@ import { blobToDataUrl } from "./image";
 
 /** 모바일 GPU 한계 — 캡처 단계 픽셀 상한 */
 const MAX_CAPTURE_AREA_PX = 12_000_000;
-/** 공유 PNG 긴 변 상한 — 과대 시 앱에서 줄였을 때 흐려 보이기 쉬움 */
-const MAX_SHARE_LONG_EDGE_PX = 960;
+/**
+ * 공유 PNG 긴 변 상한.
+ * 너무 작으면 다운스케일 한 번에만 줄여서 사진·텍스트가 흐려지기 쉬움 — 1280 정도가 SNS·메신저에서 무난함.
+ */
+const MAX_SHARE_LONG_EDGE_PX = 1280;
 
 const MAX_WATERMARK_LINES = 10;
 
@@ -88,7 +91,8 @@ async function inlineBlobImagesForCapture(root: HTMLElement): Promise<() => void
 function choosePixelRatio(cssW: number, cssH: number): number {
   const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 2;
   const maxCss = Math.max(cssW, cssH, 1);
-  let pr = Math.min(2, Math.max(1, dpr), MAX_SHARE_LONG_EDGE_PX / maxCss);
+  /** dpr 3 기기에서 2로만 캡처하면 카드·사진이 다소 흐려질 수 있어 상한 3 */
+  let pr = Math.min(3, Math.max(1, dpr), MAX_SHARE_LONG_EDGE_PX / maxCss);
   const area = cssW * cssH;
   if (area <= 0) return 1;
   while (pr > 1 && area * pr * pr > MAX_CAPTURE_AREA_PX) {
