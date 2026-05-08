@@ -324,7 +324,7 @@ export default function SettingsPage() {
         <h2 className="mb-2 text-base font-semibold text-rose-300">위험 영역</h2>
         <p className="mb-3 text-xs text-slate-400">
           {user
-            ? "이 기기의 모든 데이터와 함께 클라우드(Firestore) 의 내 식단·건강 기록·프로필·친구 공유 관계까지 영구 삭제합니다. 친구가 보던 내 식단도 즉시 사라지며 되돌릴 수 없어요."
+            ? "이 기기의 내 식단·건강 기록·프로필·친구 공유 관계 등 모든 데이터를 삭제합니다. 친구가 보던 내 식단도 즉시 사라지며 되돌릴 수 없어요."
             : "이 기기의 식단·건강 기록과 프로필을 모두 삭제합니다. Google 로그인이 안 되어 있어 클라우드 데이터까지 정리하려면 먼저 로그인이 필요해요."}
         </p>
         <button

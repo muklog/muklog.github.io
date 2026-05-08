@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Loader2 } from "lucide-react";
+import { CheckCircle2, Eye, EyeOff, KeyRound, Loader2, TriangleAlert } from "lucide-react";
 import AvatarBubble from "../components/AvatarBubble";
 import AvatarPicker, { type AvatarPick } from "../components/AvatarPicker";
 import GeminiApiKeyGuide from "../components/GeminiApiKeyGuide";
@@ -11,8 +10,10 @@ import {
   finishOnboardingSave,
   getSettings,
   migrateLocalProfileAndRecordsToUserId,
+  patchSettings,
   runDexie,
 } from "../lib/db";
+import { pingGemini } from "../lib/ai";
 import { nextColor } from "../lib/utils";
 import { userFacingStorageErrorMessage } from "../lib/idbRetry";
 import { useAuth } from "../contexts/AuthContext";
@@ -37,6 +38,14 @@ export default function OnboardingPage() {
   const [avatarDataUrl, setAvatarDataUrl] = useState<string | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const [pingState, setPingState] = useState<
+    | { kind: "idle" }
+    | { kind: "busy" }
+    | { kind: "ok"; model: string }
+    | { kind: "fail"; msg: string }
+  >({ kind: "idle" });
+  const [keySavedFlash, setKeySavedFlash] = useState(false);
   // 사용자가 입력란을 만지기 시작했는지 — 일단 만지면 자동 prefill 이 더 이상
   // 덮어쓰지 않게 한다(클라우드/구글 값이 늦게 도착해도 사용자 입력 보존).
   const [touchedName, setTouchedName] = useState(false);
@@ -114,6 +123,30 @@ export default function OnboardingPage() {
       : !authUser
         ? "login"
         : null;
+
+  async function saveGeminiKeyDuringOnboarding() {
+    if (!canContinueProfile) return;
+    await patchSettings({
+      geminiApiKey: apiKey.trim() || undefined,
+    });
+    setPingState({ kind: "idle" });
+    setKeySavedFlash(true);
+    window.setTimeout(() => setKeySavedFlash(false), 2500);
+  }
+
+  async function testGeminiKeyDuringOnboarding() {
+    if (!canContinueProfile || !apiKey.trim()) return;
+    setPingState({ kind: "busy" });
+    try {
+      const result = await pingGemini(apiKey.trim());
+      setPingState({ kind: "ok", model: result.model });
+    } catch (e) {
+      setPingState({
+        kind: "fail",
+        msg: e instanceof Error ? e.message : "연결 실패",
+      });
+    }
+  }
 
   function computeAvatarFields(): Pick<User, "avatarKind" | "avatarDataUrl"> {
     const googleAvatarAvailable = !!authUser?.photoURL;
@@ -238,11 +271,8 @@ export default function OnboardingPage() {
         </p>
         <p className="mt-2 text-xs text-slate-500">
           <strong className="text-slate-400">1단계</strong>에서 Google로 로그인한 뒤{" "}
-          <strong className="text-slate-400">2단계</strong>에서 닉네임을 정할 수 있어요. 계정 전환은{" "}
-          <Link to="/settings" className="text-brand-400 underline">
-            설정
-          </Link>
-          에서 할 수 있어요.
+          <strong className="text-slate-400">2단계</strong>에서 닉네임을 정할 수 있어요. 계정 전환은 추후 설정
+          메뉴에서 할 수 있어요.
         </p>
       </header>
 
@@ -365,29 +395,100 @@ export default function OnboardingPage() {
       )}
 
       <section
-        className={`mb-8 transition-opacity ${canContinueProfile ? "opacity-100" : "pointer-events-none opacity-40"}`}
+        className={`card mb-8 p-4 transition-opacity ${canContinueProfile ? "opacity-100" : "pointer-events-none opacity-40"}`}
         aria-hidden={!canContinueProfile}
       >
-        <h2 className="mb-2 text-sm font-semibold text-slate-300">
-          Google Gemini 키 <span className="text-slate-500">(선택)</span>
+        <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
+          <KeyRound size={16} className="text-brand-400" /> Google Gemini 키
         </h2>
-        <p className="mb-2 text-[11px] text-slate-500">
-          AI 분석용(선택). 예전에 이 계정으로 저장한 키가 있으면 동기화돼 채워질 수 있어요.
+        <p className="mb-2 text-xs leading-snug text-slate-400">
+          식단·건강 AI 분석에는{" "}
+          <strong className="font-semibold text-slate-200">Google API 키</strong>가 필요합니다. 무료 등급의 키를
+          사용하시면 됩니다. 아래 사진을 확인한 후{" "}
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noreferrer"
+            className="text-brand-400 underline"
+          >
+            Google AI Studio 키 페이지
+          </a>
+          로 이동해 키를 복사하고 돌아와주세요.
         </p>
         <div className="mb-2">
-          <GeminiApiKeyGuide compact />
+          <GeminiApiKeyGuide />
         </div>
-        <input
-          value={apiKey}
-          onChange={(e) => {
-            setApiKeyTouched(true);
-            setApiKey(e.target.value);
-          }}
-          placeholder="AIzaSy..."
-          className="input"
-          autoComplete="off"
-          disabled={!canContinueProfile}
-        />
+
+        <div className="space-y-2">
+          <div className="relative">
+            <input
+              type={showKey ? "text" : "password"}
+              value={apiKey}
+              onChange={(e) => {
+                setApiKeyTouched(true);
+                setApiKey(e.target.value);
+              }}
+              placeholder="AIzaSy..."
+              className="input pr-12"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={!canContinueProfile}
+            />
+            <button
+              type="button"
+              onClick={() => setShowKey((v) => !v)}
+              className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400"
+              disabled={!canContinueProfile}
+            >
+              {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void saveGeminiKeyDuringOnboarding()}
+              disabled={!canContinueProfile}
+              className="btn-primary flex-1 py-2 text-sm"
+            >
+              저장
+            </button>
+            <button
+              type="button"
+              onClick={() => void testGeminiKeyDuringOnboarding()}
+              disabled={!canContinueProfile || !apiKey || pingState.kind === "busy"}
+              className="btn-secondary flex-1 py-2 text-sm"
+            >
+              {pingState.kind === "busy" ? (
+                <Loader2 size={14} className="mx-auto animate-spin" />
+              ) : (
+                "연결 테스트"
+              )}
+            </button>
+          </div>
+
+          {pingState.kind === "ok" && (
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-emerald-400">
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2 size={14} /> 연결됨
+              </span>
+              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-mono text-[11px] text-emerald-200">
+                {pingState.model}
+              </span>
+            </p>
+          )}
+          {pingState.kind === "fail" && (
+            <p className="flex items-start gap-1.5 text-xs text-rose-400">
+              <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+              <span className="break-all">{pingState.msg}</span>
+            </p>
+          )}
+          {keySavedFlash && (
+            <p className="flex items-center gap-1.5 text-xs text-emerald-400">
+              <CheckCircle2 size={14} /> 저장됨
+            </p>
+          )}
+        </div>
       </section>
 
       <button

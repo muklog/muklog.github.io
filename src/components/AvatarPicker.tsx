@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Camera, Check, Image as ImageIcon, Loader2, Sparkles, X } from "lucide-react";
+import { Camera, Check, ImagePlus, Loader2, Sparkles, X } from "lucide-react";
 import type { User as FirebaseUser } from "firebase/auth";
 import { AVATAR_PRESETS, blobToAvatarDataUrl, renderPresetAvatarDataUrl, type AvatarPreset } from "../lib/avatar";
+import { shouldOmitCaptureOnFileInputs } from "../lib/filePickerCapabilities";
 import { cls } from "../lib/utils";
 
 /**
@@ -33,8 +34,12 @@ interface Props {
 export default function AvatarPicker({ authUser, currentKind, onClose, onSave }: Props) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const fileInputId = useId();
+  const omitCapture = shouldOmitCaptureOnFileInputs();
+  const captureProp = !omitCapture ? true : undefined;
+  const camInputRef = useRef<HTMLInputElement>(null);
+  const galInputRef = useRef<HTMLInputElement>(null);
+  const camInputId = useId();
+  const galInputId = useId();
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -177,31 +182,55 @@ export default function AvatarPicker({ authUser, currentKind, onClose, onSave }:
         {/* 내 사진 업로드 */}
         <section className="mb-4">
           <h3 className="mb-2 text-xs font-semibold text-slate-300">내 사진 업로드</h3>
-          <label
-            htmlFor={fileInputId}
-            className={cls(
-              "flex w-full cursor-pointer items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-left transition-colors hover:bg-slate-900",
-              currentKind === "upload" && "ring-2 ring-brand-500",
-              busy && "pointer-events-none opacity-55",
-            )}
-            onPointerDown={() => {
-              if (fileInputRef.current) fileInputRef.current.value = "";
-            }}
-          >
-            <div className="flex h-12 w-12 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-300">
-              <Camera size={20} aria-hidden />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-slate-100">사진 선택 / 촬영</p>
-              <p className="text-[11px] text-slate-400">
-                정사각형으로 자동 잘라요. 96x96 으로 저장돼 용량이 작아요.
-              </p>
-            </div>
-            {currentKind === "upload" && <Check size={16} className="text-brand-400 shrink-0" aria-hidden />}
-          </label>
+          <div className="flex gap-2">
+            <label
+              htmlFor={camInputId}
+              className={cls(
+                "flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-3 text-sm font-medium text-slate-100 transition-colors hover:bg-slate-900",
+                currentKind === "upload" && "ring-2 ring-brand-500",
+                busy && "pointer-events-none opacity-55",
+              )}
+              aria-label={omitCapture ? "사진 촬영·선택(기기에서 고르기)" : "사진 촬영"}
+              onPointerDown={() => {
+                if (camInputRef.current) camInputRef.current.value = "";
+              }}
+            >
+              <Camera size={18} aria-hidden />
+              {omitCapture ? "촬영·선택" : "사진 촬영"}
+            </label>
+            <label
+              htmlFor={galInputId}
+              className={cls(
+                "flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-3 text-sm font-medium text-slate-100 transition-colors hover:bg-slate-900",
+                currentKind === "upload" && "ring-2 ring-brand-500",
+                busy && "pointer-events-none opacity-55",
+              )}
+              aria-label="앨범에서 사진 선택"
+              title="앨범에서 사진 선택"
+              onPointerDown={() => {
+                if (galInputRef.current) galInputRef.current.value = "";
+              }}
+            >
+              <ImagePlus size={18} aria-hidden />
+              사진 선택
+            </label>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-400">
+            정사각형으로 자동 잘라요. 96x96 으로 저장돼 용량이 작아요.
+          </p>
           <input
-            ref={fileInputRef}
-            id={fileInputId}
+            ref={camInputRef}
+            id={camInputId}
+            type="file"
+            accept="image/*"
+            {...(captureProp !== undefined ? { capture: captureProp } : {})}
+            disabled={busy}
+            className="sr-only"
+            onChange={(ev) => void handleUpload(ev)}
+          />
+          <input
+            ref={galInputRef}
+            id={galInputId}
             type="file"
             accept="image/*"
             disabled={busy}
@@ -232,7 +261,6 @@ export default function AvatarPicker({ authUser, currentKind, onClose, onSave }:
             ))}
           </div>
           <p className="mt-2 text-[11px] text-slate-500">
-            <ImageIcon size={11} className="mb-0.5 mr-1 inline" />
             선택하면 96x96 PNG 로 저장돼 친구에게도 똑같이 보여요.
           </p>
         </section>
