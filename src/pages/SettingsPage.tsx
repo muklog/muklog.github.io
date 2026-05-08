@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   CheckCircle2,
@@ -335,7 +336,14 @@ export default function SettingsPage() {
         </button>
       </section>
 
-      <section className="px-1 pb-4 text-center text-[11px] text-slate-600">먹로그 v0.1.0</section>
+      <section className="px-1 pb-6 text-center">
+        <p className="mb-2 text-[11px] text-slate-600">
+          <Link to="/privacy" className="text-brand-400 underline">
+            개인정보 처리방침 · 서비스 안내
+          </Link>
+        </p>
+        <p className="text-[11px] text-slate-600">먹로그 v0.1.0</p>
+      </section>
     </div>
   );
 }

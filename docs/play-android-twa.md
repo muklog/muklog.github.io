@@ -54,15 +54,10 @@ TWA가 **주소표시줄 없이** 신뢰 가능한 상태로 여는지 검증할
 
 1. 플레이 **앱 서명**(또는 Play App Signing 이 켜졌으면 플레이 콘솔에서 보이는 인증서)의 **SHA-256** 값을 확인합니다.
 2. `docs/assetlinks.example.json` 을 참고해 `package_name`, `sha256_cert_fingerprints`를 채운 **최종 `assetlinks.json`** 을 준비합니다.
-3. 사이트에 **`https://muklog.github.io/.well-known/assetlinks.json`** 로 배포합니다.
+3. 레포에는 **`public/.well-known/assetlinks.json`** 이 포함되어 있으며, 기본 패키지명은 `io.github.muklog.app` 입니다. **SHA-256 은 아직 플레이스홀더(0만 64자)** 이므로, Play App Signing 인증서 지문으로 **반드시 교체**한 뒤 다시 배포하세요.  
+   사이트에 **`https://muklog.github.io/.well-known/assetlinks.json`** 로 배포되는지 확인합니다.
 
-   GitHub Pages + 이 레포의 `public/` 은 빌드 시 루트로 그대로 복사되므로, 검증까지 맞춘 파일을 아래처럼 두면 배포 파이프라인을 타고 함께 올라갑니다:
-
-   ```
-   public/.well-known/assetlinks.json
-   ```
-
-   **패키지명·SHA-256이 확정되기 전에는 빈 채 또는 잘못된 값으로 `public/`에 두지 마세요.**(잘못된 검증 정보는 TWA 연결만 실패하지, 정적 사이트 전체 배포에는 보통 무해합니다.)
+   **패키지명·SHA-256이 확정되기 전** 잘못된 값이면 TWA 검증만 실패합니다. 플레이스홀더를 실제 값으로 바꿀 때까지 연결은 통과하지 않습니다.
 
 4. 브라우저에서 해당 URL 이 **200**, **JSON 배열** 형태인지 확인합니다.
 
@@ -93,9 +88,30 @@ npx --yes @bubblewrap/cli@latest --help
 
 ## 체크리스트 (통과 확률 올리기)
 
-- [ ] 스토어 **데이터 안전 목록** / **카테고리** / 타겟 연령 정직하게 작성  
-- [ ] **개인정보 처리방침** URL 준비(웹 페이지로 `muklog.github.io` 또는 별도 URL)  
-- [ ] 계정 기능이 있음 → 로그인·데이터 처리 설명이 설명글과 일치하는지 확인  
-- [ ] Firebase 규칙·쿼터·API 키 제한 검토  
+- [ ] 스토어 **데이터 안전 목록** / **카테고리** / 타겟 연령 정직하게 작성 (아래 [데이터 안전 폼 참고](#플레이-콘솔-data-safety-참고))
+- [ ] **개인정보 처리방침** URL — 앱 내 `/privacy` 와 동일 내용의 공개 주소:
+  - 배포 후: **`https://muklog.github.io/#/privacy`** (HashRouter)
+- [ ] 계정 기능이 있음 → 로그인·데이터 처리 설명이 설명글과 일치하는지 확인
+- [ ] Firebase 규칙·쿼터·API 키 제한 검토
+- [ ] **`assetlinks.json`** — `public/.well-known/assetlinks.json` 의 **SHA-256 플레이스홀더**를 Play App Signing 지문으로 교체 후 재배포
+
+## 플레이 콘솔 Data safety 참고
+
+스토어 **앱 콘텐츠 → 보안 및 개인 정보 → 데이터 보안** 항목은 실제 서비스와 맞추어 선택합니다. 먹로그의 경우 예시:
+
+| 유형 | 예시 |
+|------|------|
+| **개인 정보** | 이름, 이메일(Google 로그인 시), 사용자 생성 콘텐츠(식단·사진·댓글 등) |
+| **재정 정보** | 없음(인앱 결제 없음) |
+| **건강 및 운동** | 사용자가 기록한 식단·건강 관련 정보(선택) |
+| **메시지** | DM·댓글 등 |
+| **사진 또는 동영상** | 식단·검진 사진 |
+| **앱 활동** | 설정·동기화 메타데이터 |
+
+**데이터가 전송되는 서비스**: Google(Firebase Auth/Firestore, Generative AI — 사용자가 Gemini 키를 넣은 경우).
+
+**암호화**: 전송 시 HTTPS; 저장은 Firebase·로컬 브라우저 정책에 따름(해당 항목은 콘솔 질문지에 맞게 선택).
+
+---
 
 이 문서만으로 플레이 통과가 **보장되는 것은 아니며**(정책은 수시 변경), 레포 공개 여부보다 위 항목이 서비스 운영에 더 큰 영향을 줍니다.

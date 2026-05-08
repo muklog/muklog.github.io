@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { CheckCircle2, Eye, EyeOff, KeyRound, Loader2, TriangleAlert } from "lucide-react";
 import AvatarBubble from "../components/AvatarBubble";
@@ -490,6 +491,12 @@ export default function OnboardingPage() {
           )}
         </div>
       </section>
+
+      <p className="text-center text-[11px] text-slate-600">
+        <Link to="/privacy" className="text-brand-400 underline">
+          개인정보 처리방침 · 서비스 안내
+        </Link>
+      </p>
 
       <button
         type="button"

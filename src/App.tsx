@@ -21,6 +21,7 @@ import InviteCodePage from "./pages/InviteCodePage";
 import NotificationsPage from "./pages/NotificationsPage";
 import MessagesPage from "./pages/MessagesPage";
 import DmChatPage from "./pages/DmChatPage";
+import PrivacyPage from "./pages/PrivacyPage";
 import BottomNav from "./components/BottomNav";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { DmRealtimeProvider } from "./contexts/DmRealtimeContext";
@@ -37,6 +38,7 @@ export default function App() {
   const location = useLocation();
   const isOnboardingRoute = location.pathname.startsWith("/onboarding");
   const isSettingsRoute = location.pathname.startsWith("/settings");
+  const isPrivacyRoute = location.pathname.startsWith("/privacy");
   const isInviteRoute = location.pathname.startsWith("/friends/invite");
   /** DM 대화방은 안쪽 메시지 영역이 스크롤 — 풀투새프레시와 충돌하므로 이 라우트만 끈다 */
   const isDmThreadRoute = /^\/messages\/[^/]+$/.test(location.pathname);
@@ -158,7 +160,13 @@ export default function App() {
     // "시작하기" 를 눌러야만 finish() 가 navigate 하도록 단순화.)
 
     // 클라우드 복원: 온보딩 전에도 설정에서 Google 로그인 가능
-    if (needsOnboarding && !isOnboardingRoute && !isSettingsRoute && !isInviteRoute) {
+    if (
+      needsOnboarding &&
+      !isOnboardingRoute &&
+      !isSettingsRoute &&
+      !isPrivacyRoute &&
+      !isInviteRoute
+    ) {
       return <Navigate to="/onboarding" replace />;
     }
   }
@@ -240,6 +248,7 @@ export default function App() {
                     <Route path="/day/:date" element={<DayPage />} />
                     <Route path="/health" element={<HealthPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="/privacy" element={<PrivacyPage />} />
                     <Route path="/onboarding" element={<OnboardingPage />} />
                     <Route path="/friends" element={<FriendsPage />} />
                     <Route path="/friends/invite/c/:inviteCode" element={<InviteCodePage />} />
