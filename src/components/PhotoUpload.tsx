@@ -13,12 +13,11 @@ interface Props {
   multipleGallery?: boolean;
   label?: string;
   className?: string;
-  /** 기본 후면 카메라 우선 모드(non-통합 선택기 에서만 capture 로 반영됨). */
+  /** 기본 후면 카메라. 일부 기기에서는 capture 를 끄는 편이 안정적(shouldOmitCaptureOnFileInputs). */
   preferCamera?: boolean;
   variant?: "primary" | "ghost";
   disabled?: boolean;
   compressOptions?: CompressOptions;
-  /** 인스타그램처럼 정사각형(가운데 크롭)으로 저장 — 식사 사진에 사용 */
   square?: boolean;
 }
 
@@ -28,7 +27,11 @@ function clearInputs(refs: Array<RefObject<HTMLInputElement | null>>) {
   }
 }
 
-/** display:none 은 일부 삼성·WebView 에서 깨져 sr-only 로 직사각 탭 영역만 가림 */
+function clearInput(el: HTMLInputElement | null) {
+  if (el) el.value = "";
+}
+
+/** 숨김은 display:none 대신 sr-only + label htmlFor 로 직연결 */
 export default function PhotoUpload({
   onPicked,
   multipleGallery = false,
@@ -40,16 +43,17 @@ export default function PhotoUpload({
   compressOptions,
   square = false,
 }: Props) {
-  const unifyPicker = shouldOmitCaptureOnFileInputs();
+  const omitCapture = shouldOmitCaptureOnFileInputs();
   const camInputId = useId();
   const galInputId = useId();
-  const unifiedInputId = useId();
   const camRef = useRef<HTMLInputElement>(null);
   const galRef = useRef<HTMLInputElement>(null);
-  const unifiedRef = useRef<HTMLInputElement>(null);
 
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
+
+  const captureAttr =
+    !preferCamera || omitCapture ? undefined : ("environment" as const);
 
   async function processOne(file: File) {
     if (!file.size) {
@@ -87,7 +91,7 @@ export default function PhotoUpload({
             name: file.name,
             size: file.size,
             type: file.type,
-            unifyPicker,
+            omitCapture,
           });
           const detail = e instanceof Error ? e.message : String(e);
           alert(
@@ -104,57 +108,10 @@ export default function PhotoUpload({
 
   const btnClass = variant === "primary" ? "btn-primary" : "btn-secondary";
   const galleryAria =
-    multipleGallery === true ? "갤러리에서 선택 (여러 장 가능)" : "갤러리·사진에서 선택";
+    multipleGallery === true ? "갤러리에서 선택 (여러 장 가능)" : "사진 선택·앨범에서 가져오기";
 
   const blocked = !!(disabled || busy);
 
-  /** 삼성·standalone — capture 불사용, 레이블-직연결 하나로 시스템 선택기 오픈 (카메라/앨범 포함) */
-  if (unifyPicker) {
-    const mainLine = multipleGallery ? "여러 장 선택·추가" : label;
-    const subHint = "아래에서 카메라·앨범·내 파일 등을 고를 수 있어요";
-    return (
-      <div className={cls("flex gap-2", className)}>
-        <label
-          htmlFor={unifiedInputId}
-          onPointerDown={() => clearInput(unifiedRef.current)}
-          className={cls(
-            btnClass,
-            "flex min-h-[3rem] flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 px-2 py-2 text-center",
-            blocked && "pointer-events-none opacity-55",
-          )}
-        >
-          {busy ? (
-            <>
-              <Loader2 size={18} className="animate-spin shrink-0" aria-hidden />
-              <span>{busyLabel ? `처리 중… ${busyLabel}` : "처리 중…"}</span>
-            </>
-          ) : (
-            <>
-              <span className="inline-flex items-center gap-1.5 text-sm font-medium">
-                <Camera size={18} aria-hidden />
-                <ImagePlus size={17} className="opacity-75" aria-hidden />
-                <span>{mainLine}</span>
-              </span>
-              <span className="max-w-[16rem] text-[10px] font-normal leading-snug opacity-75">{subHint}</span>
-            </>
-          )}
-        </label>
-        <input
-          ref={unifiedRef}
-          id={unifiedInputId}
-          type="file"
-          accept={GALLERY_FILE_ACCEPT}
-          multiple={multipleGallery}
-          disabled={blocked}
-          className="sr-only"
-          onChange={(e) => void handleFiles(e.target.files, [unifiedRef])}
-          onPointerDown={() => clearInput(unifiedRef.current)}
-        />
-      </div>
-    );
-  }
-
-  /** label htmlFor 로 기기 네이티브 파일 시트 호출(programmatic click 대비). */
   return (
     <div className={cls("flex gap-2", className)}>
       <label
@@ -165,9 +122,10 @@ export default function PhotoUpload({
           "flex flex-1 cursor-pointer items-center justify-center gap-2 py-3",
           blocked && "pointer-events-none opacity-55",
         )}
+        aria-label={omitCapture ? `${label}(카메라 포함 기기 선택)` : `${label}(촬영)`}
       >
         {busy ? <Loader2 size={18} className="animate-spin" aria-hidden /> : <Camera size={18} aria-hidden />}
-        {busy ? busyLabel ?? "처리 중…" : label}
+        {busy ? (busyLabel ? `처리 중… ${busyLabel}` : "처리 중…") : label}
       </label>
       <label
         htmlFor={galInputId}
@@ -176,6 +134,7 @@ export default function PhotoUpload({
           blocked && "pointer-events-none opacity-55",
         )}
         aria-label={galleryAria}
+        title={galleryAria}
         onPointerDown={() => clearInput(galRef.current)}
       >
         <ImagePlus size={18} aria-hidden />
@@ -185,7 +144,7 @@ export default function PhotoUpload({
         id={camInputId}
         type="file"
         accept={GALLERY_FILE_ACCEPT}
-        capture={preferCamera ? "environment" : undefined}
+        {...(captureAttr ? { capture: captureAttr } : {})}
         disabled={blocked}
         className="sr-only"
         onPointerDown={() => clearInput(camRef.current)}
@@ -204,8 +163,4 @@ export default function PhotoUpload({
       />
     </div>
   );
-}
-
-function clearInput(el: HTMLInputElement | null) {
-  if (el) el.value = "";
 }

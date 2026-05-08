@@ -1,8 +1,10 @@
 /**
- * 홈 화면 추가·설치형·삼성 인터넷 등에서 <input capture> 또는 숨김 후 .click()
- * 결합 시 카메라/파일 선택이 실패·PWA 성 오류 메시지로 끝나는 사례가 있습니다.
+ * 일부 환경(삼성 인터넷·홈 화면에 추가한 standalone 앱)에서만 <input capture> 가
+ * 오류를 내는 사례가 있어, 그때는 capture 속성을 빼고 OS 기본 시트에 맡깁니다.
+ *
+ * `display-mode: fullscreen` / `minimal-ui` 는 일반 모바일 브라우저에서도
+ * 잘못 매칭될 수 있어 standalone 만 본다.
  */
-
 export function shouldOmitCaptureOnFileInputs(): boolean {
   if (typeof navigator === "undefined" || typeof window === "undefined") return false;
 
@@ -13,10 +15,7 @@ export function shouldOmitCaptureOnFileInputs(): boolean {
   }
 
   try {
-    const modes = ["standalone", "fullscreen", "minimal-ui"] as const;
-    for (const mode of modes) {
-      if (window.matchMedia(`(display-mode: ${mode})`).matches) return true;
-    }
+    if (window.matchMedia("(display-mode: standalone)").matches) return true;
   } catch {
     /* */
   }
