@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Sparkles, ChevronRight, Plus } from "lucide-react";
 import { db, getSettings, runDexie } from "../lib/db";
-import { publicMealItems, summarizePublishedMealItems } from "../lib/mealItems";
+import { publicMealItems } from "../lib/mealItems";
 import Calendar from "../components/Calendar";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { dateKey, formatKoDate, suggestMealSlotForNow } from "../lib/utils";
@@ -102,8 +102,9 @@ export default function HomePage() {
           {MEAL_SLOTS.map((slot) => {
             const m = dayMeals?.find((x) => x.slot === slot);
             const items = publicMealItems(m?.items);
-            const agg = summarizePublishedMealItems(m?.items ?? []);
-            const showAgg = agg.publishedCount >= 2;
+            const ratings = items.map((it) => it.rating).filter((r): r is number => typeof r === "number");
+            const avg =
+              ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : undefined;
             return (
               <li key={slot}>
                 <button
@@ -118,19 +119,7 @@ export default function HomePage() {
                   </span>
                   {items.length > 0 ? (
                     <span className="text-[10px] font-bold text-amber-400">
-                      {showAgg ? (
-                        <>
-                          ★ {agg.avgRating !== undefined ? agg.avgRating.toFixed(1) : "–"}
-                          {agg.totalCalories !== undefined && (
-                            <> · {agg.totalCalories}kcal</>
-                          )}
-                          <span className="font-medium text-amber-400/90"> · {items.length}개</span>
-                        </>
-                      ) : (
-                        <>
-                          ★ {agg.avgRating !== undefined ? agg.avgRating.toFixed(0) : "–"}
-                        </>
-                      )}
+                      {items.length > 1 ? `★ ${avg?.toFixed(1) ?? "-"} · ${items.length}개` : `★ ${avg?.toFixed(0) ?? "-"}`}
                     </span>
                   ) : (
                     <span className="text-[10px] text-slate-600">미기록</span>

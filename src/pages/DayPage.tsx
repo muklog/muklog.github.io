@@ -300,24 +300,7 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
           <div className="min-w-0">
             <h3 className="text-base font-semibold">{MEAL_SLOT_LABELS[slot]}</h3>
             {items.length > 0 && (
-              <p className="text-[11px] text-slate-400">
-                사진 {items.length}장
-                {slotAgg.publishedCount >= 2 &&
-                  (slotAgg.avgRating !== undefined || slotAgg.totalCalories !== undefined) && (
-                    <>
-                      {" · "}
-                      {slotAgg.avgRating !== undefined && (
-                        <span>평균 ★ {slotAgg.avgRating.toFixed(1)}</span>
-                      )}
-                      {slotAgg.avgRating !== undefined && slotAgg.totalCalories !== undefined && (
-                        <span> · </span>
-                      )}
-                      {slotAgg.totalCalories !== undefined && (
-                        <span>합계 {slotAgg.totalCalories} kcal</span>
-                      )}
-                    </>
-                  )}
-              </p>
+              <p className="text-[11px] text-slate-400">사진 {items.length}장</p>
             )}
           </div>
           <ChevronDown
@@ -360,6 +343,20 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
                   />
                 )}
               />
+              {slotAgg.publishedCount >= 2 &&
+                (slotAgg.avgRating !== undefined || slotAgg.totalCalories !== undefined) && (
+                  <p className="rounded-lg border border-slate-700/80 bg-slate-900/60 px-3 py-2 text-center text-[12px] text-slate-200">
+                    <span className="text-slate-400">이 끼니 요약</span>
+                    {" · "}
+                    {slotAgg.avgRating !== undefined && (
+                      <span>평균 ★ {slotAgg.avgRating.toFixed(1)}</span>
+                    )}
+                    {slotAgg.avgRating !== undefined && slotAgg.totalCalories !== undefined && " · "}
+                    {slotAgg.totalCalories !== undefined && (
+                      <span>총 {slotAgg.totalCalories} kcal</span>
+                    )}
+                  </p>
+                )}
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
                 <button
                   type="button"
