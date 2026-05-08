@@ -298,12 +298,10 @@ function NutritionMacroBars({ nutrition }: { nutrition: NonNullable<MealItem["nu
   if (values.length === 0) return null;
 
   const total = values.reduce((s, row) => s + row.g, 0);
-  const denom = total > 0 ? total : 1;
 
   return (
     <div className="space-y-1.5" role="group" aria-label="영양소 비율 (그램 기준)">
       {values.map((row) => {
-        const pct = Math.round((row.g / denom) * 1000) / 10;
         const widthPct = total > 0 ? (row.g / total) * 100 : 0;
         return (
           <div key={row.key} className="flex items-center gap-2">
@@ -314,10 +312,7 @@ function NutritionMacroBars({ nutrition }: { nutrition: NonNullable<MealItem["nu
                 style={{ width: `${widthPct}%` }}
               />
             </div>
-            <span className="shrink-0 text-[10px] tabular-nums text-slate-300">
-              {row.g}g
-              <span className="text-slate-500"> ({pct}%)</span>
-            </span>
+            <span className="shrink-0 text-[10px] tabular-nums text-slate-300">{row.g}g</span>
           </div>
         );
       })}
