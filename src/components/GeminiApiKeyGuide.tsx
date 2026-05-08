@@ -17,14 +17,10 @@ export default function GeminiApiKeyGuide({ compact }: { compact?: boolean }) {
           decoding="async"
         />
         <figcaption className="border-t border-slate-700 px-3 py-2 text-[11px] leading-snug text-slate-400">
-          <span className="font-medium text-slate-300">복사 아이콘</span> 클릭 후 아래 입력란에 붙여 넣으세요.
+          <span className="font-medium text-slate-300">복사 아이콘</span> 클릭 후 아래 입력란에 붙여넣으세요.
+          만약 API키가 보이지 않는다면, 무료 등급의 새로운 키를 발급받으면 됩니다.
         </figcaption>
       </figure>
-      {!compact ? (
-        <p className="text-[11px] leading-snug text-slate-500">
-          만약 API키가 보이지 않는다면, 무료 등급의 새로운 키를 발급받으면 됩니다.
-        </p>
-      ) : null}
     </div>
   );
 }

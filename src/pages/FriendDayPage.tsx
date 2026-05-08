@@ -6,6 +6,7 @@ import { MealItemCard, MealItemCardsCarousel } from "../components/MealCard";
 import MealSocialBlock from "../components/MealSocialBlock";
 import {
   getMyViewerShare,
+  getPublicProfile,
   permissionDeniedMessage,
   subscribeFriendMealsForDate,
 } from "../lib/friends";
@@ -26,6 +27,8 @@ export default function FriendDayPage() {
   const focusSlot = searchParams.get("slot");
   const { user, firebaseReady } = useAuth();
   const [share, setShare] = useState<Share | null | "missing">(null);
+  /** shares.ownerName 과 달리 publicProfiles 에 동기화된 앱 내 닉네임 — 친구 프로필 등과 동일 우선순위 */
+  const [friendDisplayName, setFriendDisplayName] = useState("친구");
   const [meals, setMeals] = useState<Meal[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -36,13 +39,20 @@ export default function FriendDayPage() {
     let cancelled = false;
     (async () => {
       try {
-        const s = await getMyViewerShare(friendUid);
+        const [s, pub] = await Promise.all([
+          getMyViewerShare(friendUid),
+          getPublicProfile(friendUid),
+        ]);
         if (cancelled) return;
         setShare(s ?? "missing");
+        const pubName = pub?.displayName?.trim();
+        const fromShare = s?.ownerName?.trim();
+        setFriendDisplayName(pubName || fromShare || "친구");
       } catch (e) {
         if (!cancelled) {
           console.warn("[friend day] share fetch", e);
           setShare("missing");
+          setFriendDisplayName("친구");
         }
       }
     })();
@@ -107,8 +117,6 @@ export default function FriendDayPage() {
     );
   }
 
-  const name = share.ownerName ?? "친구";
-
   return (
     <div className="flex flex-col gap-4 px-4 pt-4">
       <header className="flex items-center gap-2">
@@ -120,7 +128,7 @@ export default function FriendDayPage() {
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1">
-          <p className="text-xs text-slate-400">{name}님의 식사 기록</p>
+          <p className="text-xs text-slate-400">{friendDisplayName}님의 식사 기록</p>
           <h1 className="text-lg font-bold">{formatKoDate(date)}</h1>
         </div>
       </header>
