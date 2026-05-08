@@ -8,6 +8,7 @@ import { getAnalysisProfileForUser, getSettings } from "../lib/db";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { MealItemCard, MealItemCardsCarousel, MealItemEditDialog } from "../components/MealCard";
 import MealSocialBlock from "../components/MealSocialBlock";
+import MealMultiPhotoSummaryChips from "../components/MealMultiPhotoSummaryChips";
 import FeedIntroBanner from "../components/FeedIntroBanner";
 import { dateKey, formatKoDate, suggestMealSlotForNow } from "../lib/utils";
 import {
@@ -275,22 +276,6 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
     }
   }
 
-  const totalCalories = useMemo(
-    () =>
-      items.reduce(
-        (sum, it) => (typeof it.nutrition?.calories === "number" ? sum + it.nutrition.calories : sum),
-        0,
-      ),
-    [items],
-  );
-  const avgRating = useMemo(() => {
-    const rs = items
-      .map((it) => it.rating)
-      .filter((r): r is number => typeof r === "number");
-    if (rs.length === 0) return undefined;
-    return rs.reduce((a, b) => a + b, 0) / rs.length;
-  }, [items]);
-
   async function handleReanalyzeByImage(item: MealItem) {
     if (!isMine || !myApiKey || !item.photo || !myUserId) return;
     setImageReanalyzeBusyId(item.id);
@@ -406,23 +391,7 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
               />
             )}
           />
-        {items.length >= 2 && (
-          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-            <span className="rounded-full bg-slate-800/60 px-2 py-0.5 text-slate-300">
-              사진 {items.length}장
-            </span>
-            {avgRating !== undefined && (
-              <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-300">
-                ★ 평균 {avgRating.toFixed(1)}
-              </span>
-            )}
-            {totalCalories > 0 && (
-              <span className="rounded-full bg-slate-800/60 px-2 py-0.5">
-                🔥 {Math.round(totalCalories)} kcal
-              </span>
-            )}
-          </div>
-        )}
+          <MealMultiPhotoSummaryChips items={items} />
         </div>
       </div>
       {showSocial && <MealSocialBlock ownerUid={author.uid} mealId={meal.id} />}
