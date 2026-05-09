@@ -23,6 +23,7 @@ import {
 } from "firebase/firestore";
 import type { User as FirebaseUser } from "firebase/auth";
 import { getFirestoreDb } from "./firebaseApp";
+import { deleteUserMediaTree } from "./userMediaStorage";
 
 interface WipeReport {
   errors: { step: string; error: unknown }[];
@@ -87,6 +88,14 @@ export async function wipeMyCloudData(
       friendInviteCodes: 0,
     },
   };
+
+  await safe(
+    "storage.media",
+    async () => {
+      await deleteUserMediaTree(uid);
+    },
+    report,
+  );
 
   // ---- 1) meals (+서브컬렉션) ----
   const mealsSnap = await safe(

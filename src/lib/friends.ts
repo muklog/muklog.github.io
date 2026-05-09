@@ -914,7 +914,7 @@ export async function getMyViewerShare(ownerUid: string): Promise<Share | null> 
 // 반영되도록 onSnapshot 으로 구독한다. getDocs 일회성 호출만 쓰면
 // "analyzing" 상태 그대로 멈춰 있는 문제가 발생한다.
 //
-// base64 사진을 Blob 으로 디코딩하는 작업이 비싸므로 캐시한다. 상위 문서만
+// 메타 변경마다 디코드/Storage 다운로드를 반복하면 비용이 커져 캐시한다.
 // updatedAt 이 같다고 같은 스냅샷이라 단정하면 안 된다 — items[].분석 상태만
 // 바뀌었는데 meal.updatedAt 이 동일·지연 같은 경우 오래된 분석 상태를 들고 간다.
 
@@ -925,6 +925,18 @@ function mealFirestoreCacheKey(data: MealStored): string {
     .map((it) => {
       const errLen = typeof it.analysisError === "string" ? it.analysisError.length : 0;
       const mt = typeof it.menuText === "string" && it.menuText.length > 0 ? it.menuText : "";
+      const pst =
+        typeof (it as { photoStoragePath?: string }).photoStoragePath === "string"
+          ? (it as { photoStoragePath: string }).photoStoragePath
+          : "";
+      const tst =
+        typeof (it as { thumbStoragePath?: string }).thumbStoragePath === "string"
+          ? (it as { thumbStoragePath: string }).thumbStoragePath
+          : "";
+      const legacyB64 =
+        typeof (it as { photoBase64?: string }).photoBase64 === "string"
+          ? String((it as { photoBase64: string }).photoBase64.length)
+          : "0";
       /** 길이만으로는 같은 길이의 다른 문자열을 구별 못해 짧게 본문 앞 부분 포함 */
       const menuSig =
         mt.length > 0 ? `${mt.length}:${mt.slice(0, 96)}` : "0";
@@ -934,6 +946,9 @@ function mealFirestoreCacheKey(data: MealStored): string {
         it.updatedAt ?? 0,
         menuSig,
         errLen,
+        pst,
+        tst,
+        legacyB64,
         typeof it.rating === "number" ? it.rating : "",
       ].join(":");
     })

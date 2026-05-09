@@ -76,7 +76,7 @@ jobs:
             echo "::notice::VITE_FIREBASE_MESSAGING_SENDER_ID 가 비어 있음 — 가능하면 Firebase 웹 앱 구성의 messagingSenderId 를 넣는 것을 권장합니다."
           fi
           if [ -z "${VITE_FIREBASE_STORAGE_BUCKET:-}" ]; then
-            echo "::notice::VITE_FIREBASE_STORAGE_BUCKET 가 비어 있음 — 선택 사항입니다. 있으면 storageBucket 도 넣으세요."
+            echo "::notice::VITE_FIREBASE_STORAGE_BUCKET 비어 있음 — 기본으로 PROJECT_ID.firebasestorage.app 을 씁니다. 구 버킷(…appspot.com)만 있는 프로젝트는 Secret 에 버킷 문자열을 명시하고, Firebase 콘솔에서 Storage를 켠 뒤 npm run deploy:storage-rules 로 storage.rules 배포까지 해 주세요."
           fi
           if [ "$missing" -ne 0 ]; then
             echo "::notice::Firebase Console → 프로젝트 설정(톱니) → 일반 → 내 앱 → 웹 앱 → Firebase SDK 스니펫의 firebaseConfig 객체와 이름을 매칭해 입력합니다."

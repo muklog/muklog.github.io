@@ -1,8 +1,39 @@
-// 앱은 Spark(무료)에서 Storage 를 쓰지 않습니다. 사진은 Firestore 문서(Base64)만 사용합니다.
+// 식단 사진은 Firestore 규칙과 동소스로 — 달력 공유 받은 친구만 원본 Storage 를 읽을 수 있음.
+// 건강 사진은 /users/{uid}/media/health/ 아래만 두고 소유자만 read/write (친구는 Firestore 에서부터 차단).
+//
+// 교차 규칙 적용 시 콘솔에서 Storage 서비스 계정의 Firestore 읽기 연동 허용이 필요할 수 있습니다.
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function viewerShareCalendarOk(ownerUid) {
+      let shareId = ownerUid + '_' + request.auth.uid;
+      let p = /databases/(default)/documents/shares/$(shareId);
+      return signedIn()
+        && firestore.exists(p)
+        && firestore.get(p).data.ownerUid == ownerUid
+        && firestore.get(p).data.viewerUid == request.auth.uid
+        && 'scope' in firestore.get(p).data
+        && firestore.get(p).data.scope.calendar == true;
+    }
+
+    match /users/{ownerUid}/media/meals/{path=**} {
+      allow read: if signedIn() && (
+        request.auth.uid == ownerUid ||
+        viewerShareCalendarOk(ownerUid)
+      );
+      allow write: if signedIn() && request.auth.uid == ownerUid;
+    }
+
+    match /users/{ownerUid}/media/health/{path=**} {
+      allow read, write: if signedIn() && request.auth.uid == ownerUid;
+    }
+
+    match /{anyPath=**} {
       allow read, write: if false;
     }
   }

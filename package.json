@@ -15,6 +15,7 @@
     "firebase:login:remote": "npx --yes firebase-tools login --no-localhost",
     "deploy:firestore-rules": "npx --yes firebase-tools deploy --only firestore:rules",
     "deploy:firestore": "npx --yes firebase-tools deploy --only firestore",
+    "deploy:storage-rules": "npx --yes firebase-tools deploy --only storage",
     "gen:icons": "node scripts/gen-pwa-icons.mjs",
     "android:bubblewrap": "npx --yes @bubblewrap/cli@latest"
   },

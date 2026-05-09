@@ -7,6 +7,7 @@ import {
   persistentMultipleTabManager,
   type Firestore,
 } from "firebase/firestore";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
 
 /** Android·iPhone·iPad 등 — 강제 롱폴링·IndexedDB 로컬캐시 조합에서 리스너가 자주 깨진다는 제보 대응 */
 export function isFirestoreMobileUa(): boolean {
@@ -19,8 +20,8 @@ export function isFirestoreMobileUa(): boolean {
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let firestore: Firestore | null = null;
+let storage: FirebaseStorage | null = null;
 
-/** Storage 는 Spark 플랜에서 막히는 경우가 많아 사용하지 않음 — 사진은 Firestore(Base64)만 사용 */
 export function isFirebaseConfigured(): boolean {
   return !!(
     import.meta.env.VITE_FIREBASE_API_KEY &&
@@ -30,6 +31,19 @@ export function isFirebaseConfigured(): boolean {
   );
 }
 
+/**
+ * 웹의 `initializeApp.storageBucket`.
+ * 명시 변수가 비어 있으면 신규 콘솔 기본값 `{projectId}.firebasestorage.app` 사용.
+ * (구 프로젝트만 `PROJECT_ID.appspot.com` 버킹을 쓰는 경우에는 VITE_FIREBASE_STORAGE_BUCKET 을 명시.)
+ */
+function resolveStorageBucket(): string | undefined {
+  const explicit = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET?.trim();
+  if (explicit) return explicit;
+  const pid = import.meta.env.VITE_FIREBASE_PROJECT_ID?.trim();
+  if (pid) return `${pid}.firebasestorage.app`;
+  return undefined;
+}
+
 export function initFirebase(): FirebaseApp | null {
   if (!isFirebaseConfigured()) return null;
   if (app) return app;
@@ -37,7 +51,7 @@ export function initFirebase(): FirebaseApp | null {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
     projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || undefined,
+    storageBucket: resolveStorageBucket(),
     messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || undefined,
     appId: import.meta.env.VITE_FIREBASE_APP_ID,
   });
@@ -100,4 +114,16 @@ export function getFirestoreDb(): Firestore {
   initFirebase();
   if (!firestore) throw new Error("Firestore가 설정되지 않았습니다.");
   return firestore;
+}
+
+export function getFirebaseStorage(): FirebaseStorage {
+  const a = initFirebase();
+  if (!a) throw new Error("Firebase가 설정되지 않았습니다.");
+  if (!a.options.storageBucket) {
+    throw new Error(
+      "Firebase Storage 버킷이 없습니다. .env 에 VITE_FIREBASE_STORAGE_BUCKET 또는 VITE_FIREBASE_PROJECT_ID를 설정하고, Firebase 콘솔에서 Storage를 켠 뒤 storage.rules를 배포해 주세요.",
+    );
+  }
+  if (!storage) storage = getStorage(a);
+  return storage;
 }

@@ -17,11 +17,18 @@ import type {
 } from "../types";
 import { db as dexieDb, getSettings, normalizeMeal, runDexie, SETTINGS_KEY } from "./db";
 import { getFirestoreDb, getFirebaseAuth } from "./firebaseApp";
-import { base64ToBlob, blobToBase64, compressImage, makeThumbnail } from "./image";
+import { base64ToBlob, compressImage, makeThumbnail } from "./image";
+import {
+  blobFromStoragePath,
+  deleteHealthMediaFolder,
+  deleteMealMediaFolder,
+  uploadHealthImages,
+  uploadMealItemImages,
+} from "./userMediaStorage";
 import { dateKey } from "./utils";
 
 const BATCH = 400;
-/** Firestore 문서 상한 1MiB — Base64·메타 여유 */
+/** Firestore 문서 상한 근처 — 메타(JSON) 크기 검사만(사진 바이너리는 Storage). */
 const DOC_SAFE_BYTES = 900_000;
 
 // 로컬(IndexedDB) `users` 는 이 기기에서 쓰는 활성 프로필 한 명분만 유지합니다. 친구 데이터는 Firestore 로만 조회합니다.
@@ -30,8 +37,12 @@ const DOC_SAFE_BYTES = 900_000;
 // 코드 내부의 *Members 함수·변수도 같은 의미입니다.
 
 export type MealItemStored = Omit<MealItem, "photo" | "thumbnail"> & {
+  /** 레거시: Firestore Base64 */
   photoBase64?: string;
   photoMimeType?: string;
+  /** 신규: Storage 전체·썸네일 JPEG */
+  photoStoragePath?: string;
+  thumbStoragePath?: string;
 };
 
 /**
@@ -67,6 +78,8 @@ export type HealthStored = Omit<HealthRecord, "photo" | "thumbnail"> & {
   photoMimeType?: string;
   photoPath?: string;
   thumbnailPath?: string;
+  photoStoragePath?: string;
+  thumbStoragePath?: string;
 };
 
 type PublicSettingsDoc = {
@@ -112,8 +125,36 @@ function prunePendingDeletes(
 }
 
 async function itemStoredToItem(s: MealItemStored): Promise<MealItem> {
-  const { photoBase64, photoMimeType, ...rest } = s;
+  const { photoBase64, photoMimeType, photoStoragePath, thumbStoragePath, ...rest } = s;
   const item: MealItem = { ...rest };
+
+  if (photoStoragePath && thumbStoragePath) {
+    try {
+      const [photoBlob, thumbBlob] = await Promise.all([
+        blobFromStoragePath(photoStoragePath),
+        blobFromStoragePath(thumbStoragePath),
+      ]);
+      item.photo = photoBlob;
+      item.thumbnail = thumbBlob;
+    } catch (e) {
+      console.warn("[cloudSync] 식단 항목 Storage 로드 실패", e);
+    }
+    return item;
+  }
+
+  if (photoStoragePath || thumbStoragePath) {
+    try {
+      if (photoStoragePath) item.photo = await blobFromStoragePath(photoStoragePath);
+      if (thumbStoragePath) item.thumbnail = await blobFromStoragePath(thumbStoragePath);
+      if (item.photo && item.photo.size > 0 && !(item.thumbnail?.size)) {
+        item.thumbnail = await makeThumbnail(item.photo);
+      }
+    } catch (e) {
+      console.warn("[cloudSync] 식단 항목 Storage(부분) 로드 실패", e);
+    }
+    return item;
+  }
+
   if (photoBase64 && photoMimeType) {
     const blob = base64ToBlob(photoBase64, photoMimeType);
     item.photo = blob;
@@ -172,8 +213,31 @@ export async function storedToMeal(s: MealStored): Promise<Meal> {
 }
 
 export async function storedToHealth(s: HealthStored): Promise<HealthRecord> {
-  const { photoPath: _p, thumbnailPath: _t, photoBase64, photoMimeType, ...rest } = s;
+  const {
+    photoPath: _p,
+    thumbnailPath: _t,
+    photoBase64,
+    photoMimeType,
+    photoStoragePath,
+    thumbStoragePath,
+    ...rest
+  } = s;
   const rec: HealthRecord = { ...rest };
+
+  if (photoStoragePath && thumbStoragePath) {
+    try {
+      const [photoBlob, thumbBlob] = await Promise.all([
+        blobFromStoragePath(photoStoragePath),
+        blobFromStoragePath(thumbStoragePath),
+      ]);
+      rec.photo = photoBlob;
+      rec.thumbnail = thumbBlob;
+    } catch (e) {
+      console.warn("[cloudSync] 건강 기록 Storage 로드 실패", e);
+    }
+    return rec;
+  }
+
   if (photoBase64 && photoMimeType) {
     const blob = base64ToBlob(photoBase64, photoMimeType);
     rec.photo = blob;
@@ -203,9 +267,8 @@ function itemHasRenderableImage(it: MealItem): boolean {
 }
 
 /**
- * 문서 단위 LWW 로 원격 Meal 이 이겼을 때, 항목은 최신이지만 photoBase64 가 빠진 채
- * 올라온 경우(동기화 레이스·직접기록만 있는 기기 등) 로컬 IndexedDB 의 Blob 을 합쳐
- * "사진 없음" 으로 덮이는 현상을 막는다. 이후 push 로 Firestore 에 사진이 채워진다.
+ * 원격 Meal 이 이겼을 때 로컬 Blob 으로 메우는 레이스 대응.
+ * Storage 에서 내려받은 풀이 있으면 그대로 사용하고, 빠져 있거나 실패했을 때 로컬을 합친다.
  */
 async function hydrateMealPhotosFromLocal(remote: Meal, local: Meal): Promise<Meal> {
   const localById = new Map(local.items.map((x) => [x.id, x]));
@@ -427,13 +490,11 @@ async function pullPrivateSettings(uid: string): Promise<PrivateSettingsDoc | nu
 }
 
 /**
- * Meal 한 건을 Firestore 문서 형태로 변환한다.
- *
- * items 마다 사진이 있을 수 있으므로, 전체 문서가 1MB 상한을 넘지 않도록
- * 공통 압축 레벨을 한 단계씩 낮춰가며 재시도한다. 레벨이 높은 쪽이 화질이 좋고,
- * 낮출수록 해상도·퀄리티를 함께 줄인다.
+ * Meal 한 건을 Firestore 문서 + Storage 로 변환한다.
+ * 이미지는 Storage(`users/{uid}/media/meals/...`), 문서에는 경로 메타만 둔다.
+ * 과거 데이터는 pull 시 기존 Base64 도 여전히 읽는다.
  */
-async function mealToStored(m: Meal): Promise<MealStored | null> {
+async function mealToStored(m: Meal, ownerFirebaseUid: string): Promise<MealStored | null> {
   const base: Omit<MealStored, "items"> = {
     id: m.id,
     userId: m.userId,
@@ -451,14 +512,6 @@ async function mealToStored(m: Meal): Promise<MealStored | null> {
     return null;
   }
 
-  const attempts: { maxDimension: number; quality: number }[] = [
-    { maxDimension: 720, quality: 0.72 },
-    { maxDimension: 640, quality: 0.62 },
-    { maxDimension: 560, quality: 0.55 },
-    { maxDimension: 480, quality: 0.5 },
-    { maxDimension: 420, quality: 0.45 },
-  ];
-
   function toItemMeta(it: MealItem): MealItemStored {
     return {
       id: it.id,
@@ -474,65 +527,78 @@ async function mealToStored(m: Meal): Promise<MealStored | null> {
     };
   }
 
-  let lastErr = `식사 기록(${m.date}) 사진이 동기화 한도를 넘깁니다. 더 작은 원본으로 다시 찍거나 해당 날짜의 사진 개수를 줄여 주세요.`;
-  for (const opts of attempts) {
-    const stored: MealItemStored[] = [];
-    for (const it of items) {
-      const source = it.photo?.size ? it.photo : it.thumbnail?.size ? it.thumbnail : null;
-      const meta = toItemMeta(it);
-      if (!source) {
-        stored.push(meta);
-        continue;
-      }
-      const compressed = await compressImage(source, {
-        maxDimension: opts.maxDimension,
-        quality: opts.quality,
-        mimeType: "image/jpeg",
-      });
-      meta.photoBase64 = await blobToBase64(compressed);
-      meta.photoMimeType = "image/jpeg";
+  const stored: MealItemStored[] = [];
+  for (const it of items) {
+    const meta = toItemMeta(it);
+    const source = it.photo?.size ? it.photo : it.thumbnail?.size ? it.thumbnail : null;
+    if (!source) {
       stored.push(meta);
+      continue;
     }
-    const trial: MealStored = { ...base, items: stored };
-    const cleaned = cleanForFirestore(trial);
-    if (docJsonSize(cleaned) <= DOC_SAFE_BYTES) return cleaned;
-    lastErr = `식사 기록(${m.date})의 사진 용량이 커서 동기화 한도(1MB)를 넘깁니다. 해당 끼니에 올린 사진 개수를 줄여 주세요.`;
+    const fullJpeg = await compressImage(source, {
+      maxDimension: 960,
+      quality: 0.72,
+      mimeType: "image/jpeg",
+    });
+    const thumbJpeg = await compressImage(fullJpeg.size ? fullJpeg : source, {
+      maxDimension: 480,
+      quality: 0.58,
+      mimeType: "image/jpeg",
+    });
+    const { photoStoragePath, thumbStoragePath } = await uploadMealItemImages(
+      ownerFirebaseUid,
+      m.id,
+      it.id,
+      fullJpeg,
+      thumbJpeg,
+    );
+    stored.push({
+      ...meta,
+      photoStoragePath,
+      thumbStoragePath,
+      photoMimeType: "image/jpeg",
+    });
   }
-  throw new Error(lastErr);
+
+  const trial: MealStored = { ...base, items: stored };
+  const cleaned = cleanForFirestore(trial);
+  if (docJsonSize(cleaned) <= DOC_SAFE_BYTES) return cleaned;
+  throw new Error(
+    `식사 기록(${m.date})의 동기화 메타 데이터가 너무 큽니다. 메뉴·분석 필드 길이를 줄여 주세요.`,
+  );
 }
 
-async function healthToStored(h: HealthRecord): Promise<HealthStored> {
+async function healthToStored(h: HealthRecord, ownerFirebaseUid: string): Promise<HealthStored> {
   const { photo, thumbnail, ...rest } = h;
   const base: HealthStored = { ...rest };
   const source = photo?.size ? photo : thumbnail?.size ? thumbnail : null;
   if (!source) return base;
 
-  const attempts: { maxDimension: number; quality: number }[] = [
-    { maxDimension: 1600, quality: 0.8 },
-    { maxDimension: 1280, quality: 0.72 },
-    { maxDimension: 960, quality: 0.64 },
-    { maxDimension: 720, quality: 0.55 },
-    { maxDimension: 520, quality: 0.5 },
-  ];
-
-  let lastErr = "Firestore 문서 한도를 넘습니다.";
-  for (const opts of attempts) {
-    const compressed = await compressImage(source, {
-      maxDimension: opts.maxDimension,
-      quality: opts.quality,
-      mimeType: "image/jpeg",
-    });
-    const b64 = await blobToBase64(compressed);
-    const trial: HealthStored = {
-      ...base,
-      photoBase64: b64,
-      photoMimeType: "image/jpeg",
-    };
-    const cleaned = cleanForFirestore(trial);
-    if (docJsonSize(cleaned) <= DOC_SAFE_BYTES) return cleaned;
-    lastErr = `건강기록(${h.recordDate}) 사진이 동기화 한도를 넘깁니다.`;
-  }
-  throw new Error(lastErr);
+  const fullJpeg = await compressImage(source, {
+    maxDimension: 1400,
+    quality: 0.76,
+    mimeType: "image/jpeg",
+  });
+  const thumbJpeg = await compressImage(fullJpeg.size ? fullJpeg : source, {
+    maxDimension: 720,
+    quality: 0.62,
+    mimeType: "image/jpeg",
+  });
+  const { photoStoragePath, thumbStoragePath } = await uploadHealthImages(
+    ownerFirebaseUid,
+    h.id,
+    fullJpeg,
+    thumbJpeg,
+  );
+  const out: HealthStored = {
+    ...base,
+    photoStoragePath,
+    thumbStoragePath,
+    photoMimeType: "image/jpeg",
+  };
+  const cleaned = cleanForFirestore(out);
+  if (docJsonSize(cleaned) <= DOC_SAFE_BYTES) return cleaned;
+  throw new Error(`건강기록(${h.recordDate}) 메타 크기 초과 또는 Storage 업로드 실패입니다.`);
 }
 
 async function deleteRemoteMembersNotIn(uid: string, keep: Set<string>): Promise<void> {
@@ -548,12 +614,13 @@ async function deleteRemoteMealsNotIn(uid: string, keep: Set<string>): Promise<v
   const snap = await getDocs(collection(fs, "users", uid, "meals"));
   for (const d of snap.docs) {
     if (keep.has(d.id)) continue;
-    // Firestore 클라이언트 SDK 는 부모 doc 만 지우면 서브컬렉션이 고아로 남는다.
-    // 식단의 좋아요/댓글도 같이 best-effort 정리(다른 기기에서 삭제된 식단이 동기화될 때).
     await Promise.allSettled([
       deleteSubCollection(collection(d.ref, "likes")),
       deleteSubCollection(collection(d.ref, "comments")),
     ]);
+    await deleteMealMediaFolder(uid, d.id).catch((e) =>
+      console.warn("[cloudSync] meal Storage 정리 실패", d.id, e),
+    );
     await deleteDoc(d.ref);
   }
 }
@@ -573,7 +640,11 @@ async function deleteRemoteHealthNotIn(uid: string, keep: Set<string>): Promise<
   const fs = getFirestoreDb();
   const snap = await getDocs(collection(fs, "users", uid, "health"));
   for (const d of snap.docs) {
-    if (!keep.has(d.id)) await deleteDoc(d.ref);
+    if (keep.has(d.id)) continue;
+    await deleteHealthMediaFolder(uid, d.id).catch((e) =>
+      console.warn("[cloudSync] health Storage 정리 실패", d.id, e),
+    );
+    await deleteDoc(d.ref);
   }
 }
 
@@ -599,7 +670,7 @@ async function pushMeals(uid: string, meals: Meal[]): Promise<void> {
   let n = 0;
   for (const raw of meals) {
     const m = normalizeMeal(raw);
-    const stored = await mealToStored(m);
+    const stored = await mealToStored(m, uid);
     if (!stored) continue;
     batch.set(doc(fs, "users", uid, "meals", m.id), stored);
     n++;
@@ -617,7 +688,7 @@ async function pushHealth(uid: string, rows: HealthRecord[]): Promise<void> {
   let batch = writeBatch(fs);
   let n = 0;
   for (const h of rows) {
-    const stored = await healthToStored(h);
+    const stored = await healthToStored(h, uid);
     batch.set(doc(fs, "users", uid, "health", h.id), stored);
     n++;
     if (n >= BATCH) {
@@ -669,6 +740,9 @@ export function formatCloudSyncError(e: unknown): string {
   if (code === "permission-denied" || /insufficient permissions/i.test(base)) {
     return `${base} — Firestore 규칙에 firestore.rules 를 콘솔에서 게시했는지 확인하세요.`;
   }
+  if (code?.startsWith("storage/")) {
+    return `${base} — Firebase Storage 활성화·storage.rules 배포·달력 공유 연동 또는 Blaze 요금제를 확인하세요.`;
+  }
   return base;
 }
 
@@ -681,8 +755,9 @@ export function isCloudSyncMutation(): boolean {
 
 /**
  * 원격과 로컬을 병합한 뒤 양쪽에 반영합니다.
- * Spark(무료) 플랜: Firebase Storage 없이 Firestore 문서에 압축 JPEG(Base64)만 저장합니다.
- * Gemini 키는 users/{uid}/config/private 에만 저장되며, Firestore 규칙으로 본인만 접근합니다.
+ * 식단·건강 사진 본문은 Firebase Storage, Firestore 에는 메타·Storage 경로만 둡니다.
+ * 과거 레코드는 pull 시 Base64 만 있는 문서도 그대로 읽습니다.
+ * Gemini 키는 users/{uid}/config/private 에만 저장됩니다.
  */
 export async function syncCloudWithLocal(): Promise<void> {
   cloudSyncMutationDepth++;
