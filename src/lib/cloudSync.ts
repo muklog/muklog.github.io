@@ -129,31 +129,28 @@ async function itemStoredToItem(s: MealItemStored): Promise<MealItem> {
   const { photoBase64, photoMimeType, photoStoragePath, thumbStoragePath, ...rest } = s;
   const item: MealItem = { ...rest };
 
-  if (photoStoragePath && thumbStoragePath) {
-    try {
-      const [photoBlob, thumbBlob] = await Promise.all([
-        blobFromStoragePath(photoStoragePath),
-        blobFromStoragePath(thumbStoragePath),
-      ]);
-      item.photo = photoBlob;
-      item.thumbnail = thumbBlob;
-    } catch (e) {
-      console.warn("[cloudSync] 식단 항목 Storage 로드 실패", e);
-    }
-    return item;
-  }
-
+  /** 한쪽 파일만 깨져도 다른 쪽·Base64 폴백을 쓰려고 경로별로 따로 받는다. */
   if (photoStoragePath || thumbStoragePath) {
     try {
       if (photoStoragePath) item.photo = await blobFromStoragePath(photoStoragePath);
+    } catch (e) {
+      console.warn("[cloudSync] 식단 photo Storage 로드 실패", photoStoragePath, e);
+    }
+    try {
       if (thumbStoragePath) item.thumbnail = await blobFromStoragePath(thumbStoragePath);
+    } catch (e) {
+      console.warn("[cloudSync] 식단 thumb Storage 로드 실패", thumbStoragePath, e);
+    }
+    try {
       if (item.photo && item.photo.size > 0 && !(item.thumbnail?.size)) {
         item.thumbnail = await makeThumbnail(item.photo);
       }
     } catch (e) {
-      console.warn("[cloudSync] 식단 항목 Storage(부분) 로드 실패", e);
+      console.warn("[cloudSync] 식단 썸네일 생성 실패", e);
     }
-    return item;
+    if ((item.photo?.size ?? 0) > 0 || (item.thumbnail?.size ?? 0) > 0) {
+      return item;
+    }
   }
 
   if (photoBase64 && photoMimeType) {
@@ -225,18 +222,27 @@ export async function storedToHealth(s: HealthStored): Promise<HealthRecord> {
   } = s;
   const rec: HealthRecord = { ...rest };
 
-  if (photoStoragePath && thumbStoragePath) {
+  if (photoStoragePath || thumbStoragePath) {
     try {
-      const [photoBlob, thumbBlob] = await Promise.all([
-        blobFromStoragePath(photoStoragePath),
-        blobFromStoragePath(thumbStoragePath),
-      ]);
-      rec.photo = photoBlob;
-      rec.thumbnail = thumbBlob;
+      if (photoStoragePath) rec.photo = await blobFromStoragePath(photoStoragePath);
     } catch (e) {
-      console.warn("[cloudSync] 건강 기록 Storage 로드 실패", e);
+      console.warn("[cloudSync] 건강 photo Storage 로드 실패", photoStoragePath, e);
     }
-    return rec;
+    try {
+      if (thumbStoragePath) rec.thumbnail = await blobFromStoragePath(thumbStoragePath);
+    } catch (e) {
+      console.warn("[cloudSync] 건강 thumb Storage 로드 실패", thumbStoragePath, e);
+    }
+    try {
+      if (rec.photo && rec.photo.size > 0 && !(rec.thumbnail?.size)) {
+        rec.thumbnail = await makeThumbnail(rec.photo);
+      }
+    } catch (e) {
+      console.warn("[cloudSync] 건강 썸네일 생성 실패", e);
+    }
+    if ((rec.photo?.size ?? 0) > 0 || (rec.thumbnail?.size ?? 0) > 0) {
+      return rec;
+    }
   }
 
   if (photoBase64 && photoMimeType) {
@@ -325,6 +331,21 @@ async function mergeMeals(local: Meal[], remote: MealStored[]): Promise<Meal[]> 
   return out;
 }
 
+function healthHasRenderableImage(h: HealthRecord): boolean {
+  return (h.photo?.size ?? 0) > 0 || (h.thumbnail?.size ?? 0) > 0;
+}
+
+async function mergeHealthPhotosFromLocal(remote: HealthRecord, loc?: HealthRecord): Promise<HealthRecord> {
+  if (healthHasRenderableImage(remote)) return remote;
+  if (!loc || !healthHasRenderableImage(loc)) return remote;
+  const photo = loc.photo?.size ? loc.photo : remote.photo;
+  let thumbnail = loc.thumbnail?.size ? loc.thumbnail : remote.thumbnail;
+  if (photo && photo.size > 0 && !(thumbnail?.size)) {
+    thumbnail = await makeThumbnail(photo);
+  }
+  return { ...remote, photo, thumbnail };
+}
+
 async function mergeHealth(local: HealthRecord[], remote: HealthStored[]): Promise<HealthRecord[]> {
   const rMap = new Map(remote.map((x) => [x.id, x]));
   const lMap = new Map(local.map((x) => [x.id, x]));
@@ -336,7 +357,7 @@ async function mergeHealth(local: HealthRecord[], remote: HealthStored[]): Promi
     if (!l) out.push(await storedToHealth(r!));
     else if (!r) out.push(l);
     else if (l.updatedAt >= r.updatedAt) out.push(l);
-    else out.push(await storedToHealth(r));
+    else out.push(await mergeHealthPhotosFromLocal(await storedToHealth(r), l));
   }
   return out;
 }
@@ -826,6 +847,61 @@ export async function syncCloudWithLocal(): Promise<void> {
         remoteMealsFiltered,
         remoteHealthFiltered,
       );
+
+      /**
+       * Storage Blob 을 모두 받기 전에도 사용자 행과 활성 프로필이 Dexie 에 있어야 한다.
+       * 그렇지 않으면 first-login 게이트(`userCount===0`)가 전체 getBlob 완료까지 앱 진입을 막는다.
+       */
+      const nowTsShell = Date.now();
+      const mealShellsForConsolidate: Meal[] = remoteMealsFiltered.map((s) => ({
+        id: s.id,
+        userId: s.userId,
+        date: s.date,
+        slot: s.slot,
+        items: [],
+        createdAt: s.createdAt ?? nowTsShell,
+        updatedAt: s.updatedAt ?? nowTsShell,
+      }));
+      const healthShellsForConsolidate: HealthRecord[] = remoteHealthFiltered.map(
+        (h) =>
+          ({
+            ...(h as object),
+            photo: undefined,
+            thumbnail: undefined,
+          }) as HealthRecord,
+      );
+      const consolidatePreview = consolidateToFirebaseProfile(
+        uid,
+        mergedMembers,
+        mealShellsForConsolidate,
+        healthShellsForConsolidate,
+      );
+
+      await dexieDb.transaction("rw", dexieDb.users, dexieDb.settings, async () => {
+        const muPrev = new Set(consolidatePreview.members.map((x) => x.id));
+        const oldUPrev = await dexieDb.users.toCollection().primaryKeys();
+        await dexieDb.users.bulkDelete(oldUPrev.filter((id) => !muPrev.has(id as string)) as string[]);
+        await dexieDb.users.bulkPut(consolidatePreview.members);
+
+        const curS = (await dexieDb.settings.get(SETTINGS_KEY)) ?? { id: SETTINGS_KEY };
+        let nextEarly: AppSettings = {
+          ...curS,
+          id: SETTINGS_KEY,
+          activeUserId: consolidatePreview.activeUserId,
+        };
+        if (remotePublic && remotePublic.updatedAt > (curS.appSettingsUpdatedAt ?? 0)) {
+          nextEarly = {
+            ...nextEarly,
+            activeUserId:
+              remotePublic.activeUserId ?? consolidatePreview.activeUserId,
+            onboarded: remotePublic.onboarded,
+            theme: remotePublic.theme,
+            appSettingsUpdatedAt: remotePublic.updatedAt,
+          };
+        }
+        await dexieDb.settings.put(nextEarly);
+      });
+
       mergedMeals = await mergeMeals(localMeals, remoteMealsFiltered);
       mergedHealth = await mergeHealth(localHealth, remoteHealthFiltered);
 

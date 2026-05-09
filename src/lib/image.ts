@@ -389,8 +389,13 @@ const urlCache = new WeakMap<object, string>();
 function isBlobLikeForUrl(v: unknown): v is Blob {
   if (!v || typeof v !== "object") return false;
   if (v instanceof Blob) return true;
-  const b = v as Blob;
-  return typeof b.size === "number" && typeof b.arrayBuffer === "function" && typeof b.slice === "function";
+  const b = v as Blob & { stream?: unknown };
+  if (typeof b.size !== "number") return false;
+  return (
+    typeof b.arrayBuffer === "function" ||
+    typeof b.slice === "function" ||
+    typeof b.stream === "function"
+  );
 }
 
 /** 화면에 올릴 수 있는 크기를 가진 Blob / Blob 호환 IndexedDB 객체 */
