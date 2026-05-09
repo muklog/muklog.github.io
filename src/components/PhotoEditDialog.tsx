@@ -3,12 +3,16 @@ import { createPortal } from "react-dom";
 import { Check, Loader2, RotateCw, X } from "lucide-react";
 import {
   clampPanForSquareCover,
-  decodeToRotatedCanvas,
+  decodeImage,
   drawSquareCoverCrop,
   exportSquareCropJpeg,
+  rotatedSourceCanvas,
   squareCoverScaleK,
+  type DecodedImage,
 } from "../lib/image";
 import { cls } from "../lib/utils";
+
+const PREVIEW_ZOOM = 1;
 
 export type PhotoEditDialogProps = {
   file: File;
@@ -21,7 +25,8 @@ export type PhotoEditDialogProps = {
 };
 
 /**
- * 정사각 프레임 미리보기·드래그 패닝·줌·90° 회전 후 JPEG 한 장 확정.
+ * 정사각 프레임 미리보기·드래그 패닝·90° 회전 후 JPEG 한 장 확정.
+ * 원본은 한 번만 디코드하고, 회전은 캔버스 변환으로 즉시 반영합니다.
  */
 export default function PhotoEditDialog({
   file,
@@ -32,6 +37,7 @@ export default function PhotoEditDialog({
 }: PhotoEditDialogProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const decodedRef = useRef<DecodedImage | null>(null);
   const [previewPx, setPreviewPx] = useState(0);
   const [loading, setLoading] = useState(true);
   const [decodeErr, setDecodeErr] = useState<string | null>(null);
@@ -40,7 +46,7 @@ export default function PhotoEditDialog({
   const [Rh, setRh] = useState(0);
 
   const [quarterTurns, setQuarterTurns] = useState<0 | 1 | 2 | 3>(0);
-  const [zoom, setZoom] = useState(1);
+  const [decodedGeneration, setDecodedGeneration] = useState(0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [busyConfirm, setBusyConfirm] = useState(false);
 
@@ -66,17 +72,25 @@ export default function PhotoEditDialog({
     return () => ro.disconnect();
   }, []);
 
+  /** 파일 바뀔 때만 디코드(회전은 아래 동기 처리). */
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setDecodeErr(null);
-    void decodeToRotatedCanvas(file, quarterTurns)
-      .then((r) => {
-        if (cancelled) return;
-        setRotCanvas(r.canvas);
-        setRw(r.Rw);
-        setRh(r.Rh);
+    setRotCanvas(null);
+    decodedRef.current?.dispose();
+    decodedRef.current = null;
+
+    void decodeImage(file)
+      .then((d) => {
+        if (cancelled) {
+          d.dispose();
+          return;
+        }
+        decodedRef.current = d;
+        setQuarterTurns(0);
         setPan({ x: 0, y: 0 });
+        setDecodedGeneration((g) => g + 1);
       })
       .catch((e) => {
         if (cancelled) return;
@@ -86,20 +100,33 @@ export default function PhotoEditDialog({
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+
     return () => {
       cancelled = true;
+      decodedRef.current?.dispose();
+      decodedRef.current = null;
     };
-  }, [file, quarterTurns]);
+  }, [file]);
+
+  /** 디코드 직후 + 회전 시: 동기 회전 적용. */
+  useEffect(() => {
+    const d = decodedRef.current;
+    if (!d) return;
+    const rot = rotatedSourceCanvas(d.source, d.width, d.height, quarterTurns);
+    setRotCanvas(rot);
+    setRw(rot.width);
+    setRh(rot.height);
+  }, [decodedGeneration, quarterTurns]);
 
   useEffect(() => {
     if (!rotCanvas || previewPx < 16 || Rw < 1) return;
     setPan((prev) => {
-      const K = squareCoverScaleK(Rw, Rh, previewPx, zoom);
+      const K = squareCoverScaleK(Rw, Rh, previewPx, PREVIEW_ZOOM);
       const c = clampPanForSquareCover(Rw, Rh, K, previewPx, prev.x, prev.y);
       if (c.panX === prev.x && c.panY === prev.y) return prev;
       return { x: c.panX, y: c.panY };
     });
-  }, [zoom, rotCanvas, Rw, Rh, previewPx]);
+  }, [rotCanvas, Rw, Rh, previewPx]);
 
   const redrawPreview = useCallback(() => {
     const canvasEl = canvasRef.current;
@@ -117,19 +144,20 @@ export default function PhotoEditDialog({
     if (!ctx) return;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const K = squareCoverScaleK(Rw, Rh, side, zoom);
+    const K = squareCoverScaleK(Rw, Rh, side, PREVIEW_ZOOM);
     const c = clampPanForSquareCover(Rw, Rh, K, side, pan.x, pan.y);
-    drawSquareCoverCrop(ctx, rotCanvas, Rw, Rh, side, c.panX, c.panY, zoom);
+    drawSquareCoverCrop(ctx, rotCanvas, Rw, Rh, side, c.panX, c.panY, PREVIEW_ZOOM);
     if (c.panX !== pan.x || c.panY !== pan.y) {
       queueMicrotask(() => setPan({ x: c.panX, y: c.panY }));
     }
-  }, [rotCanvas, previewPx, Rw, Rh, zoom, pan.x, pan.y]);
+  }, [rotCanvas, previewPx, Rw, Rh, pan.x, pan.y]);
 
   useEffect(() => {
     redrawPreview();
   }, [redrawPreview]);
 
   function bumpRotate() {
+    if (decodeErr || !decodedRef.current) return;
     setQuarterTurns((q) => ((q + 1) % 4) as 0 | 1 | 2 | 3);
     setPan({ x: 0, y: 0 });
   }
@@ -149,7 +177,7 @@ export default function PhotoEditDialog({
     setPan((prev) => {
       const nx = prev.x + dx;
       const ny = prev.y + dy;
-      const K = squareCoverScaleK(Rw, Rh, previewPx, zoom);
+      const K = squareCoverScaleK(Rw, Rh, previewPx, PREVIEW_ZOOM);
       const c = clampPanForSquareCover(Rw, Rh, K, previewPx, nx, ny);
       return { x: c.panX, y: c.panY };
     });
@@ -161,13 +189,13 @@ export default function PhotoEditDialog({
 
   async function confirm() {
     if (!rotCanvas || previewPx < 16 || Rw < 1 || busyConfirm) return;
-    const K = squareCoverScaleK(Rw, Rh, previewPx, zoom);
+    const K = squareCoverScaleK(Rw, Rh, previewPx, PREVIEW_ZOOM);
     const clamped = clampPanForSquareCover(Rw, Rh, K, previewPx, pan.x, pan.y);
     setBusyConfirm(true);
     try {
       const blobFile = await exportSquareCropJpeg(file, {
         quarterTurns,
-        zoom,
+        zoom: PREVIEW_ZOOM,
         panX: clamped.panX,
         panY: clamped.panY,
         previewSidePx: previewPx,
@@ -228,12 +256,8 @@ export default function PhotoEditDialog({
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain space-y-3 px-4 pb-4 pt-3">
           <p className="text-xs leading-relaxed text-slate-400">
             아래 정사각 프레임 안에 들어가는 장면이{" "}
-            <span className="text-slate-200">최종 저장·업로드</span>됩니다. 드래그로 위치, 슬라이더로 확대를
-            맞춘 뒤 회전 버튼으로 방향을 바꿀 수 있어요.
-          </p>
-          <p className="text-[11px] leading-relaxed text-slate-500">
-            확인 후에는 이 화면에서 만든 JPG를 한 번 더 압축·썸네일까지 만든 다음, 평소처럼 앱 저장소와 클라우드에
-            올려요.
+            <span className="text-slate-200">최종 저장·업로드</span>됩니다. 드래그로 위치를 맞춘 뒤, 회전
+            버튼으로 방향을 바꿀 수 있어요.
           </p>
 
           <div
@@ -263,31 +287,6 @@ export default function PhotoEditDialog({
                 onPointerCancel={endDrag}
               />
             )}
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
-              <span>확대</span>
-              <span className="tabular-nums text-slate-500">{zoom.toFixed(2)}×</span>
-            </div>
-            <input
-              type="range"
-              min={1}
-              max={3}
-              step={0.02}
-              value={zoom}
-              disabled={busyConfirm || loading || !!decodeErr}
-              onChange={(ev) => {
-                const nz = Number(ev.target.value);
-                if (!Number.isFinite(nz)) return;
-                setZoom(Math.min(3, Math.max(1, nz)));
-              }}
-              className="w-full accent-brand-500 disabled:opacity-40"
-              aria-valuemin={1}
-              aria-valuemax={3}
-              aria-valuenow={zoom}
-              aria-label="확대"
-            />
           </div>
 
           <div className="flex gap-2">

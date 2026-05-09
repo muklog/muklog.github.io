@@ -11,7 +11,7 @@ export interface CompressOptions {
   square?: boolean;
 }
 
-type DecodedImage = {
+export type DecodedImage = {
   width: number;
   height: number;
   /** canvas 에 그릴 때 drawImage 의 1번째 인자로 넘길 수 있는 객체 */
@@ -109,7 +109,7 @@ async function decodeWithHtmlImage(blob: Blob): Promise<DecodedImage> {
   }
 }
 
-async function decodeImage(blob: Blob): Promise<DecodedImage> {
+export async function decodeImage(blob: Blob): Promise<DecodedImage> {
   const viaBitmap = await decodeWithImageBitmap(blob);
   if (viaBitmap) return viaBitmap;
   return decodeWithHtmlImage(blob);
