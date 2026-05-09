@@ -17,7 +17,7 @@ import {
   getPublicProfile,
 } from "../lib/friends";
 import { removePullRefreshSplash } from "../lib/pullRefreshSplash";
-import { friendFeedShareableMealItems } from "../lib/mealItems";
+import { friendFeedShareableMealItems, publicMealItems } from "../lib/mealItems";
 import type { Meal, PublicProfile, Share } from "../types";
 import { useAuth } from "./AuthContext";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
@@ -211,7 +211,8 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
       color: myProfile?.color,
     };
     for (const m of myMeals ?? []) {
-      const pubItems = friendFeedShareableMealItems(m.items);
+      /** 본인 피드에는 초안 제외 전 항목(`isMealPhoto:false` 포함) — 친구 쪽만 shareable 필터 */
+      const pubItems = publicMealItems(m.items);
       if (pubItems.length === 0) continue;
       out.push({ author: myAuthor, meal: { ...m, items: pubItems }, isMine: true });
     }

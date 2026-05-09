@@ -69,7 +69,10 @@ export default function FeedPage() {
 
   useEffect(() => {
     layoutFillPassesRef.current = 0;
-    setVisibleCount((n) => Math.min(Math.max(n, FEED_INITIAL_VISIBLE), entries.length));
+    const len = entries.length;
+    setVisibleCount((n) =>
+      len === 0 ? FEED_INITIAL_VISIBLE : Math.min(Math.max(n, FEED_INITIAL_VISIBLE), len),
+    );
   }, [entries.length]);
 
   const visibleEntries =
