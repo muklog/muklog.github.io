@@ -31,7 +31,7 @@ import { STALL_REFRESH_HINT } from "../lib/tabLoadingMessage";
  */
 const FEED_INITIAL_VISIBLE = 1;
 /** 짧은 첫 카드 + 큰 창: bump 시 한 번에 부풀릴 카드 수(이후 레이아웃 시 한 장씩 더 채움) */
-const FEED_LOAD_BURST = 4;
+const FEED_LOAD_BURST = 8;
 
 export default function FeedPage() {
   const { user, firebaseReady, loading: authLoading } = useAuth();
@@ -79,6 +79,7 @@ export default function FeedPage() {
     entries.length <= visibleCount ? entries : entries.slice(0, visibleCount);
   const [emptyHintReady, setEmptyHintReady] = useState(false);
   const [friendPromptReady, setFriendPromptReady] = useState(false);
+  const [loadMoreHintReady, setLoadMoreHintReady] = useState(false);
   useEffect(() => {
     if (!streamReady || entries.length > 0) {
       setEmptyHintReady(false);
@@ -95,6 +96,14 @@ export default function FeedPage() {
     const t = window.setTimeout(() => setFriendPromptReady(true), 1200);
     return () => window.clearTimeout(t);
   }, [streamReady, hasFriends]);
+  useEffect(() => {
+    if (!streamReady || entries.length === 0 || visibleCount >= entries.length) {
+      setLoadMoreHintReady(false);
+      return;
+    }
+    const t = window.setTimeout(() => setLoadMoreHintReady(true), 1400);
+    return () => window.clearTimeout(t);
+  }, [streamReady, entries.length, visibleCount]);
 
   /**
    * PC 등 뷰포트가 높을 때 첫 카드만 짧아도 센티널이 보이지만 IntersectionObserver/스크롤이 한 번만
@@ -131,7 +140,11 @@ export default function FeedPage() {
       const s = target.getBoundingClientRect();
       const vh = typeof window !== "undefined" ? window.innerHeight : 0;
       if (!(vh > 0 && s.bottom > 0 && s.top < vh)) return;
-      setVisibleCount((prev) => (prev >= len ? prev : Math.min(prev + FEED_LOAD_BURST, len)));
+      setVisibleCount((prev) => {
+        if (prev >= len) return prev;
+        const dynamicStep = Math.max(FEED_LOAD_BURST, Math.ceil((len - prev) / 3));
+        return Math.min(prev + dynamicStep, len);
+      });
     };
 
     let scrollRaf = 0;
@@ -146,7 +159,7 @@ export default function FeedPage() {
     /** root 를 main 에만 두면 창 스크롤만 있는 레이아웃에서 교차 검사가 영원히 false 인 경우가 있음 */
     const opts: IntersectionObserverInit = {
       root: null,
-      rootMargin: "280px 0px",
+      rootMargin: "680px 0px",
       threshold: 0,
     };
 
@@ -285,7 +298,9 @@ export default function FeedPage() {
                 className="flex flex-col items-center gap-1 py-5 text-center"
                 aria-hidden
               >
-                <span className="text-[11px] text-slate-500">아래로 스크롤하면 더 보여요</span>
+                {loadMoreHintReady && (
+                  <span className="text-[11px] text-slate-500">아래로 스크롤하면 더 보여요</span>
+                )}
               </div>
             )}
           </>

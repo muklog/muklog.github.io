@@ -130,17 +130,13 @@ export default function MealSocialBlock({ ownerUid, mealId }: Props) {
             />
             <div
               className="flex items-center gap-1.5 text-slate-400"
-              aria-label={comments === null ? "댓글 수 불러오는 중" : `댓글 ${total}개`}
+              aria-label={`댓글 ${total}개`}
             >
               <MessageCircle size={16} strokeWidth={2} className="shrink-0 opacity-90" />
               <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums text-slate-300">
                 댓글{" "}
                 <span className="inline-flex min-w-[1rem] items-center justify-center">
-                  {comments === null ? (
-                    <Loader2 size={14} className="animate-spin text-slate-500" aria-hidden />
-                  ) : (
-                    total
-                  )}
+                  {total}
                 </span>
               </span>
             </div>
@@ -219,11 +215,7 @@ function LikeRow({
     >
       <Heart size={16} strokeWidth={2} className={cls("shrink-0", effectiveLiked && "fill-current")} />
       <span className="inline-flex min-w-[1.25rem] items-center justify-center text-xs font-medium tabular-nums">
-        {loading ? (
-          <Loader2 size={14} className="animate-spin text-slate-400" aria-hidden />
-        ) : (
-          likeCount
-        )}
+        {likeCount}
       </span>
     </button>
   );
