@@ -84,15 +84,22 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
   );
 
   const myMeals = useLiveQuery(async () => {
-    if (!myUserId) return [] as Meal[];
-    const arr = await runDexie(() =>
-      db.meals.where("userId").equals(myUserId).toArray(),
+    const ownerIds = [myUserId, myUid].filter(
+      (v): v is string => typeof v === "string" && v.length > 0,
     );
-    return arr
+    if (ownerIds.length === 0) return [] as Meal[];
+
+    // 마이그레이션/프로필 통합 과도기에는 meals.userId 가 local profile id 혹은 firebase uid 일 수 있어 둘 다 본다.
+    const lists = await Promise.all(
+      ownerIds.map((uid) => runDexie(() => db.meals.where("userId").equals(uid).toArray())),
+    );
+    const merged = lists.flat();
+    const byId = new Map(merged.map((m) => [m.id, m]));
+    return [...byId.values()]
       .map(normalizeMeal)
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, MAX_MINE);
-  }, [myUserId]);
+  }, [myUserId, myUid]);
 
   /** null 은 «아직 첫 스냅샷 전» — 전역 loading 에 묶으면 모바일에서 스냅샷 지연 시 내 피드까지 막힌다. */
   const [friendShares, setFriendShares] = useState<Share[] | null>(null);
