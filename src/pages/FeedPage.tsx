@@ -79,20 +79,15 @@ export default function FeedPage() {
     const main = document.querySelector<HTMLElement>("[data-app-scroll-root]");
     let alive = true;
 
+    /** 뷰포트 기준 — 스크롤이 main 안이든 window 든 센티널이 보이면 로드 */
     const bumpIfVisible = () => {
       if (!alive) return;
       const target = sentinelRef.current;
       if (!target) return;
       const len = entriesLenRef.current;
-      if (main) {
-        const m = main.getBoundingClientRect();
-        const s = target.getBoundingClientRect();
-        if (!(s.top < m.bottom && s.bottom > m.top)) return;
-      } else {
-        const s = target.getBoundingClientRect();
-        const vh = window.innerHeight;
-        if (!(s.top < vh && s.bottom > 0)) return;
-      }
+      const s = target.getBoundingClientRect();
+      const vh = typeof window !== "undefined" ? window.innerHeight : 0;
+      if (!(vh > 0 && s.bottom > 0 && s.top < vh)) return;
       setVisibleCount((prev) => (prev >= len ? prev : Math.min(prev + FEED_LOAD_MORE_COUNT, len)));
     };
 
@@ -105,11 +100,13 @@ export default function FeedPage() {
       });
     };
 
+    /** root 를 main 에만 두면 창 스크롤만 있는 레이아웃에서 교차 검사가 영원히 false 인 경우가 있음 */
     const opts: IntersectionObserverInit = {
-      rootMargin: "240px 0px",
+      root: null,
+      rootMargin: "280px 0px",
       threshold: 0,
     };
-    if (main) opts.root = main;
+
     const obs = new IntersectionObserver(
       (records) => {
         if (records.some((r) => r.isIntersecting)) bumpIfVisible();
@@ -118,8 +115,8 @@ export default function FeedPage() {
     );
     obs.observe(el);
 
-    const scrollEl: HTMLElement | Window = main ?? window;
-    scrollEl.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
+    main?.addEventListener("scroll", onScroll, { passive: true });
 
     const rafId = requestAnimationFrame(() => {
       bumpIfVisible();
@@ -134,7 +131,8 @@ export default function FeedPage() {
       cancelAnimationFrame(rafId);
       window.clearTimeout(tStale);
       if (scrollRaf) cancelAnimationFrame(scrollRaf);
-      scrollEl.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scroll", onScroll);
+      main?.removeEventListener("scroll", onScroll);
       obs.disconnect();
     };
   }, [visibleCount, entries.length]);

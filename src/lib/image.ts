@@ -380,17 +380,37 @@ export function base64ToBlob(base64: string, mimeType: string): Blob {
 }
 
 /** 안전한 object URL 캐시 - 컴포넌트 unmount 시 revoke 필요 */
-const urlCache = new WeakMap<Blob, string>();
+const urlCache = new WeakMap<object, string>();
+
+/**
+ * IndexedDB 복원값이 일부 브라우저(삼성 인터넷 등)에서 `instanceof Blob` 이 false 인데
+ * API 는 Blob 과 동일하게 동작하는 경우가 있음 — createObjectURL 은 그래도 성공하는 경우가 많다.
+ */
+function isBlobLikeForUrl(v: unknown): v is Blob {
+  if (!v || typeof v !== "object") return false;
+  if (v instanceof Blob) return true;
+  const b = v as Blob;
+  return typeof b.size === "number" && typeof b.arrayBuffer === "function" && typeof b.slice === "function";
+}
+
 export function blobUrl(blob: Blob | undefined): string | undefined {
   if (!blob) return undefined;
-  if (!(blob instanceof Blob)) {
+  if (!isBlobLikeForUrl(blob)) {
     console.warn("[image] blobUrl: Blob 이 아닌 값은 무시합니다.");
     return undefined;
   }
-  let url = urlCache.get(blob);
+  if (blob.size <= 0) return undefined;
+
+  const key = blob as object;
+  let url = urlCache.get(key);
   if (!url) {
-    url = URL.createObjectURL(blob);
-    urlCache.set(blob, url);
+    try {
+      url = URL.createObjectURL(blob);
+    } catch (e) {
+      console.warn("[image] blobUrl: createObjectURL 실패", e);
+      return undefined;
+    }
+    urlCache.set(key, url);
   }
   return url;
 }
