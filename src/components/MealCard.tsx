@@ -19,7 +19,8 @@ import {
   X,
 } from "lucide-react";
 import type { MealItem } from "../types";
-import { blobUrl } from "../lib/image";
+import { useBlobImgSrc } from "../hooks/useBlobImgSrc";
+import { isRenderableImageBlob } from "../lib/image";
 import { cls } from "../lib/utils";
 import type { MealItemPatch } from "../lib/mealItems";
 import { userFacingStorageErrorMessage } from "../lib/idbRetry";
@@ -59,7 +60,10 @@ export function MealItemCard({
   onEdit,
   onRemove,
 }: ItemCardProps) {
-  const url = blobUrl(item.photo || item.thumbnail);
+  const photoBlob = item.photo || item.thumbnail;
+  const hasPhoto = isRenderableImageBlob(photoBlob);
+  const { src: photoSrc, pending: photoSrcPending, onImgError: onPhotoImgError } =
+    useBlobImgSrc(photoBlob);
 
   return (
     <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/30 p-2">
@@ -70,14 +74,25 @@ export function MealItemCard({
         className="space-y-2"
       >
       <div className="relative overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
-        {url ? (
-          <img
-            src={url}
-            alt="식사 사진"
-            loading="lazy"
-            decoding="async"
-            className="aspect-square w-full object-cover"
-          />
+        {hasPhoto ? (
+          photoSrcPending && !photoSrc ? (
+            <div className="flex aspect-square w-full items-center justify-center bg-slate-800/80">
+              <Loader2 className="h-8 w-8 shrink-0 animate-spin text-slate-500" aria-hidden />
+            </div>
+          ) : photoSrc ? (
+            <img
+              src={photoSrc}
+              alt="식사 사진"
+              loading="lazy"
+              decoding="async"
+              className="aspect-square w-full object-cover"
+              onError={onPhotoImgError}
+            />
+          ) : (
+            <div className="flex aspect-square w-full items-center justify-center text-xs text-slate-500">
+              사진 없음
+            </div>
+          )
         ) : (
           <div className="flex aspect-square w-full items-center justify-center text-xs text-slate-500">
             사진 없음
@@ -573,7 +588,13 @@ export function MealItemEditDialog({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const imgUrl = useMemo(() => blobUrl(item.thumbnail ?? item.photo), [item]);
+  const dlgPhotoBlob = item.thumbnail ?? item.photo;
+  const dlgHasPhoto = isRenderableImageBlob(dlgPhotoBlob);
+  const {
+    src: dlgImgSrc,
+    pending: dlgImgPending,
+    onImgError: onDlgImgError,
+  } = useBlobImgSrc(dlgPhotoBlob);
 
   async function doSave(reanalyze: boolean) {
     if (!menu.trim()) {
@@ -650,8 +671,23 @@ export function MealItemEditDialog({
         </header>
 
         <div className="mb-3 flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/50 p-2">
-          {imgUrl ? (
-            <img src={imgUrl} alt="" className="h-16 w-16 rounded-lg border border-slate-800 object-cover" />
+          {dlgHasPhoto ? (
+            dlgImgPending && !dlgImgSrc ? (
+              <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-slate-800 bg-slate-900">
+                <Loader2 size={20} className="animate-spin text-slate-500" aria-hidden />
+              </div>
+            ) : dlgImgSrc ? (
+              <img
+                src={dlgImgSrc}
+                alt=""
+                className="h-16 w-16 rounded-lg border border-slate-800 object-cover"
+                onError={onDlgImgError}
+              />
+            ) : (
+              <div className="h-16 w-16 rounded-lg border border-slate-800 bg-slate-900 text-center text-[10px] leading-[4rem] text-slate-500">
+                사진 없음
+              </div>
+            )
           ) : (
             <div className="h-16 w-16 rounded-lg border border-slate-800 bg-slate-900 text-center text-[10px] leading-[4rem] text-slate-500">
               사진 없음

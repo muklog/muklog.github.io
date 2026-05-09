@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 import { HEALTH_TYPE_LABELS, type HealthRecord } from "../types";
 import HealthPhotoViewport from "./HealthPhotoViewport";
-import { blobUrl } from "../lib/image";
+import { useBlobImgSrc } from "../hooks/useBlobImgSrc";
+import { isRenderableImageBlob } from "../lib/image";
 import { formatKoDate } from "../lib/utils";
 
 interface Props {
@@ -31,26 +32,39 @@ export default function HealthRecordCard({
   onRemove,
 }: Props) {
   const [open, setOpen] = useState(false);
-  const thumbUrl = blobUrl(record.photo || record.thumbnail);
+  const photoBlob = record.photo ?? record.thumbnail;
+  const hasPhoto = isRenderableImageBlob(photoBlob);
+  const { src: photoSrc, pending: photoSrcPending, onImgError: onPhotoImgError } =
+    useBlobImgSrc(photoBlob);
 
   return (
     <div className="card overflow-hidden">
       <div className="flex w-full items-stretch gap-3 p-3">
-        {thumbUrl ? (
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="shrink-0 self-start rounded-xl border border-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/40"
-            aria-label={open ? "기록 접기" : "기록 펼치기"}
-          >
-            <img
-              src={thumbUrl}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              className="h-14 w-14 rounded-xl object-cover"
+        {hasPhoto ? (
+          photoSrcPending && !photoSrc ? (
+            <div
+              className="h-14 w-14 shrink-0 animate-pulse self-start rounded-xl bg-slate-700"
+              aria-hidden
             />
-          </button>
+          ) : photoSrc ? (
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="shrink-0 self-start rounded-xl border border-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/40"
+              aria-label={open ? "기록 접기" : "기록 펼치기"}
+            >
+              <img
+                src={photoSrc}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                className="h-14 w-14 rounded-xl object-cover"
+                onError={onPhotoImgError}
+              />
+            </button>
+          ) : (
+            <div className="h-14 w-14 shrink-0 rounded-xl bg-slate-800" />
+          )
         ) : (
           <div className="h-14 w-14 shrink-0 rounded-xl bg-slate-800" />
         )}
@@ -83,9 +97,14 @@ export default function HealthRecordCard({
 
       {open && (
         <div className="space-y-3 border-t border-slate-800 p-4">
-          {(record.photo ?? record.thumbnail) && (
-            <HealthPhotoViewport src={blobUrl(record.photo ?? record.thumbnail)!} />
-          )}
+          {hasPhoto &&
+            (photoSrcPending && !photoSrc ? (
+              <div className="flex h-[260px] items-center justify-center rounded-xl bg-slate-800/50">
+                <Loader2 size={28} className="animate-spin text-brand-400" aria-hidden />
+              </div>
+            ) : photoSrc ? (
+              <HealthPhotoViewport src={photoSrc} />
+            ) : null)}
           {record.analysisStatus === "analyzing" && (
             <div className="flex items-center gap-2 rounded-xl bg-slate-800/50 px-3 py-2 text-sm text-slate-300">
               <Loader2 size={16} className="animate-spin text-brand-400" />

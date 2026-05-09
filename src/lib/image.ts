@@ -393,13 +393,19 @@ function isBlobLikeForUrl(v: unknown): v is Blob {
   return typeof b.size === "number" && typeof b.arrayBuffer === "function" && typeof b.slice === "function";
 }
 
+/** 화면에 올릴 수 있는 크기를 가진 Blob / Blob 호환 IndexedDB 객체 */
+export function isRenderableImageBlob(v: unknown): v is Blob {
+  return isBlobLikeForUrl(v) && v.size > 0;
+}
+
 export function blobUrl(blob: Blob | undefined): string | undefined {
   if (!blob) return undefined;
-  if (!isBlobLikeForUrl(blob)) {
-    console.warn("[image] blobUrl: Blob 이 아닌 값은 무시합니다.");
+  if (!isRenderableImageBlob(blob)) {
+    if (!isBlobLikeForUrl(blob)) {
+      console.warn("[image] blobUrl: Blob 이 아닌 값은 무시합니다.");
+    }
     return undefined;
   }
-  if (blob.size <= 0) return undefined;
 
   const key = blob as object;
   let url = urlCache.get(key);
