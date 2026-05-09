@@ -16,6 +16,8 @@
     "deploy:firestore-rules": "npx --yes firebase-tools deploy --only firestore:rules",
     "deploy:firestore": "npx --yes firebase-tools deploy --only firestore",
     "deploy:storage-rules": "npx --yes firebase-tools deploy --only storage",
+    "deploy:storage-cors": "gsutil cors set storage-cors.json gs://healthhealth-23fa9.firebasestorage.app",
+    "deploy:storage-cors:appspot": "gsutil cors set storage-cors.json gs://healthhealth-23fa9.appspot.com",
     "gen:icons": "node scripts/gen-pwa-icons.mjs",
     "android:bubblewrap": "npx --yes @bubblewrap/cli@latest"
   },
