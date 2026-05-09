@@ -51,6 +51,8 @@ function feedEntryActivityTs(e: FeedEntry): number {
 type Ctx = {
   entries: FeedEntry[];
   loading: boolean;
+  /** 빈 상태 문구를 보여도 되는지(초기 스냅샷 안정화 완료) */
+  settled: boolean;
   entriesMaxUpdatedAt: number;
   markFeedWatermark: () => void;
 };
@@ -314,6 +316,16 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
    * 모바일(Samsung 브라우저 등)에서 Firestore 스냅샷이 늦을 때 피드 전체가 비는 문제가 생긴다.
    */
   const loading = authLoading || myMeals === undefined;
+  const ownSettled =
+    !myUid ||
+    !feedFirestoreLive ||
+    (myMeals !== undefined && myMeals.length > 0) ||
+    myRemoteMeals !== null;
+  const friendSettled =
+    !myUid ||
+    !feedFirestoreLive ||
+    friendShares !== null;
+  const settled = !loading && ownSettled && friendSettled;
 
   useEffect(() => {
     if (loading) return;
@@ -324,10 +336,11 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
     () => ({
       entries,
       loading,
+      settled,
       entriesMaxUpdatedAt,
       markFeedWatermark,
     }),
-    [entries, loading, entriesMaxUpdatedAt, markFeedWatermark],
+    [entries, loading, settled, entriesMaxUpdatedAt, markFeedWatermark],
   );
 
   return <FeedStreamContext.Provider value={value}>{children}</FeedStreamContext.Provider>;

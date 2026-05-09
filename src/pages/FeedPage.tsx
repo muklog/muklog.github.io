@@ -38,6 +38,7 @@ export default function FeedPage() {
   const fs = useFeedStream();
   const entries = fs?.entries ?? [];
   const loading = fs?.loading ?? true;
+  const settled = fs?.settled ?? false;
   /** 친구 스트림·공유 목록이 준비된 뒤에만 목록·친구 유도 카드를 그림 — 준비 전엔 깜빡임 없이 로딩만 */
   const streamReady = !loading;
   const myUid = firebaseReady ? user?.uid : undefined;
@@ -81,21 +82,21 @@ export default function FeedPage() {
   const [friendPromptReady, setFriendPromptReady] = useState(false);
   const [loadMoreHintReady, setLoadMoreHintReady] = useState(false);
   useEffect(() => {
-    if (!streamReady || entries.length > 0) {
+    if (!streamReady || !settled || entries.length > 0) {
       setEmptyHintReady(false);
       return;
     }
     const t = window.setTimeout(() => setEmptyHintReady(true), 900);
     return () => window.clearTimeout(t);
-  }, [streamReady, entries.length]);
+  }, [streamReady, settled, entries.length]);
   useEffect(() => {
-    if (!streamReady || hasFriends) {
+    if (!streamReady || !settled || hasFriends) {
       setFriendPromptReady(false);
       return;
     }
     const t = window.setTimeout(() => setFriendPromptReady(true), 1200);
     return () => window.clearTimeout(t);
-  }, [streamReady, hasFriends]);
+  }, [streamReady, settled, hasFriends]);
   useEffect(() => {
     if (!streamReady || entries.length === 0 || visibleCount >= entries.length) {
       setLoadMoreHintReady(false);
