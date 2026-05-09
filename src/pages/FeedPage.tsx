@@ -77,6 +77,15 @@ export default function FeedPage() {
 
   const visibleEntries =
     entries.length <= visibleCount ? entries : entries.slice(0, visibleCount);
+  const [emptyHintReady, setEmptyHintReady] = useState(false);
+  useEffect(() => {
+    if (!streamReady || entries.length > 0) {
+      setEmptyHintReady(false);
+      return;
+    }
+    const t = window.setTimeout(() => setEmptyHintReady(true), 900);
+    return () => window.clearTimeout(t);
+  }, [streamReady, entries.length]);
 
   /**
    * PC 등 뷰포트가 높을 때 첫 카드만 짧아도 센티널이 보이지만 IntersectionObserver/스크롤이 한 번만
@@ -239,7 +248,7 @@ export default function FeedPage() {
           </div>
         ) : (
           <>
-            {entries.length === 0 && (
+            {entries.length === 0 && emptyHintReady && (
               <p className="card p-6 text-center text-sm text-slate-400">
                 <Sparkles size={16} className="mb-0.5 mr-1 inline text-brand-400" />
                 아직 기록이 없어요. 오늘의 첫 끼니를 찍어 올려볼까요?

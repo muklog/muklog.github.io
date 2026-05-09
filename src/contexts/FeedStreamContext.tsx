@@ -202,6 +202,22 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
     };
   }, [friendShares]);
 
+  /** 모바일에서 Dexie pull 동기화가 늦는 동안에도 내 피드를 바로 보이게 하는 Firestore 폴백 */
+  const [myRemoteMeals, setMyRemoteMeals] = useState<Meal[] | null>(null);
+  useEffect(() => {
+    if (!myUid || !feedFirestoreLive) {
+      setMyRemoteMeals(null);
+      return;
+    }
+    const unsub = subscribeFriendLatestMeals(
+      myUid,
+      MAX_MINE,
+      (rows) => setMyRemoteMeals(rows),
+      () => setMyRemoteMeals([]),
+    );
+    return () => unsub();
+  }, [myUid, feedFirestoreLive]);
+
   const entries = useMemo<FeedEntry[]>(() => {
     const out: FeedEntry[] = [];
     const myAuthor: FeedAuthor = {
@@ -213,7 +229,9 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
       photoURL: resolveDisplayPhotoURL(myProfile, user?.photoURL),
       color: myProfile?.color,
     };
-    for (const m of myMeals ?? []) {
+    const ownRows =
+      myMeals && myMeals.length > 0 ? myMeals : myRemoteMeals ?? [];
+    for (const m of ownRows) {
       /** 본인 피드에는 초안 제외 전 항목(`isMealPhoto:false` 포함) — 친구 쪽만 shareable 필터 */
       const pubItems = publicMealItems(m.items);
       if (pubItems.length === 0) continue;
@@ -243,6 +261,7 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
     return out;
   }, [
     myMeals,
+    myRemoteMeals,
     friendShares,
     friendMealsByOwner,
     friendPublicByUid,
