@@ -11,6 +11,7 @@ import {
   runDexie,
   uid,
 } from "../lib/db";
+import { requestAutoCloudSync } from "../lib/autoCloudSync";
 import { analyzeMealImage } from "../lib/ai";
 import { shareMealCardFromElement } from "../lib/shareMealCardImage";
 import { getAppShareAbsoluteUrl } from "../lib/siteUrl";
@@ -36,7 +37,7 @@ import {
 } from "../components/MealCard";
 import MealMultiPhotoSummaryChips from "../components/MealMultiPhotoSummaryChips";
 import MealSocialBlock from "../components/MealSocialBlock";
-import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
+import { usePrimaryUserIdState } from "../hooks/usePrimaryUserId";
 import { useAuth } from "../contexts/AuthContext";
 import { formatKoDate } from "../lib/utils";
 import { MAX_MEAL_ITEMS } from "../lib/mealLimits";
@@ -47,7 +48,7 @@ export default function DayPage() {
   const navigate = useNavigate();
   const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date);
   const settings = useLiveQuery(() => getSettings(), []);
-  const userId = usePrimaryUserId();
+  const { id: userId, loading: userLoading } = usePrimaryUserIdState();
   const { user, firebaseReady } = useAuth();
 
   const meals = useLiveQuery(
@@ -58,7 +59,7 @@ export default function DayPage() {
               db.meals.where("[userId+date]").equals([userId, date]).toArray(),
             )
           ).map(normalizeMeal)
-        : [],
+        : undefined,
     [userId, date],
   );
 
@@ -67,6 +68,13 @@ export default function DayPage() {
     meals?.forEach((x) => m.set(x.slot, x));
     return m;
   }, [meals]);
+
+  /** 날짜 상세 첫 진입 — 로그인 상태이고 데이터가 비어 있으면 클라우드에서 즉시 한 번 끌어옴. */
+  useEffect(() => {
+    if (!firebaseReady || !user) return;
+    if (meals !== undefined) return;
+    requestAutoCloudSync({ immediate: true });
+  }, [firebaseReady, user?.uid, meals]);
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-4">
@@ -93,9 +101,15 @@ export default function DayPage() {
         </Link>
       )}
 
-      {!userId && (
-        <div className="card p-4 text-center text-sm text-slate-400">
+      {!userId && userLoading && (
+        <div className="card flex items-center justify-center gap-2 p-4 text-center text-sm text-slate-400">
+          <Loader2 size={14} className="animate-spin text-slate-400" />
           프로필을 불러오는 중이에요.
+        </div>
+      )}
+      {!userId && !userLoading && (
+        <div className="card p-4 text-center text-sm text-slate-400">
+          표시할 프로필이 없어요.
         </div>
       )}
 

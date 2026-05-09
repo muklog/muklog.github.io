@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Sparkles, ChevronRight, Plus } from "lucide-react";
+import { Sparkles, ChevronRight, Loader2, Plus } from "lucide-react";
 import { db, getSettings, runDexie } from "../lib/db";
+import { requestAutoCloudSync } from "../lib/autoCloudSync";
+import { useAuth } from "../contexts/AuthContext";
 import { publicMealItems } from "../lib/mealItems";
 import Calendar from "../components/Calendar";
-import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
+import { usePrimaryUserIdState } from "../hooks/usePrimaryUserId";
 import { dateKey, formatKoDate, suggestMealSlotForNow } from "../lib/utils";
 import { MEAL_SLOTS, MEAL_SLOT_EMOJI, MEAL_SLOT_LABELS } from "../types";
 
@@ -15,7 +17,8 @@ export default function HomePage() {
   const [selected, setSelected] = useState<string>(dateKey());
 
   const settings = useLiveQuery(() => getSettings(), []);
-  const userId = usePrimaryUserId();
+  const { id: userId, loading: userLoading } = usePrimaryUserIdState();
+  const { firebaseReady, user } = useAuth();
 
   const dayMeals = useLiveQuery(
     async () =>
@@ -23,7 +26,7 @@ export default function HomePage() {
         ? await runDexie(() =>
             db.meals.where("[userId+date]").equals([userId, selected]).toArray(),
           )
-        : [],
+        : undefined,
     [userId, selected],
   );
 
@@ -39,10 +42,19 @@ export default function HomePage() {
             if (d !== 0) return d;
             return (b.createdAt ?? 0) - (a.createdAt ?? 0);
           })
-        : [],
+        : undefined,
     [userId],
   );
   const latestScore = recentHealth?.[0]?.healthScore;
+  /** Dexie 가 첫 응답을 주기 전 잠깐의 undefined 와 진짜 "아무 기록 없음" 을 구분 */
+  const mealsLoading = userLoading || (userId !== undefined && dayMeals === undefined);
+
+  /** 식단 탭 첫 진입 — 로그인 상태이고 데이터가 비어 있으면 클라우드에서 즉시 한 번 끌어옴. */
+  useEffect(() => {
+    if (!firebaseReady || !user) return;
+    if (dayMeals !== undefined && recentHealth !== undefined) return;
+    requestAutoCloudSync({ immediate: true });
+  }, [firebaseReady, user?.uid, dayMeals, recentHealth]);
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-5">
@@ -117,7 +129,9 @@ export default function HomePage() {
                   <span className="text-[11px] text-slate-300">
                     {MEAL_SLOT_LABELS[slot]}
                   </span>
-                  {items.length > 0 ? (
+                  {mealsLoading ? (
+                    <Loader2 size={11} className="animate-spin text-slate-500" aria-hidden />
+                  ) : items.length > 0 ? (
                     <span className="text-[10px] font-bold text-amber-400">
                       ★ {avg !== undefined ? avg.toFixed(1) : "–"}
                     </span>

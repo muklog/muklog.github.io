@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { HeartPulse, Pencil, Plus, Ruler, Save, Scale, X } from "lucide-react";
+import { HeartPulse, Loader2, Pencil, Plus, Ruler, Save, Scale, X } from "lucide-react";
 import {
   afterUserDataMutation,
   db,
@@ -11,6 +11,8 @@ import {
   runDexie,
   uid,
 } from "../lib/db";
+import { requestAutoCloudSync } from "../lib/autoCloudSync";
+import { useAuth } from "../contexts/AuthContext";
 import { analyzeHealthImage } from "../lib/ai";
 import { userFacingStorageErrorMessage } from "../lib/idbRetry";
 import {
@@ -22,14 +24,15 @@ import {
 import HealthScoreRing from "../components/HealthScoreRing";
 import HealthRecordCard from "../components/HealthRecordCard";
 import PhotoUpload from "../components/PhotoUpload";
-import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
+import { usePrimaryUserIdState } from "../hooks/usePrimaryUserId";
 import { dateKey, formatKoDate, cls } from "../lib/utils";
 
 const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1);
 
 export default function HealthPage() {
   const settings = useLiveQuery(() => getSettings(), []);
-  const userId = usePrimaryUserId();
+  const { id: userId, loading: userLoading } = usePrimaryUserIdState();
+  const { firebaseReady, user } = useAuth();
   const profile = useLiveQuery(
     async () => (userId ? await runDexie(() => db.users.get(userId)) : undefined),
     [userId],
@@ -53,6 +56,16 @@ export default function HealthPage() {
   );
 
   const latest = records?.[0];
+  /** Dexie 가 첫 응답을 주기 전 잠깐의 undefined 와 진짜 "기록 없음" 을 구분 — 빈 메시지 깜빡임 방지 */
+  const profileLoading = userLoading || (userId !== undefined && profile === undefined);
+  const recordsLoading = userLoading || (userId !== undefined && records === undefined);
+
+  /** 건강 탭 첫 진입 — 로그인 상태이고 데이터가 아직 없으면 클라우드에서 즉시 한 번 끌어옴. */
+  useEffect(() => {
+    if (!firebaseReady || !user) return;
+    if (profile !== undefined && records !== undefined) return;
+    requestAutoCloudSync({ immediate: true });
+  }, [firebaseReady, user?.uid, profile, records]);
 
   async function addRecord(photo: Blob, thumbnail: Blob) {
     if (!userId) return;
@@ -159,9 +172,17 @@ export default function HealthPage() {
         </p>
       </header>
 
-      {profile && <ProfileCard user={profile} />}
-
-      {profile && <FocusConditionsCard user={profile} />}
+      {profile ? (
+        <>
+          <ProfileCard user={profile} />
+          <FocusConditionsCard user={profile} />
+        </>
+      ) : profileLoading ? (
+        <section className="card flex items-center gap-2 p-4 text-sm text-slate-400">
+          <Loader2 size={14} className="animate-spin text-slate-400" />
+          신체 프로필을 불러오는 중이에요.
+        </section>
+      ) : null}
 
       <section className="card flex items-center gap-4 p-5">
         <HealthScoreRing score={latest?.healthScore} />
@@ -216,22 +237,29 @@ export default function HealthPage() {
 
       <section className="space-y-3">
         <h3 className="px-1 text-sm font-semibold text-slate-300">
-          기록 ({records?.length ?? 0})
+          기록 ({recordsLoading ? "…" : records?.length ?? 0})
         </h3>
-        {records && records.length === 0 && (
+        {recordsLoading && (
+          <p className="card flex items-center justify-center gap-2 p-4 text-sm text-slate-400">
+            <Loader2 size={14} className="animate-spin text-slate-400" />
+            기록을 불러오는 중이에요.
+          </p>
+        )}
+        {!recordsLoading && records && records.length === 0 && (
           <p className="card p-4 text-center text-sm text-slate-500">
             아직 등록된 건강기록이 없어요.
           </p>
         )}
-        {records?.map((r) => (
-          <HealthRecordCard
-            key={r.id}
-            record={r}
-            onReanalyze={() => reAnalyze(r)}
-            onRemove={() => removeRecord(r)}
-            canAnalyze={!!settings?.geminiApiKey}
-          />
-        ))}
+        {!recordsLoading &&
+          records?.map((r) => (
+            <HealthRecordCard
+              key={r.id}
+              record={r}
+              onReanalyze={() => reAnalyze(r)}
+              onRemove={() => removeRecord(r)}
+              canAnalyze={!!settings?.geminiApiKey}
+            />
+          ))}
       </section>
     </div>
   );

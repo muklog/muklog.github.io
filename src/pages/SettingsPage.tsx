@@ -23,8 +23,9 @@ import {
   patchSettings,
   runDexie,
 } from "../lib/db";
+import { requestAutoCloudSync } from "../lib/autoCloudSync";
 import { pingGemini } from "../lib/ai";
-import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
+import { usePrimaryUserIdState } from "../hooks/usePrimaryUserId";
 import { normalizeTheme, persistTheme } from "../lib/theme";
 import { THEME_IDS, THEME_LABELS, type ThemeId } from "../types";
 import { cls } from "../lib/utils";
@@ -47,11 +48,14 @@ export default function SettingsPage() {
     signOutApp,
   } = useAuth();
   const settings = useLiveQuery(() => getSettings(), []);
-  const primaryId = usePrimaryUserId();
+  const { id: primaryId, loading: primaryLoading } = usePrimaryUserIdState();
   const profileUser = useLiveQuery(
     async () => (primaryId ? await runDexie(() => db.users.get(primaryId)) : undefined),
     [primaryId],
   );
+  /** Dexie 가 깨어나기 전 잠깐의 undefined 와 "프로필 행이 정말 비었음" 을 구분 — 첫 진입 빈 화면 방지. */
+  const profileLoading =
+    primaryLoading || (primaryId !== undefined && profileUser === undefined);
   const [apiKey, setApiKey] = useState("");
   const [show, setShow] = useState(false);
   const [pingState, setPingState] = useState<
@@ -69,6 +73,16 @@ export default function SettingsPage() {
     if (!firebaseReady) return;
     refreshUser();
   }, [firebaseReady, refreshUser]);
+
+  /**
+   * 설정 탭 첫 진입 — 로그인 상태이고 프로필이 아직 안 잡혔으면 클라우드에서 즉시 한 번 끌어옴.
+   * (앱 부팅 → 사용자가 동기화 끝나기 전에 탭으로 넘어와 "프로필 불러오는 중" 만 계속 보이는 현상 완화)
+   */
+  useEffect(() => {
+    if (!firebaseReady || !user) return;
+    if (profileUser !== undefined) return;
+    requestAutoCloudSync({ immediate: true });
+  }, [firebaseReady, user?.uid, profileUser]);
 
   useEffect(() => {
     if (settings?.geminiApiKey) setApiKey(settings.geminiApiKey);
@@ -230,8 +244,13 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <ProfileIdentitySection user={profileUser} authUser={user} />
           </div>
+        ) : profileLoading ? (
+          <p className="flex items-center gap-2 text-sm text-slate-500">
+            <Loader2 size={14} className="animate-spin text-slate-400" />
+            프로필을 불러오는 중이에요.
+          </p>
         ) : (
-          <p className="text-sm text-slate-500">프로필을 불러오는 중이에요.</p>
+          <p className="text-sm text-slate-500">표시할 프로필이 없어요.</p>
         )}
       </section>
 
