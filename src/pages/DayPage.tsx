@@ -382,7 +382,6 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
             multipleGallery
             variant={items.length === 0 ? "primary" : "ghost"}
             disabled={items.length >= MAX_MEAL_ITEMS}
-            square
           />
           {items.length >= MAX_MEAL_ITEMS && (
             <p className="text-center text-[11px] text-slate-500">

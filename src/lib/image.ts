@@ -198,6 +198,149 @@ export async function compressImage(
   }
 }
 
+export type PhotoSquareCropOpts = {
+  quarterTurns: 0 | 1 | 2 | 3;
+  /** 1 이상 · cover 스케일에 곱해 확대 */
+  zoom: number;
+  /** 미리보기 정사각 변 길이(px) 기준 패닝. 출력 시 비율로 환산 */
+  panX: number;
+  panY: number;
+  previewSidePx: number;
+  /** 최종 출력 한 변(px) JPEG */
+  outputSidePx: number;
+  jpegQuality?: number;
+};
+
+/** cover + 줌 상태에서 패닝이 빈 영역을 드러내지 않도록 제한 */
+export function clampPanForSquareCover(
+  Rw: number,
+  Rh: number,
+  scaleK: number,
+  viewportSidePx: number,
+  panX: number,
+  panY: number,
+): { panX: number; panY: number } {
+  const halfIw = (Rw * scaleK) / 2;
+  const halfIh = (Rh * scaleK) / 2;
+  let px = panX;
+  let py = panY;
+  if (Rw * scaleK > viewportSidePx) {
+    const minPx = viewportSidePx / 2 - halfIw;
+    const maxPx = halfIw - viewportSidePx / 2;
+    px = Math.min(maxPx, Math.max(minPx, px));
+  } else {
+    px = 0;
+  }
+  if (Rh * scaleK > viewportSidePx) {
+    const minPy = viewportSidePx / 2 - halfIh;
+    const maxPy = halfIh - viewportSidePx / 2;
+    py = Math.min(maxPy, Math.max(minPy, py));
+  } else {
+    py = 0;
+  }
+  return { panX: px, panY: py };
+}
+
+export function squareCoverScaleK(Rw: number, Rh: number, viewportSidePx: number, zoom: number): number {
+  const z = Math.max(1, zoom);
+  const k0 = Math.max(viewportSidePx / Rw, viewportSidePx / Rh);
+  return k0 * z;
+}
+
+/** 정사각 뷰포트에 cover + 패닝·줌으로 그립니다. pan 은 sidePx 좌표계. */
+export function drawSquareCoverCrop(
+  ctx: CanvasRenderingContext2D,
+  rot: CanvasImageSource,
+  Rw: number,
+  Rh: number,
+  sidePx: number,
+  panX: number,
+  panY: number,
+  zoom: number,
+): void {
+  const K = squareCoverScaleK(Rw, Rh, sidePx, zoom);
+  const { panX: cpx, panY: cpy } = clampPanForSquareCover(Rw, Rh, K, sidePx, panX, panY);
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(0, 0, sidePx, sidePx);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, sidePx, sidePx);
+  ctx.clip();
+  ctx.translate(sidePx / 2 + cpx, sidePx / 2 + cpy);
+  ctx.scale(K, K);
+  ctx.drawImage(rot, -Rw / 2, -Rh / 2, Rw, Rh);
+  ctx.restore();
+}
+
+/** 회전(90° 단위)된 오프스크린 캔버스 · 미리보기/내보내기 공용 */
+export function rotatedSourceCanvas(img: CanvasImageSource, w: number, h: number, qw: number): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas 2d 사용 불가");
+  const q = ((qw % 4) + 4) % 4;
+  if (q === 0) {
+    canvas.width = w;
+    canvas.height = h;
+    ctx.drawImage(img, 0, 0);
+    return canvas;
+  }
+  if (q === 1) {
+    canvas.width = h;
+    canvas.height = w;
+    ctx.translate(h, 0);
+    ctx.rotate(Math.PI / 2);
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas;
+  }
+  if (q === 2) {
+    canvas.width = w;
+    canvas.height = h;
+    ctx.translate(w, h);
+    ctx.rotate(Math.PI);
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas;
+  }
+  canvas.width = h;
+  canvas.height = w;
+  ctx.translate(0, w);
+  ctx.rotate(-Math.PI / 2);
+  ctx.drawImage(img, 0, 0, w, h);
+  return canvas;
+}
+
+/** 디코드한 뒤 90° 단위 회전 캔버스만 남김(원본 디코드 자원은 해제). */
+export async function decodeToRotatedCanvas(
+  blob: Blob,
+  quarterTurns: 0 | 1 | 2 | 3,
+): Promise<{ canvas: HTMLCanvasElement; Rw: number; Rh: number }> {
+  const decoded = await decodeImage(blob);
+  try {
+    const canvas = rotatedSourceCanvas(decoded.source, decoded.width, decoded.height, quarterTurns);
+    return { canvas, Rw: canvas.width, Rh: canvas.height };
+  } finally {
+    decoded.dispose();
+  }
+}
+
+/**
+ * 회전·확대·패닝한 뒤 정사각형 한 장으로 내보냅니다.
+ */
+export async function exportSquareCropJpeg(blob: Blob, opts: PhotoSquareCropOpts): Promise<Blob> {
+  const { canvas: rot, Rw, Rh } = await decodeToRotatedCanvas(blob, opts.quarterTurns);
+  const S = opts.outputSidePx;
+  const ratio = S / opts.previewSidePx;
+  const panXO = opts.panX * ratio;
+  const panYO = opts.panY * ratio;
+
+  const out = document.createElement("canvas");
+  out.width = S;
+  out.height = S;
+  const ox = out.getContext("2d");
+  if (!ox) throw new Error("canvas 2d 사용 불가");
+  drawSquareCoverCrop(ox, rot, Rw, Rh, S, panXO, panYO, opts.zoom);
+  return canvasToBlobWithFallback(out, "image/jpeg", opts.jpegQuality ?? 0.92);
+}
+
 export async function makeThumbnail(file: Blob): Promise<Blob> {
   return compressImage(file, { maxDimension: 320, quality: 0.7 });
 }

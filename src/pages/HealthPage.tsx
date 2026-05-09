@@ -223,6 +223,7 @@ export default function HealthPage() {
           label={`${HEALTH_TYPE_LABELS[pickedType]} 사진 찍기`}
           onPicked={addRecord}
           disabled={!userId}
+          squareCropEditor={false}
           compressOptions={{ maxDimension: 2400, quality: 0.92 }}
         />
         {!settings?.geminiApiKey && (

@@ -1,8 +1,9 @@
-import { useId, useRef, useState, type RefObject } from "react";
+import { Fragment, useId, useRef, useState, type RefObject } from "react";
 import { Camera, ImagePlus, Loader2 } from "lucide-react";
 import { compressImage, type CompressOptions } from "../lib/image";
 import { shouldOmitCaptureOnFileInputs } from "../lib/filePickerCapabilities";
 import { cls } from "../lib/utils";
+import PhotoEditDialog from "./PhotoEditDialog";
 
 const GALLERY_FILE_ACCEPT = "image/*";
 
@@ -18,7 +19,15 @@ interface Props {
   variant?: "primary" | "ghost";
   disabled?: boolean;
   compressOptions?: CompressOptions;
+  /** true 면 가운데 정사각 자동 크롭(편집기 끌 때만 사용). */
   square?: boolean;
+  /**
+   * true(기본)면 촬영·선택 후 정사각 맞춤 화면을 거친 뒤 업로드합니다.
+   * false면 예전처럼 바로 압축합니다(건강 기록 등 원본 비율 유지).
+   */
+  squareCropEditor?: boolean;
+  /** 편집 후 정사각 JPEG 한 변(px). 기본은 compressOptions.maxDimension 기준(960~2048). */
+  squareCropExportSidePx?: number;
 }
 
 function clearInputs(refs: Array<RefObject<HTMLInputElement | null>>) {
@@ -77,6 +86,8 @@ export default function PhotoUpload({
   disabled,
   compressOptions,
   square = false,
+  squareCropEditor = true,
+  squareCropExportSidePx: squareCropExportSidePxProp,
 }: Props) {
   const omitCapture = shouldOmitCaptureOnFileInputs();
   const camInputId = useId();
@@ -86,9 +97,33 @@ export default function PhotoUpload({
 
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
+  const [editorQueue, setEditorQueue] = useState<File[]>([]);
+
+  const useEditor = squareCropEditor === true;
+  const maxDim = compressOptions?.maxDimension ?? 1280;
+  const squareCropExportSidePx = Math.min(
+    2048,
+    Math.max(960, squareCropExportSidePxProp ?? Math.min(Math.max(maxDim, 960), 2048)),
+  );
 
   /** 빈 capture(카메라 의도) — environment 는 일부 브라우저에서 갤러리만 뜸. 삼성 인터넷만 속성 생략. */
   const captureProp = !preferCamera || omitCapture ? undefined : true;
+
+  /** 편집기에서 확인한 정사각 JPEG → 압축·썸네일·onPicked */
+  async function finishEditedSquare(squareJpegBlob: Blob) {
+    const compressed = await compressImage(squareJpegBlob, {
+      maxDimension: 1280,
+      quality: 0.85,
+      square: false,
+      ...compressOptions,
+    });
+    const thumb = await compressImage(compressed, {
+      maxDimension: 320,
+      quality: 0.7,
+      square: false,
+    });
+    await onPicked(compressed, thumb);
+  }
 
   async function processOne(file: File) {
     const usable = await coerceFileToReadableImage(file);
@@ -98,13 +133,13 @@ export default function PhotoUpload({
     const compressed = await compressImage(usable, {
       maxDimension: 1280,
       quality: 0.85,
-      square,
+      square: useEditor ? false : square,
       ...compressOptions,
     });
     const thumb = await compressImage(compressed, {
       maxDimension: 320,
       quality: 0.7,
-      square,
+      square: useEditor ? false : square,
     });
     await onPicked(compressed, thumb);
   }
@@ -134,22 +169,26 @@ export default function PhotoUpload({
         return;
       }
 
-      for (let i = 0; i < prepared.length; i++) {
-        const file = prepared[i]!;
-        if (prepared.length > 1) setBusyLabel(`${i + 1}/${prepared.length}`);
-        try {
-          await processOne(file);
-        } catch (e) {
-          console.error("[PhotoUpload] 사진 처리 실패", e, {
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            omitCapture,
-          });
-          const detail = e instanceof Error ? e.message : String(e);
-          alert(
-            `이미지를 처리하지 못했습니다.\n${detail}\n\n다른 방법으로 같은 사진을 다시 선택하거나 JPG/PNG 로 저장된 뒤 시도해 보세요.`,
-          );
+      if (useEditor) {
+        setEditorQueue(prepared);
+      } else {
+        for (let i = 0; i < prepared.length; i++) {
+          const file = prepared[i]!;
+          if (prepared.length > 1) setBusyLabel(`${i + 1}/${prepared.length}`);
+          try {
+            await processOne(file);
+          } catch (e) {
+            console.error("[PhotoUpload] 사진 처리 실패", e, {
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              omitCapture,
+            });
+            const detail = e instanceof Error ? e.message : String(e);
+            alert(
+              `이미지를 처리하지 못했습니다.\n${detail}\n\n다른 방법으로 같은 사진을 다시 선택하거나 JPG/PNG 로 저장된 뒤 시도해 보세요.`,
+            );
+          }
         }
       }
     } finally {
@@ -164,9 +203,38 @@ export default function PhotoUpload({
     multipleGallery === true ? "갤러리에서 선택 (여러 장 가능)" : "사진 선택·앨범에서 가져오기";
 
   const blocked = !!(disabled || busy);
+  const editorFile = editorQueue[0];
+  const editorOpen = useEditor && editorQueue.length > 0;
 
   return (
-    <div className={cls("flex gap-2", className)}>
+    <Fragment>
+      {editorOpen && editorFile ? (
+        <PhotoEditDialog
+          key={`${editorFile.name}-${editorFile.size}-${editorFile.lastModified}-${editorQueue.length}`}
+          file={editorFile}
+          exportSidePx={squareCropExportSidePx}
+          queueHint={
+            editorQueue.length > 1
+              ? `${editorQueue.length}장을 순서대로 맞춥니다. 지금부터 확인하면 다음 장 편집 화면이 이어져요.`
+              : undefined
+          }
+          onClose={() => {
+            setEditorQueue([]);
+          }}
+          onConfirm={async (blob) => {
+            try {
+              await finishEditedSquare(blob);
+              setEditorQueue((q) => q.slice(1));
+            } catch (e) {
+              console.error("[PhotoUpload] 편집 후 처리 실패", e);
+              const detail = e instanceof Error ? e.message : String(e);
+              alert(`이미지를 저장하지 못했습니다.\n${detail}`);
+              setEditorQueue([]);
+            }
+          }}
+        />
+      ) : null}
+      <div className={cls("flex gap-2", className)}>
       <label
         htmlFor={camInputId}
         onPointerDown={() => clearInput(camRef.current)}
@@ -215,5 +283,6 @@ export default function PhotoUpload({
         onChange={(e) => void handleFiles(e.target.files, [galRef])}
       />
     </div>
+    </Fragment>
   );
 }
