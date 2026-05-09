@@ -78,6 +78,7 @@ export default function FeedPage() {
   const visibleEntries =
     entries.length <= visibleCount ? entries : entries.slice(0, visibleCount);
   const [emptyHintReady, setEmptyHintReady] = useState(false);
+  const [friendPromptReady, setFriendPromptReady] = useState(false);
   useEffect(() => {
     if (!streamReady || entries.length > 0) {
       setEmptyHintReady(false);
@@ -86,6 +87,14 @@ export default function FeedPage() {
     const t = window.setTimeout(() => setEmptyHintReady(true), 900);
     return () => window.clearTimeout(t);
   }, [streamReady, entries.length]);
+  useEffect(() => {
+    if (!streamReady || hasFriends) {
+      setFriendPromptReady(false);
+      return;
+    }
+    const t = window.setTimeout(() => setFriendPromptReady(true), 1200);
+    return () => window.clearTimeout(t);
+  }, [streamReady, hasFriends]);
 
   /**
    * PC 등 뷰포트가 높을 때 첫 카드만 짧아도 센티널이 보이지만 IntersectionObserver/스크롤이 한 번만
@@ -214,7 +223,7 @@ export default function FeedPage() {
         </p>
       )}
 
-      {streamReady && !hasFriends && firebaseReady && myUid && (
+      {streamReady && !hasFriends && friendPromptReady && firebaseReady && myUid && (
         <Link
           to="/friends"
           className="card flex items-center justify-between gap-3 border-slate-800 bg-slate-900/40 p-4 hover:bg-slate-900/60"
