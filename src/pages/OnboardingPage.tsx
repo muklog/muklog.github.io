@@ -282,7 +282,7 @@ export default function OnboardingPage() {
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-500/25 text-xs font-bold text-brand-200">
             1
           </span>
-          Google로 로그인 <span className="text-rose-400/90">(필수)</span>
+          Google로 로그인 <span className="text-emerald-400">(필수)</span>
         </h2>
         {authLoading && firebaseReady ? (
           <div className="card flex items-center justify-center gap-2 py-8 text-sm text-slate-400">

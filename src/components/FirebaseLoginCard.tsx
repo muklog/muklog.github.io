@@ -31,7 +31,7 @@ export default function FirebaseLoginCard() {
     return (
       <section className="card border-amber-500/30 bg-amber-500/10 px-4 py-4">
         <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-100">
-          <Cloud size={16} className="text-amber-400" /> Google 로그인 · 클라우드 동기화
+          <Cloud size={16} className="text-amber-400" /> Google 로그인
         </h2>
         <p className="text-xs leading-relaxed text-amber-100/90">
           이 빌드에는 Firebase 웹 설정이 포함되지 않았습니다. 배포라면{" "}
@@ -80,9 +80,6 @@ export default function FirebaseLoginCard() {
 
   return (
     <section className="card border-sky-500/30 bg-sky-500/10 px-4 py-4">
-      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-sky-100">
-        <Cloud size={16} className="text-sky-400" /> 데이터 동기화
-      </h2>
       <EmbeddedGoogleLoginNotice />
       {!oauthInAppBlocked && (
         <button
