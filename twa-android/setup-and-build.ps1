@@ -26,6 +26,17 @@ if (-not $env:JAVA_HOME) {
   }
 }
 if ($env:JAVA_HOME) {
+  # Windows: JDK가 "Program Files" 아래면 경로에 공백이 들어가 bubblewrap의 apksigner 호출이 깨짐 → 8.3 짧은 경로 사용
+  if ($IsWindows -or $env:OS -match "Windows") {
+    try {
+      $fso = New-Object -ComObject Scripting.FileSystemObject
+      $jdkItem = Get-Item -LiteralPath $env:JAVA_HOME -ErrorAction Stop
+      if ($jdkItem.PSIsContainer) {
+        $short = ($fso.GetFolder($jdkItem.FullName)).ShortPath
+        if ($short) { $env:JAVA_HOME = $short }
+      }
+    } catch { }
+  }
   $env:Path = "$(Join-Path $env:JAVA_HOME 'bin');$env:Path"
   Write-Host ">>> JAVA_HOME=$env:JAVA_HOME"
 }
@@ -44,9 +55,8 @@ if (-not (Test-Path ".\android.keystore")) {
 }
 
 Write-Host ">>> bubblewrap update (Gradle 프로젝트 생성/갱신)"
-# "JDK를 여기서 설치할까?" → No (이미 설치된 JDK 17 사용)
-$n = "n`r`n"
-$n | npx --yes @bubblewrap/cli@latest update
+# 대화형 버전 질문 회피 — twa-manifest 의 appVersion 과 맞춤(첫 빌드 후에는 버전만 올려서 재실행)
+npx --yes @bubblewrap/cli@latest update --appVersionName="1.0.0"
 
 Write-Host ">>> bubblewrap build (AAB/APK)"
 npx --yes @bubblewrap/cli@latest build
