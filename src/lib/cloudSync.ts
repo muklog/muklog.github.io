@@ -267,26 +267,46 @@ function itemHasRenderableImage(it: MealItem): boolean {
   return (it.photo?.size ?? 0) > 0 || (it.thumbnail?.size ?? 0) > 0;
 }
 
+async function mergeMealItemPhotoFromLocal(remoteItem: MealItem, loc?: MealItem): Promise<MealItem> {
+  if (itemHasRenderableImage(remoteItem)) return remoteItem;
+  if (!loc || !itemHasRenderableImage(loc)) return remoteItem;
+  const photo = loc.photo?.size ? loc.photo : remoteItem.photo;
+  let thumbnail = loc.thumbnail?.size ? loc.thumbnail : remoteItem.thumbnail;
+  if (photo && photo.size > 0 && !(thumbnail?.size)) {
+    thumbnail = await makeThumbnail(photo);
+  }
+  return { ...remoteItem, photo, thumbnail };
+}
+
 /**
  * 원격 Meal 이 이겼을 때 로컬 Blob 으로 메우는 레이스 대응.
  * Storage 에서 내려받은 풀이 있으면 그대로 사용하고, 빠져 있거나 실패했을 때 로컬을 합친다.
+ *
+ * 원격 문서가 친구 피드용 등으로 items: [] 거나 일부만 있어도, 로컬의 나머지 항목·사진은 남긴다.
  */
 async function hydrateMealPhotosFromLocal(remote: Meal, local: Meal): Promise<Meal> {
+  if (
+    remote.items.length === 0 &&
+    local.items.length > 0 &&
+    local.items.some(itemHasRenderableImage)
+  ) {
+    const base = remote.updatedAt > local.updatedAt ? remote : local;
+    return {
+      ...base,
+      updatedAt: Math.max(remote.updatedAt, local.updatedAt),
+      items: local.items,
+    };
+  }
+
   const localById = new Map(local.items.map((x) => [x.id, x]));
-  const items = await Promise.all(
-    remote.items.map(async (it) => {
-      if (itemHasRenderableImage(it)) return it;
-      const loc = localById.get(it.id);
-      if (!loc || !itemHasRenderableImage(loc)) return it;
-      const photo = loc.photo?.size ? loc.photo : it.photo;
-      let thumbnail = loc.thumbnail?.size ? loc.thumbnail : it.thumbnail;
-      if (photo && photo.size > 0 && !(thumbnail?.size)) {
-        thumbnail = await makeThumbnail(photo);
-      }
-      return { ...it, photo, thumbnail };
-    }),
+  const remoteIds = new Set(remote.items.map((x) => x.id));
+  const mergedRemote = await Promise.all(
+    remote.items.map(async (it) => mergeMealItemPhotoFromLocal(it, localById.get(it.id))),
   );
-  return { ...remote, items };
+  /** 원격에는 없고 로컬에만 있는 항목(비공유 항목만 있던 푸시 등) — 삭제 신호 없으면 유지 */
+  const localOnly = local.items.filter((lit) => !remoteIds.has(lit.id));
+
+  return { ...remote, items: [...mergedRemote, ...localOnly] };
 }
 
 async function mergeMeals(local: Meal[], remote: MealStored[]): Promise<Meal[]> {
@@ -517,9 +537,9 @@ async function mealToStored(m: Meal, ownerFirebaseUid: string): Promise<MealStor
     return null;
   }
 
-  /** 공개만 있는데 전부 피드 비공유(예: 비음식 판별)면 친구 피드를 비우도록 빈 items 로 덮어씀 */
+  /** 비공유만 남았을 때 빈 items 로 덮어쓰면 원격 updatedAt 레이스로 로컬 사진이 소실되므로 푸시 생략(친구 피드는 렌더 시 거름) */
   if (items.length === 0) {
-    return { ...base, items: [] };
+    return null;
   }
 
   function toItemMeta(it: MealItem): MealItemStored {
