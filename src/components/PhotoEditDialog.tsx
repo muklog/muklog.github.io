@@ -14,8 +14,8 @@ import { cls } from "../lib/utils";
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 3.75;
-/** 미리보기는 CSS 픽셀에 맞춤 — 최종 압축 저장 분위기와 과도한 차이 안 나게 */
-const PREVIEW_DPR_CAP = 1;
+/** 레티나까지 고려한 미리보기 해상도(저장물과 분리 — 선명도·부담 타협) */
+const PREVIEW_DPR_CAP = 2;
 
 export type PhotoEditDialogProps = {
   file: File;
@@ -50,7 +50,7 @@ function touchLocal(t: Touch, el: HTMLElement): { x: number; y: number } {
 }
 
 /**
- * 정사각 미리보기·이동·핀치 줌·회전 후 확인.
+ * 정사각 미리보기·편집 후 확인.
  */
 export default function PhotoEditDialog({
   file,
@@ -194,7 +194,7 @@ export default function PhotoEditDialog({
     if (!ctx) return;
 
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "medium";
+    ctx.imageSmoothingQuality = "high";
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const K = squareCoverScaleK(Rw, Rh, side, zoom);
     const c = clampPanForSquareCover(Rw, Rh, K, side, pan.x, pan.y);
@@ -461,12 +461,12 @@ export default function PhotoEditDialog({
         onClick={(ev) => ev.stopPropagation()}
       >
         <header
-          className="flex shrink-0 items-start justify-between gap-2 border-b border-slate-800 px-4 py-3"
-          style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top, 0px))" }}
+          className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-4 pb-2"
+          style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top, 0px))" }}
         >
-          <div className="min-w-0 flex-1">
-            <h2 id="photo-edit-title" className="text-base font-bold text-slate-100">
-              사진 확인
+          <div className="min-w-0 flex-1 pt-0">
+            <h2 id="photo-edit-title" className="text-base font-bold leading-snug text-slate-100">
+              사진 편집
             </h2>
           </div>
           <button
@@ -480,7 +480,7 @@ export default function PhotoEditDialog({
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain space-y-3 px-4 pb-4 pt-3">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain space-y-2 px-4 pb-3 pt-2">
           <div
             ref={wrapRef}
             className="relative mx-auto aspect-square w-full max-w-[min(100vw-2rem,360px)] overflow-hidden rounded-xl bg-slate-900 ring-1 ring-slate-800 shadow-inner"
@@ -550,7 +550,7 @@ export default function PhotoEditDialog({
           <button
             type="button"
             disabled={busyConfirm || loading || !!decodeErr || !rotCanvas || Rw < 1 || Rh < 1}
-            className="btn-primary mb-3 flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-[15px] font-medium disabled:opacity-40 sm:py-4"
+            className="btn-primary mb-2 flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-[15px] font-medium disabled:opacity-40 sm:py-4"
             onClick={() => void confirm()}
           >
             {busyConfirm ? (
