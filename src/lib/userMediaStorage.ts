@@ -4,7 +4,7 @@
  */
 import { deleteObject, getBlob, listAll, ref, uploadBytes } from "firebase/storage";
 import type { FirebaseStorage } from "firebase/storage";
-import { ensureAuthTokenForFirestore, getFirebaseStorage } from "./firebaseApp";
+import { ensureAuthTokenForFirestore, getFirebaseAuth, getFirebaseStorage } from "./firebaseApp";
 
 const META = {
   photo: { contentType: "image/jpeg" },
@@ -65,9 +65,66 @@ export async function uploadHealthImages(
   return { photoStoragePath, thumbStoragePath };
 }
 
-export async function blobFromStoragePath(storagePath: string): Promise<Blob> {
+/**
+ * Storage ref 문자열(gs://..., https://firebasestorage...) 또는 순수 객체 경로를
+ * `ref(bucket, "...")` 에 넣기 위한 객체 경로로 바꿉니다.
+ */
+export function normalizeStorageObjectPath(raw: string): string {
+  const s = raw.trim();
+  if (!s) return s;
+
+  if (s.startsWith("gs://")) {
+    const rest = s.slice("gs://".length);
+    const slash = rest.indexOf("/");
+    if (slash < 0) return s;
+    return rest.slice(slash + 1);
+  }
+
+  if (s.startsWith("http://") || s.startsWith("https://")) {
+    try {
+      const u = new URL(s);
+      if (u.hostname === "firebasestorage.googleapis.com") {
+        const mark = "/o/";
+        const idx = u.pathname.indexOf(mark);
+        if (idx >= 0) {
+          return decodeURIComponent(u.pathname.slice(idx + mark.length));
+        }
+      }
+    } catch {
+      /* 그대로 ref 시도 */
+    }
+  }
+
+  return s;
+}
+
+export async function blobFromStoragePath(storagePathOrUrl: string): Promise<Blob> {
   const st = await storageWithAuth();
-  return getBlob(ref(st, storagePath));
+  const path = normalizeStorageObjectPath(storagePathOrUrl);
+
+  async function fetchPath(p: string): Promise<Blob> {
+    return getBlob(ref(st, p));
+  }
+
+  try {
+    return await fetchPath(path);
+  } catch (e) {
+    const authUid = getFirebaseAuth().currentUser?.uid;
+    const match = /^users\/([^/]+)\/(.+)$/.exec(path);
+    /**
+     * 예전에는 Dexie 프로필 id 로 Storage 경로를 쓴 문서가 있을 수 있습니다.
+     * 동일 파일을 현재 Firebase UID 경로 아래에도 올려 둔(또는 경로만 어긋난) 경우를 대비한 폴백입니다.
+     */
+    if (authUid && match && match[1] !== authUid) {
+      const alt = `users/${authUid}/${match[2]}`;
+      try {
+        return await fetchPath(alt);
+      } catch {
+        /* fall through — 원본 오류를 던짐 */
+      }
+    }
+    throw e;
+  }
 }
 
 export async function deleteMealMediaFolder(uid: string, mealId: string): Promise<void> {

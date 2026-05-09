@@ -125,6 +125,49 @@ function prunePendingDeletes(
   return next;
 }
 
+/** 레거시: `photoBase64` 에 data URL 통째 저장, 또는 `photoMimeType` 누락·축약(jpeg 등) */
+function splitFirestorePhotoBase64(raw: string): { mimeHint: string; payload: string } {
+  const t = raw.trim();
+  if (!t) return { mimeHint: "", payload: "" };
+  if (t.startsWith("data:")) {
+    const comma = t.indexOf(",");
+    if (comma < 0) return { mimeHint: "", payload: "" };
+    const meta = t.slice(5, comma).trim();
+    const mimeHint = meta.split(";")[0]?.trim() ?? "";
+    return { mimeHint, payload: t.slice(comma + 1).trim() };
+  }
+  return { mimeHint: "", payload: t };
+}
+
+function normalizeDeclaredImageMime(declared?: string): string {
+  const d = declared?.trim();
+  if (!d) return "image/jpeg";
+  const lower = d.toLowerCase();
+  if (lower === "jpeg" || lower === "jpg" || lower === "pjpeg") return "image/jpeg";
+  if (lower === "png" || lower === "webp" || lower === "gif") return `image/${lower}`;
+  if (d.includes("/")) return d;
+  return `image/${d}`;
+}
+
+async function blobsFromFirestorePhotoBase64(
+  photoBase64?: string | undefined,
+  declaredMime?: string | undefined,
+): Promise<{ photo: Blob; thumbnail: Blob } | null> {
+  if (!photoBase64 || typeof photoBase64 !== "string") return null;
+  const { mimeHint, payload } = splitFirestorePhotoBase64(photoBase64);
+  if (!payload) return null;
+  const mime = normalizeDeclaredImageMime(declaredMime?.trim() || mimeHint || undefined);
+  try {
+    const blob = base64ToBlob(payload, mime);
+    if ((blob?.size ?? 0) <= 0) return null;
+    const thumbnail = await makeThumbnail(blob);
+    return { photo: blob, thumbnail };
+  } catch (e) {
+    console.warn("[cloudSync] Firestore base64 디코드 실패", e);
+    return null;
+  }
+}
+
 async function itemStoredToItem(s: MealItemStored): Promise<MealItem> {
   const { photoBase64, photoMimeType, photoStoragePath, thumbStoragePath, ...rest } = s;
   const item: MealItem = { ...rest };
@@ -153,12 +196,45 @@ async function itemStoredToItem(s: MealItemStored): Promise<MealItem> {
     }
   }
 
-  if (photoBase64 && photoMimeType) {
-    const blob = base64ToBlob(photoBase64, photoMimeType);
-    item.photo = blob;
-    item.thumbnail = await makeThumbnail(blob);
+  const fromB64 = await blobsFromFirestorePhotoBase64(photoBase64, photoMimeType);
+  if (fromB64) {
+    item.photo = fromB64.photo;
+    item.thumbnail = fromB64.thumbnail;
   }
   return item;
+}
+
+async function augmentMealWithDocLevelLegacy(mealDoc: MealStored, meal: Meal): Promise<Meal> {
+  if (meal.items.some(itemHasRenderableImage)) return meal;
+  const legacy = await blobsFromFirestorePhotoBase64(mealDoc.photoBase64, mealDoc.photoMimeType);
+  if (!legacy) return meal;
+
+  /* items 는 있으나 각 항목에 사진만 없고, 문서에는 v1 과 동치의 top-level base64 만 남은 경우 */
+  if (meal.items.length === 0) {
+    const now = meal.createdAt;
+    const itemLegacy: MealItem = {
+      id: `${mealDoc.id}__i0`,
+      photo: legacy.photo,
+      thumbnail: legacy.thumbnail,
+      menuText: mealDoc.menuText,
+      rating: mealDoc.rating,
+      aiComment: mealDoc.aiComment,
+      nutrition: mealDoc.nutrition,
+      analysisStatus: mealDoc.analysisStatus ?? (mealDoc.menuText ? "done" : "skipped"),
+      analysisError: mealDoc.analysisError,
+      createdAt: mealDoc.createdAt ?? now,
+      updatedAt: mealDoc.updatedAt ?? now,
+    };
+    return { ...meal, items: [itemLegacy] };
+  }
+
+  const merged = [...meal.items];
+  const idx = merged.findIndex((it) => !itemHasRenderableImage(it));
+  const i = idx >= 0 ? idx : 0;
+  const prev = merged[i];
+  if (itemHasRenderableImage(prev)) return meal;
+  merged[i] = { ...prev, photo: legacy.photo, thumbnail: legacy.thumbnail };
+  return { ...meal, items: merged };
 }
 
 export async function storedToMeal(s: MealStored): Promise<Meal> {
@@ -167,7 +243,7 @@ export async function storedToMeal(s: MealStored): Promise<Meal> {
   if (Array.isArray(s.items)) {
     const items =
       s.items.length > 0 ? await Promise.all(s.items.map(itemStoredToItem)) : [];
-    return {
+    return augmentMealWithDocLevelLegacy(s, {
       id: s.id,
       userId: s.userId,
       date: s.date,
@@ -175,17 +251,16 @@ export async function storedToMeal(s: MealStored): Promise<Meal> {
       items,
       createdAt: s.createdAt ?? now,
       updatedAt: s.updatedAt ?? now,
-    };
+    });
   }
   // 레거시 v1 — items 배열이 없을 때 top-level 사진/메뉴가 있으면 items[0] 으로 변환해 읽는다.
+  const blobs = await blobsFromFirestorePhotoBase64(s.photoBase64, s.photoMimeType);
   const legacyItem: MealItem | null =
     s.photoBase64 || s.menuText || s.rating || s.aiComment || s.nutrition
       ? {
           id: `${s.id}__i0`,
-          photo:
-            s.photoBase64 && s.photoMimeType
-              ? base64ToBlob(s.photoBase64, s.photoMimeType)
-              : undefined,
+          photo: blobs?.photo,
+          thumbnail: blobs?.thumbnail,
           menuText: s.menuText,
           rating: s.rating,
           aiComment: s.aiComment,
@@ -196,9 +271,6 @@ export async function storedToMeal(s: MealStored): Promise<Meal> {
           updatedAt: s.updatedAt ?? now,
         }
       : null;
-  if (legacyItem?.photo) {
-    legacyItem.thumbnail = await makeThumbnail(legacyItem.photo);
-  }
   return {
     id: s.id,
     userId: s.userId,
@@ -245,10 +317,10 @@ export async function storedToHealth(s: HealthStored): Promise<HealthRecord> {
     }
   }
 
-  if (photoBase64 && photoMimeType) {
-    const blob = base64ToBlob(photoBase64, photoMimeType);
-    rec.photo = blob;
-    rec.thumbnail = await makeThumbnail(blob);
+  const fromB64 = await blobsFromFirestorePhotoBase64(photoBase64, photoMimeType);
+  if (fromB64) {
+    rec.photo = fromB64.photo;
+    rec.thumbnail = fromB64.thumbnail;
   }
   return rec;
 }

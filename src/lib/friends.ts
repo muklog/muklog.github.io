@@ -920,6 +920,8 @@ export async function getMyViewerShare(ownerUid: string): Promise<Share | null> 
 
 function mealFirestoreCacheKey(data: MealStored): string {
   const base = data.updatedAt ?? data.createdAt ?? 0;
+  const topLegacy =
+    typeof data.photoBase64 === "string" ? String(data.photoBase64.length) : "0";
   const items = data.items ?? [];
   const part = items
     .map((it) => {
@@ -953,7 +955,7 @@ function mealFirestoreCacheKey(data: MealStored): string {
       ].join(":");
     })
     .join("|");
-  return `${base}|${part}`;
+  return `${base}|tl:${topLegacy}|${part}`;
 }
 
 /** 친구 meals 를 date 범위로 실시간 구독 */
