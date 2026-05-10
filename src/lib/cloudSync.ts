@@ -456,7 +456,7 @@ function isValidDateKey(v: unknown): v is string {
 }
 
 /** 수동 콘솔 편집 등으로 date 가 빠진 식단 문서 복구 */
-function repairRemoteMealStored(s: MealStored): MealStored {
+export function repairRemoteMealStored(s: MealStored): MealStored {
   if (isValidDateKey(s.date)) return s;
   const ts = Number.isFinite(s.updatedAt)
     ? s.updatedAt

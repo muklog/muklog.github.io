@@ -29,7 +29,7 @@ import type {
   User,
 } from "../types";
 import { ensureAuthTokenForFirestore, getFirebaseAuth, getFirestoreDb } from "./firebaseApp";
-import { storedToMeal, type MealStored } from "./cloudSync";
+import { repairRemoteMealStored, storedToMeal, type MealStored } from "./cloudSync";
 import { resolveDisplayName, resolveDisplayPhotoURL, syncMyIdentityToCloud } from "./identity";
 
 /** Firestore 쓰기가 네트워크 때문에 끝없이 대기할 때 사용자에게 타임아웃 안내 */
@@ -958,6 +958,30 @@ function mealFirestoreCacheKey(data: MealStored): string {
   return `${base}|tl:${topLegacy}|${part}`;
 }
 
+/**
+ * 친구 식단 문서 → Meal (pull 동기화와 동일하게 date 보정 후 디코드).
+ * 한 건이 깨져도 나머지 스냅샷이 통째로 실패하지 않도록 호출부에서 try/catch 한다.
+ */
+async function decodeFriendMealSnapshotDoc(
+  d: { id: string; data: () => Record<string, unknown> },
+  cache: Map<string, { key: string; meal: Meal }>,
+): Promise<Meal | null> {
+  try {
+    const data = repairRemoteMealStored({ ...(d.data() as MealStored), id: d.id });
+    const sig = mealFirestoreCacheKey(data);
+    const cached = cache.get(d.id);
+    if (cached && cached.key === sig) {
+      return cached.meal;
+    }
+    const meal = await storedToMeal(data);
+    cache.set(d.id, { key: sig, meal });
+    return meal;
+  } catch (e) {
+    console.warn("[friends] meal doc decode skipped", d.id, e);
+    return null;
+  }
+}
+
 /** 친구 meals 를 date 범위로 실시간 구독 */
 export function subscribeFriendMealsInRange(
   ownerUid: string,
@@ -978,19 +1002,9 @@ export function subscribeFriendMealsInRange(
     { includeMetadataChanges: true },
     async (snap) => {
       try {
-        const rows = await Promise.all(
-          snap.docs.map(async (d) => {
-            const data = { ...(d.data() as MealStored), id: d.id };
-            const sig = mealFirestoreCacheKey(data);
-            const cached = cache.get(d.id);
-            if (cached && cached.key === sig) {
-              return cached.meal;
-            }
-            const meal = await storedToMeal(data);
-            cache.set(d.id, { key: sig, meal });
-            return meal;
-          }),
-        );
+        const rows = (
+          await Promise.all(snap.docs.map((d) => decodeFriendMealSnapshotDoc(d, cache)))
+        ).filter((m): m is Meal => m != null);
         const alive = new Set(snap.docs.map((d) => d.id));
         for (const id of [...cache.keys()]) if (!alive.has(id)) cache.delete(id);
         cb(rows);
@@ -1033,20 +1047,9 @@ export function subscribeFriendLatestMeals(
     { includeMetadataChanges: true },
     async (snap) => {
       try {
-        const decoded = await Promise.all(
-          snap.docs.map(async (d) => {
-            const data = { ...(d.data() as MealStored), id: d.id };
-            const stored = data as MealStored;
-            const sig = mealFirestoreCacheKey(stored);
-            const cached = cache.get(d.id);
-            if (cached && cached.key === sig) {
-              return cached.meal;
-            }
-            const meal = await storedToMeal(data);
-            cache.set(d.id, { key: sig, meal });
-            return meal;
-          }),
-        );
+        const decoded = (
+          await Promise.all(snap.docs.map((d) => decodeFriendMealSnapshotDoc(d, cache)))
+        ).filter((m): m is Meal => m != null);
         const alive = new Set(snap.docs.map((d) => d.id));
         for (const id of [...cache.keys()]) if (!alive.has(id)) cache.delete(id);
         decoded.sort((a, b) => {

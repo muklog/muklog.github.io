@@ -26,12 +26,13 @@ import { STALL_REFRESH_HINT } from "../lib/tabLoadingMessage";
 
 /**
  * 피드 탭 — 스트림은 App 의 FeedStreamProvider 에서 구독하고, 여기서는 렌더링만 합니다.
- * 카드별 좋아요·댓글 리스너 부담을 줄이기 위해 초깃값만 제한 두되, 높은 뷰포트에서 센티널이
- * 계속 보이면 한 번에 여러 카드를 채워 «한 개만 보이고 스크롤 불가» 를 막습니다.
+ * 첫 화면 1장만 두고, 사용자가 아래로 스크롤해 센티널이 들어올 때마다 1장씩 연다.
+ * (큰 화면에서 센티널이 처음부터 보이면 자동으로 여러 장 열리지 않게 스크롤 후에만 로드)
+ * MealSocialBlock 은 카드가 뷰포트 근처에 올 때만 구독합니다.
  */
 const FEED_INITIAL_VISIBLE = 1;
-/** 짧은 첫 카드 + 큰 창: bump 시 한 번에 부풀릴 카드 수(이후 레이아웃 시 한 장씩 더 채움) */
-const FEED_LOAD_BURST = 8;
+/** 스크롤·스와이프 한 번에 추가로 펼칠 카드 수 */
+const FEED_LOAD_STEP = 1;
 
 export default function FeedPage() {
   const { user, firebaseReady, loading: authLoading } = useAuth();
@@ -60,20 +61,24 @@ export default function FeedPage() {
 
   const [visibleCount, setVisibleCount] = useState(FEED_INITIAL_VISIBLE);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  /** 짧은 카드 + 높은 뷰포트에서 레이아웃 루프가 끝나지 않게 상한 */
-  const layoutFillPassesRef = useRef(0);
+  /** 사용자가 한 번이라도 스크롤/휠한 뒤에만 «다음 장» 로드 — 초기에 센티널이 보여도 1장만 유지 */
+  const feedScrollEngagedRef = useRef(false);
+  /** IO 교차: false→true 일 때만 1장 추가(계속 교차인 채로 연속 증가 방지) */
+  const feedIoWasIntersectingRef = useRef(false);
 
   /** 다른 탭에서 남은 main 스크롤이 있으면 감지 줄이 화면 밖으로 밀려 IO가 영원히 안 도는 경우가 있음 */
   useLayoutEffect(() => {
     document.querySelector<HTMLElement>("[data-app-scroll-root]")?.scrollTo(0, 0);
   }, []);
 
+  /** 항목 수가 줄면 보이는 개수만큼만 유지 (삭제·필터 등) */
   useEffect(() => {
-    layoutFillPassesRef.current = 0;
     const len = entries.length;
-    setVisibleCount((n) =>
-      len === 0 ? FEED_INITIAL_VISIBLE : Math.min(Math.max(n, FEED_INITIAL_VISIBLE), len),
-    );
+    if (len === 0) {
+      setVisibleCount(FEED_INITIAL_VISIBLE);
+      return;
+    }
+    setVisibleCount((n) => Math.min(Math.max(n, FEED_INITIAL_VISIBLE), len));
   }, [entries.length]);
 
   const visibleEntries =
@@ -86,7 +91,7 @@ export default function FeedPage() {
       setEmptyHintReady(false);
       return;
     }
-    const t = window.setTimeout(() => setEmptyHintReady(true), 900);
+    const t = window.setTimeout(() => setEmptyHintReady(true), 420);
     return () => window.clearTimeout(t);
   }, [streamReady, settled, entries.length]);
   useEffect(() => {
@@ -94,7 +99,7 @@ export default function FeedPage() {
       setFriendPromptReady(false);
       return;
     }
-    const t = window.setTimeout(() => setFriendPromptReady(true), 1200);
+    const t = window.setTimeout(() => setFriendPromptReady(true), 700);
     return () => window.clearTimeout(t);
   }, [streamReady, settled, hasFriends]);
   useEffect(() => {
@@ -102,29 +107,11 @@ export default function FeedPage() {
       setLoadMoreHintReady(false);
       return;
     }
-    const t = window.setTimeout(() => setLoadMoreHintReady(true), 1400);
+    const t = window.setTimeout(() => setLoadMoreHintReady(true), 480);
     return () => window.clearTimeout(t);
   }, [streamReady, entries.length, visibleCount]);
 
-  /**
-   * PC 등 뷰포트가 높을 때 첫 카드만 짧아도 센티널이 보이지만 IntersectionObserver/스크롤이 한 번만
-   * 카운트를 올려 «스크롤이 필요 없음» 상태가 된다. 레이아웃 직후 센티널이 여전히 보이면 카드를 더 연다.
-   */
-  useLayoutEffect(() => {
-    if (!streamReady || entries.length === 0) return;
-    if (visibleCount >= entries.length) return;
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    const vh = typeof window !== "undefined" ? window.innerHeight : 0;
-    if (!(vh > 0)) return;
-    const r = sentinel.getBoundingClientRect();
-    if (!(r.bottom > 0 && r.top < vh)) return;
-    layoutFillPassesRef.current += 1;
-    if (layoutFillPassesRef.current > 72) return;
-    setVisibleCount((c) => Math.min(c + FEED_LOAD_BURST, entries.length));
-  }, [streamReady, entries.length, visibleCount, visibleEntries.length]);
-
-  /** IntersectionObserver + main 스크롤 보조(IO 첫 프레임 누락·스크롤 위치 오류 방지). entriesLenRef 로 콜백 스테일 길이 방지 */
+  /** 스크롤·휠·터치 후에만 다음 카드 로드(IO는 교차 «진입» 시 1장만) */
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el || visibleCount >= entries.length) return;
@@ -132,64 +119,66 @@ export default function FeedPage() {
     const main = document.querySelector<HTMLElement>("[data-app-scroll-root]");
     let alive = true;
 
-    /** 뷰포트 기준 — 스크롤이 main 안이든 window 든 센티널이 보이면 로드 */
-    const bumpIfVisible = () => {
-      if (!alive) return;
-      const target = sentinelRef.current;
-      if (!target) return;
+    /** 한 번이라도 스크롤·휠·터치하면 로드 허용. 이미 센티널이 보이는 경우 IO 가 다시 안 울 수 있어 1프레임 뒤 직접 1장 연다. */
+    const engage = () => {
+      if (feedScrollEngagedRef.current) return;
+      feedScrollEngagedRef.current = true;
+      requestAnimationFrame(() => {
+        if (!alive) return;
+        const t = sentinelRef.current;
+        if (!t) return;
+        const vh = window.innerHeight;
+        const r = t.getBoundingClientRect();
+        if (!(vh > 0 && r.bottom > 0 && r.top < vh)) return;
+        const len = entriesLenRef.current;
+        setVisibleCount((prev) => {
+          if (prev >= len) return prev;
+          return Math.min(prev + FEED_LOAD_STEP, len);
+        });
+        feedIoWasIntersectingRef.current = true;
+      });
+    };
+
+    const tryLoadOneMore = () => {
+      if (!alive || !feedScrollEngagedRef.current) return;
       const len = entriesLenRef.current;
-      const s = target.getBoundingClientRect();
-      const vh = typeof window !== "undefined" ? window.innerHeight : 0;
-      if (!(vh > 0 && s.bottom > 0 && s.top < vh)) return;
       setVisibleCount((prev) => {
         if (prev >= len) return prev;
-        const dynamicStep = Math.max(FEED_LOAD_BURST, Math.ceil((len - prev) / 3));
-        return Math.min(prev + dynamicStep, len);
+        return Math.min(prev + FEED_LOAD_STEP, len);
       });
     };
 
-    let scrollRaf = 0;
-    const onScroll = () => {
-      if (scrollRaf) return;
-      scrollRaf = requestAnimationFrame(() => {
-        scrollRaf = 0;
-        bumpIfVisible();
-      });
-    };
-
-    /** root 를 main 에만 두면 창 스크롤만 있는 레이아웃에서 교차 검사가 영원히 false 인 경우가 있음 */
+    /** IntersectionObserver: 센티널이 뷰포트에 들어올 때(가장자리)만 한 장 */
     const opts: IntersectionObserverInit = {
       root: null,
-      rootMargin: "680px 0px",
+      rootMargin: "120px 0px",
       threshold: 0,
     };
 
     const obs = new IntersectionObserver(
       (records) => {
-        if (records.some((r) => r.isIntersecting)) bumpIfVisible();
+        const rec = records[0];
+        const now = !!rec?.isIntersecting;
+        const was = feedIoWasIntersectingRef.current;
+        feedIoWasIntersectingRef.current = now;
+        if (!feedScrollEngagedRef.current) return;
+        if (now && !was) tryLoadOneMore();
       },
       opts,
     );
     obs.observe(el);
 
-    window.addEventListener("scroll", onScroll, { passive: true });
-    main?.addEventListener("scroll", onScroll, { passive: true });
-
-    const rafId = requestAnimationFrame(() => {
-      bumpIfVisible();
-      requestAnimationFrame(bumpIfVisible);
-    });
-
-    /** 레이아웃·폰트·이미지 직후 한 번 더(첫 진입 때 IO만으로는 교차 보고가 없는 환경 대비) */
-    const tStale = window.setTimeout(bumpIfVisible, 300);
+    window.addEventListener("scroll", engage, { passive: true });
+    window.addEventListener("wheel", engage, { passive: true });
+    window.addEventListener("touchmove", engage, { passive: true });
+    main?.addEventListener("scroll", engage, { passive: true });
 
     return () => {
       alive = false;
-      cancelAnimationFrame(rafId);
-      window.clearTimeout(tStale);
-      if (scrollRaf) cancelAnimationFrame(scrollRaf);
-      window.removeEventListener("scroll", onScroll);
-      main?.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scroll", engage);
+      window.removeEventListener("wheel", engage);
+      window.removeEventListener("touchmove", engage);
+      main?.removeEventListener("scroll", engage);
       obs.disconnect();
     };
   }, [visibleCount, entries.length]);
