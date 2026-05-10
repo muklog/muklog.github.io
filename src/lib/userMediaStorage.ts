@@ -99,9 +99,22 @@ export function normalizeStorageObjectPath(raw: string): string {
   return s;
 }
 
+/**
+ * Storage 규칙은 `users/{uid}/media/**` 만 허용한다.
+ * Firestore/Dexie 에 `{uid}/media/**` 만 남아 있으면 규칙 미매칭으로 첫 요청이 403 이 되므로,
+ * 읽기 전에 항상 `users/` 접두를 붙인다.
+ */
+export function canonicalStorageReadPath(normalizedObjectPath: string): string {
+  const p = normalizedObjectPath.trim();
+  if (!p || p.startsWith("users/")) return p;
+  const m = /^([^/]+)\/(media\/.+)$/.exec(p);
+  if (m) return `users/${m[1]}/${m[2]}`;
+  return p;
+}
+
 export async function blobFromStoragePath(storagePathOrUrl: string): Promise<Blob> {
   const st = await storageWithAuth();
-  const path = normalizeStorageObjectPath(storagePathOrUrl);
+  const path = canonicalStorageReadPath(normalizeStorageObjectPath(storagePathOrUrl));
 
   async function fetchPath(p: string): Promise<Blob> {
     return getBlob(ref(st, p));
@@ -110,15 +123,6 @@ export async function blobFromStoragePath(storagePathOrUrl: string): Promise<Blo
   try {
     return await fetchPath(path);
   } catch (e) {
-    /** 레거시: 문서에 `{uid}/media/...` 만 있는 경우 */
-    if (!path.startsWith("users/")) {
-      try {
-        const m = /^([^/]+)\/(media\/.+)$/.exec(path);
-        if (m) return await fetchPath(`users/${m[1]}/${m[2]}`);
-      } catch {
-        /* 다음 폴백 */
-      }
-    }
     const authUid = getFirebaseAuth().currentUser?.uid;
     const match = /^users\/([^/]+)\/(.+)$/.exec(path);
     /**
