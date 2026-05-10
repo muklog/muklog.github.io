@@ -171,8 +171,8 @@ export async function compressImage(
   opts: CompressOptions = {},
 ): Promise<Blob> {
   const {
-    maxDimension = 1280,
-    quality = 0.85,
+    maxDimension = 1024,
+    quality = 0.72,
     mimeType = "image/jpeg",
     square = false,
   } = opts;
