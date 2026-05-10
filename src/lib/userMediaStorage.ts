@@ -112,31 +112,46 @@ export function canonicalStorageReadPath(normalizedObjectPath: string): string {
   return p;
 }
 
+/** 동일 경로 동시 요청 합치기 — 피드에서 같은 썸네일을 여러 번 받지 않음 */
+const downloadUrlInflight = new Map<string, Promise<string>>();
+
 /**
  * 피드 등 `<img src>` 용 — getBlob+XHR+프리플라이트 대신 짧은 메타 요청 후 브라우저가 이미지를 직접 받는다.
  */
 export async function getDownloadUrlForStoragePath(storagePathOrUrl: string): Promise<string> {
-  const st = await storageWithAuth();
   const path = canonicalStorageReadPath(normalizeStorageObjectPath(storagePathOrUrl));
+  if (!path) throw new Error("empty storage path");
 
-  async function urlFor(p: string): Promise<string> {
-    return getDownloadURL(ref(st, p));
-  }
+  let inflight = downloadUrlInflight.get(path);
+  if (inflight) return inflight;
 
-  try {
-    return await urlFor(path);
-  } catch (e) {
-    const authUid = getFirebaseAuth().currentUser?.uid;
-    const match = /^users\/([^/]+)\/(.+)$/.exec(path);
-    if (authUid && match && match[1] !== authUid) {
-      try {
-        return await urlFor(`users/${authUid}/${match[2]}`);
-      } catch {
-        /* 원 오류 */
-      }
+  inflight = (async () => {
+    const st = await storageWithAuth();
+
+    async function urlFor(p: string): Promise<string> {
+      return getDownloadURL(ref(st, p));
     }
-    throw e;
-  }
+
+    try {
+      return await urlFor(path);
+    } catch (e) {
+      const authUid = getFirebaseAuth().currentUser?.uid;
+      const match = /^users\/([^/]+)\/(.+)$/.exec(path);
+      if (authUid && match && match[1] !== authUid) {
+        try {
+          return await urlFor(`users/${authUid}/${match[2]}`);
+        } catch {
+          /* 원 오류 */
+        }
+      }
+      throw e;
+    }
+  })().finally(() => {
+    downloadUrlInflight.delete(path);
+  });
+
+  downloadUrlInflight.set(path, inflight);
+  return inflight;
 }
 
 export async function blobFromStoragePath(storagePathOrUrl: string): Promise<Blob> {

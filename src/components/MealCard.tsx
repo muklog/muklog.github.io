@@ -46,6 +46,8 @@ interface ItemCardProps {
   shareCaptureRef?: MutableRefObject<HTMLDivElement | null>;
   /** 피드 상단 등 — Storage 이미지를 IO 대기 없이 바로 요청 */
   eagerFeedImage?: boolean;
+  /** true 면 로딩 중에도 스피너 대신 정사각형 배경만 (회색 번쩍임·스피너 감소) */
+  quietPhotoLoading?: boolean;
   onReanalyze?: () => void;
   onEdit?: () => void;
   onRemove?: () => void;
@@ -60,6 +62,7 @@ export function MealItemCard({
   reanalyzeBusy = false,
   shareCaptureRef,
   eagerFeedImage = false,
+  quietPhotoLoading = false,
   onReanalyze,
   onEdit,
   onRemove,
@@ -82,8 +85,16 @@ export function MealItemCard({
       <div ref={wrapRef} className="relative overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
         {hasPhoto ? (
           photoSrcPending && !photoSrc ? (
-            <div className="flex aspect-square w-full items-center justify-center bg-slate-800/80">
-              <Loader2 className="h-8 w-8 shrink-0 animate-spin text-slate-500" aria-hidden />
+            <div
+              className={cls(
+                "flex aspect-square w-full items-center justify-center",
+                quietPhotoLoading ? "bg-slate-800/50" : "bg-slate-800/80",
+              )}
+              aria-busy
+            >
+              {!quietPhotoLoading && (
+                <Loader2 className="h-8 w-8 shrink-0 animate-spin text-slate-500" aria-hidden />
+              )}
             </div>
           ) : photoSrc ? (
             <img

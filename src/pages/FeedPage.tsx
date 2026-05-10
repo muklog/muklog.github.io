@@ -34,7 +34,7 @@ const FEED_INITIAL_VISIBLE = 1;
 /** 스크롤 후 센티널·교차 시 한 번에 펼칠 카드 수 — 1장씩이면 체감이 느려져 묶음 로드 */
 const FEED_LOAD_CHUNK = 5;
 /** 피드 상단 N개 카드는 Storage 썸네일을 IO 대기 없이 바로 요청해 회색 로딩을 줄임 */
-const FEED_EAGER_IMAGE_CARDS = 6;
+const FEED_EAGER_IMAGE_CARDS = 12;
 
 export default function FeedPage() {
   const { user, firebaseReady, loading: authLoading } = useAuth();
@@ -298,6 +298,7 @@ export default function FeedPage() {
                     myUserId={myUserId}
                     myApiKey={apiKey}
                     eagerFeedImage={idx < FEED_EAGER_IMAGE_CARDS}
+                    quietPhotoLoading
                   />
                 ))}
               </div>
@@ -330,6 +331,7 @@ interface FeedCardProps {
   myUserId: string | undefined;
   myApiKey: string | undefined;
   eagerFeedImage?: boolean;
+  quietPhotoLoading?: boolean;
 }
 
 function queryCarouselSlideRoots(root: HTMLElement): HTMLElement[] {
@@ -351,6 +353,7 @@ function FeedCard({
   myUserId,
   myApiKey,
   eagerFeedImage = false,
+  quietPhotoLoading = true,
 }: FeedCardProps) {
   const { author, meal, isMine } = entry;
   const items = meal.items ?? [];
@@ -514,6 +517,7 @@ function FeedCard({
                 showPhotoAnalyzingOverlay={false}
                 reanalyzeBusy={imageReanalyzeBusyId === it.id}
                 eagerFeedImage={eagerFeedImage}
+                quietPhotoLoading={quietPhotoLoading}
                 onEdit={isMine ? () => setEditingItemId(it.id) : undefined}
                 onReanalyze={
                   isMine && it.photo ? () => void handleReanalyzeByImage(it) : undefined

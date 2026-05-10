@@ -116,7 +116,7 @@ export function useMealItemCardImageSrc(
   const src = hasRenderableBlob ? blobHook.src : urlSrc ?? blobHook.src;
 
   const pending = mayDefer
-    ? !shouldFetch || !storageFetchDone || blobHook.pending
+    ? !shouldFetch || !storageFetchDone || (!src && blobHook.pending)
     : blobHook.pending;
 
   const storagePathForError = path;

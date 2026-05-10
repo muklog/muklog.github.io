@@ -255,17 +255,11 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
       color: myProfile?.color,
     };
     const ownRows = mergeOwnMealsForFeed(myMeals, myRemoteMeals);
-    const ownSnapshotReady = ownRows.length > 0 || myRemoteMeals !== null;
     for (const m of ownRows) {
       /** 본인 피드에는 초안 제외 전 항목(`isMealPhoto:false` 포함) — 친구 쪽만 shareable 필터 */
       const pubItems = publicMealItems(m.items);
       if (pubItems.length === 0) continue;
       out.push({ author: myAuthor, meal: { ...m, items: pubItems }, isMine: true });
-    }
-    /** 모바일 크롬에서 친구 카드가 먼저 보이고 내 카드가 늦게 붙는 점프를 줄이기 위해 첫 자기 스냅샷 전엔 잠깐 보류 */
-    if (myUid && !ownSnapshotReady) {
-      out.sort((a, b) => feedEntryActivityTs(b) - feedEntryActivityTs(a));
-      return out;
     }
     for (const share of friendShares ?? []) {
       const rows = friendMealsByOwner.get(share.ownerUid) ?? [];
@@ -332,12 +326,11 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(t);
   }, [emptyOutgoingAwaitingServer]);
 
-  /**
-   * 내 피드(Dexie)는 `myMeals` 준비만으로 그릴 수 있다.
-   * 친구 shares / meals / 프로필은 늦게 붙어도 목록에 합쳐지면 되고, 그걸 전역 loading 으로 묶으면
-   * 모바일(Samsung 브라우저 등)에서 Firestore 스냅샷이 늦을 때 피드 전체가 비는 문제가 생긴다.
-   */
-  const loading = authLoading || myMeals === undefined;
+  /** 로그인 피드는 공유 목록 첫 스냅샷 전에 내 글만 그려져 순서가 뒤틀리므로 잠깐 대기 */
+  const loading =
+    authLoading ||
+    myMeals === undefined ||
+    (!!myUid && feedFirestoreLive && friendShares === null);
   const ownSettled =
     !myUid ||
     !feedFirestoreLive ||
