@@ -26,6 +26,34 @@ import { resolveDisplayName, resolveDisplayPhotoURL } from "../lib/identity";
 const MAX_PER_FRIEND = 16;
 const MAX_MINE = 24;
 
+/**
+ * 기기 A/B 가 Dexie 상태가 달라도, Firestore `myRemoteMeals` 를 기준으로 맞춘 뒤
+ * 로컬이 더 최신(`updatedAt`)인 항목만 덮어써서 동일한 «내» 카드가 보이게 한다.
+ */
+function mergeOwnMealsForFeed(local: Meal[] | undefined, remote: Meal[] | null): Meal[] {
+  const loc = local ?? [];
+  if (remote === null) {
+    return loc
+      .map(normalizeMeal)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, MAX_MINE);
+  }
+  const map = new Map<string, Meal>();
+  for (const r of remote) {
+    map.set(r.id, normalizeMeal(r));
+  }
+  for (const m of loc) {
+    const nm = normalizeMeal(m);
+    const prev = map.get(m.id);
+    if (!prev || nm.updatedAt > prev.updatedAt) {
+      map.set(m.id, nm);
+    }
+  }
+  return [...map.values()]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, MAX_MINE);
+}
+
 export interface FeedAuthor {
   uid: string;
   name: string;
@@ -64,17 +92,11 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
   /** HashRouter 포함 — 피드만 실시간 구독 활성화(리스너·읽기 절약). pathname 은 브라우저마다 edge case 적음. */
   const feedStreamActive = !!matchPath({ path: "/", end: true }, pathname);
 
-  /** 탭이 보이지 않을 때는 Firestore 피드 리스너를 끄고 읽기·연결 비용을 줄임 (DM 쪽과 동일 패턴). */
-  const [tabVisible, setTabVisible] = useState(
-    () => typeof document === "undefined" || document.visibilityState === "visible",
-  );
-  useEffect(() => {
-    const onVis = () => setTabVisible(document.visibilityState === "visible");
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, []);
-
-  const feedFirestoreLive = feedStreamActive && tabVisible;
+  /**
+   * 피드 탭에서만 구독 — 경로 밖에서는 리스너 끔.
+   * (탭 가시성으로 끄면 백그라운드에서 스냅샷이 안 받아져 다른 기기와 목록이 어긋날 수 있음)
+   */
+  const feedFirestoreLive = feedStreamActive;
 
   const { user, firebaseReady, loading: authLoading } = useAuth();
   const myUid = firebaseReady ? user?.uid : undefined;
@@ -232,8 +254,7 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
       photoURL: resolveDisplayPhotoURL(myProfile, user?.photoURL),
       color: myProfile?.color,
     };
-    const ownRows =
-      myMeals && myMeals.length > 0 ? myMeals : myRemoteMeals ?? [];
+    const ownRows = mergeOwnMealsForFeed(myMeals, myRemoteMeals);
     const ownSnapshotReady = ownRows.length > 0 || myRemoteMeals !== null;
     for (const m of ownRows) {
       /** 본인 피드에는 초안 제외 전 항목(`isMealPhoto:false` 포함) — 친구 쪽만 shareable 필터 */
@@ -351,7 +372,7 @@ export function useFeedStream(): Ctx | null {
   return useContext(FeedStreamContext);
 }
 
-/** 피드를 벗어나거나 탭이 숨겨져 있으면 피드 Firestore 구독이 꺼져 친구 글 배지는 피드 탭 활성 후에 반영될 수 있다. */
+/** 피드를 벗어나면 피드 전용 Firestore 구독이 꺼진다. 피드 탭으로 돌아오면 최신 스냅샷으로 맞춰진다. */
 export function useFeedDotVisible(): boolean {
   const fs = useFeedStream();
   const settings = useLiveQuery(() => getSettings(), []);
