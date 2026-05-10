@@ -15,6 +15,7 @@ import {
   where,
   writeBatch,
   type QueryConstraint,
+  type QueryDocumentSnapshot,
   type SnapshotMetadata,
   type Unsubscribe,
 } from "firebase/firestore";
@@ -963,14 +964,18 @@ function mealFirestoreCacheKey(data: MealStored): string {
  * 한 건이 깨져도 나머지 스냅샷이 통째로 실패하지 않도록 호출부에서 try/catch 한다.
  */
 async function decodeFriendMealSnapshotDoc(
-  d: { id: string; data: () => Record<string, unknown> },
+  d: QueryDocumentSnapshot,
   cache: Map<string, { key: string; meal: Meal }>,
 ): Promise<Meal | null> {
   try {
     const data = repairRemoteMealStored({ ...(d.data() as MealStored), id: d.id });
     const sig = mealFirestoreCacheKey(data);
     const cached = cache.get(d.id);
-    if (cached && cached.key === sig) {
+    /**
+     * 로컬 캐시 스냅샷만 올 때만 디코드 스킵 — 서버에서 온 스냅샷이면 항상 다시 디코드해
+     * Storage 이미지 교체·분석 완료 등이 같은 시그니처로 남는 경우를 줄인다.
+     */
+    if (cached && cached.key === sig && d.metadata.fromCache) {
       return cached.meal;
     }
     const meal = await storedToMeal(data);

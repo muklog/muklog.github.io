@@ -621,7 +621,7 @@ async function pullPrivateSettings(uid: string): Promise<PrivateSettingsDoc | nu
 
 /**
  * Meal 한 건을 Firestore 문서 + Storage 로 변환한다.
- * 이미지는 Storage(`users/{uid}/media/meals/...`), 문서에는 경로 메타만 둔다.
+ * 이미지는 Storage(`{firebaseUid}/media/meals/...`), 문서에는 경로 메타만 둔다.
  * 과거 데이터는 pull 시 기존 Base64 도 여전히 읽는다.
  *
  * 피드 UX 는 `friendFeedShareableMealItems` 로 걸러도, 동기화에는 **초안이 아닌 전 항목**을 실어야

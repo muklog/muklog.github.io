@@ -57,6 +57,13 @@ service firebase.storage {
       allow read, write: if signedIn() && request.auth.uid == ownerUid;
     }
 
+    match /{ownerUid}/media/health/{path=**} {
+      allow read, write: if signedIn()
+        && ownerUid != "users"
+        && ownerUid.size() >= 15
+        && request.auth.uid == ownerUid;
+    }
+
     match /{anyPath=**} {
       allow read, write: if false;
     }

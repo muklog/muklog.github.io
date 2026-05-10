@@ -1,6 +1,7 @@
 /**
  * 사용자 식단·건강 사진 파일 — Firebase Storage.
- * 경로 접두부 `users/{firebaseUid}/media/...` (Firestore `users/{uid}/meals` 컬렉션 이름과 분리).
+ * 객체 경로는 `{firebaseUid}/media/...` (Firestore `users/{uid}/meals` 와 이름만 비슷할 뿐 별개).
+ * 예전 `users/{uid}/media/...` 문서는 읽기 시 폴백한다.
  */
 import { deleteObject, getBlob, listAll, ref, uploadBytes } from "firebase/storage";
 import type { FirebaseStorage } from "firebase/storage";
@@ -17,19 +18,19 @@ async function storageWithAuth(): Promise<FirebaseStorage> {
 }
 
 export function mealItemPhotoRef(uid: string, mealId: string, itemId: string): string {
-  return `users/${uid}/media/meals/${mealId}/items/${itemId}/photo.jpg`;
+  return `${uid}/media/meals/${mealId}/items/${itemId}/photo.jpg`;
 }
 
 export function mealItemThumbRef(uid: string, mealId: string, itemId: string): string {
-  return `users/${uid}/media/meals/${mealId}/items/${itemId}/thumb.jpg`;
+  return `${uid}/media/meals/${mealId}/items/${itemId}/thumb.jpg`;
 }
 
 export function healthPhotoRef(uid: string, recordId: string): string {
-  return `users/${uid}/media/health/${recordId}/photo.jpg`;
+  return `${uid}/media/health/${recordId}/photo.jpg`;
 }
 
 export function healthThumbRef(uid: string, recordId: string): string {
-  return `users/${uid}/media/health/${recordId}/thumb.jpg`;
+  return `${uid}/media/health/${recordId}/thumb.jpg`;
 }
 
 export async function uploadMealItemImages(
@@ -109,16 +110,15 @@ export async function blobFromStoragePath(storagePathOrUrl: string): Promise<Blo
   try {
     return await fetchPath(path);
   } catch (e) {
-    /** Firestore 에는 users/ 접두 없이 `{uid}/media/meals/...` 만 저장된 경우 */
-    const withoutUsersPrefix = /^([^/]{15,})\/(media\/.+)$/.exec(path);
-    if (withoutUsersPrefix && !path.startsWith("users/")) {
+    /** 레거시: `users/{uid}/media/...` */
+    if (!path.startsWith("users/")) {
       try {
-        return await fetchPath(`users/${withoutUsersPrefix[1]}/${withoutUsersPrefix[2]}`);
+        const m = /^([^/]+)\/(media\/.+)$/.exec(path);
+        if (m) return await fetchPath(`users/${m[1]}/${m[2]}`);
       } catch {
         /* 다음 폴백 */
       }
     }
-    /** 반대로 문서에는 users/ 가 있는데 객체가 접두 없이만 있을 때 */
     const stripUsers = /^users\/([^/]+)\/(media\/.+)$/.exec(path);
     if (stripUsers) {
       try {
@@ -147,18 +147,33 @@ export async function blobFromStoragePath(storagePathOrUrl: string): Promise<Blo
 
 export async function deleteMealMediaFolder(uid: string, mealId: string): Promise<void> {
   const st = await storageWithAuth();
-  await deleteStoragePrefixRecursive(st, `users/${uid}/media/meals/${mealId}`);
+  await deleteStoragePrefixRecursive(st, `${uid}/media/meals/${mealId}`);
+  try {
+    await deleteStoragePrefixRecursive(st, `users/${uid}/media/meals/${mealId}`);
+  } catch {
+    /* 레거시 경로 없음 */
+  }
 }
 
 export async function deleteHealthMediaFolder(uid: string, recordId: string): Promise<void> {
   const st = await storageWithAuth();
-  await deleteStoragePrefixRecursive(st, `users/${uid}/media/health/${recordId}`);
+  await deleteStoragePrefixRecursive(st, `${uid}/media/health/${recordId}`);
+  try {
+    await deleteStoragePrefixRecursive(st, `users/${uid}/media/health/${recordId}`);
+  } catch {
+    /* 레거시 경로 없음 */
+  }
 }
 
 export async function deleteUserMediaTree(uid: string): Promise<void> {
   try {
     const st = await storageWithAuth();
-    await deleteStoragePrefixRecursive(st, `users/${uid}/media`);
+    await deleteStoragePrefixRecursive(st, `${uid}/media`);
+    try {
+      await deleteStoragePrefixRecursive(st, `users/${uid}/media`);
+    } catch {
+      /* 레거시 없음 */
+    }
   } catch (e) {
     console.warn("[userMediaStorage] 사용자 미디어 트리 삭제 실패", e);
   }
