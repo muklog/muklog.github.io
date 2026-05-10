@@ -168,9 +168,26 @@ async function blobsFromFirestorePhotoBase64(
   }
 }
 
-async function itemStoredToItem(s: MealItemStored): Promise<MealItem> {
+/** 동기화는 전부 Blob 로 풀고, 피드용 실시간 구독만 Storage 요청을 나중으로 미룸 */
+export type StoredToMealOptions = {
+  deferStorageBlobs?: boolean;
+};
+
+async function itemStoredToItem(
+  s: MealItemStored,
+  opts?: StoredToMealOptions,
+): Promise<MealItem> {
   const { photoBase64, photoMimeType, photoStoragePath, thumbStoragePath, ...rest } = s;
   const item: MealItem = { ...rest };
+
+  if (
+    opts?.deferStorageBlobs &&
+    (photoStoragePath || thumbStoragePath)
+  ) {
+    if (photoStoragePath) item.photoStoragePath = photoStoragePath;
+    if (thumbStoragePath) item.thumbStoragePath = thumbStoragePath;
+    return item;
+  }
 
   /** 한쪽 파일만 깨져도 다른 쪽·Base64 폴백을 쓰려고 경로별로 따로 받는다. */
   if (photoStoragePath || thumbStoragePath) {
@@ -237,12 +254,17 @@ async function augmentMealWithDocLevelLegacy(mealDoc: MealStored, meal: Meal): P
   return { ...meal, items: merged };
 }
 
-export async function storedToMeal(s: MealStored): Promise<Meal> {
+export async function storedToMeal(
+  s: MealStored,
+  opts?: StoredToMealOptions,
+): Promise<Meal> {
   const now = Date.now();
   // 신규 스키마: items 가 배열이면 길이 0 도 "빈 끼니"로 취급(레거시 top-level 과 섞이지 않도록)
   if (Array.isArray(s.items)) {
     const items =
-      s.items.length > 0 ? await Promise.all(s.items.map(itemStoredToItem)) : [];
+      s.items.length > 0
+        ? await Promise.all(s.items.map((it) => itemStoredToItem(it, opts)))
+        : [];
     return augmentMealWithDocLevelLegacy(s, {
       id: s.id,
       userId: s.userId,
@@ -342,7 +364,11 @@ function mergeUsers(local: User[], remote: User[]): User[] {
 }
 
 function itemHasRenderableImage(it: MealItem): boolean {
-  return (it.photo?.size ?? 0) > 0 || (it.thumbnail?.size ?? 0) > 0;
+  return (
+    (it.photo?.size ?? 0) > 0 ||
+    (it.thumbnail?.size ?? 0) > 0 ||
+    !!(it.photoStoragePath || it.thumbStoragePath)
+  );
 }
 
 async function mergeMealItemPhotoFromLocal(remoteItem: MealItem, loc?: MealItem): Promise<MealItem> {

@@ -90,6 +90,12 @@ export interface MealItem {
   id: string;
   photo?: Blob;
   thumbnail?: Blob;
+  /**
+   * Storage 객체 경로만 있고 아직 Blob 을 안 받은 경우(피드 등 지연 로드).
+   * Firebase `getBlob` 호출 수를 줄이기 위해 씀.
+   */
+  photoStoragePath?: string;
+  thumbStoragePath?: string;
   menuText?: string;
   rating?: number;
   aiComment?: string;

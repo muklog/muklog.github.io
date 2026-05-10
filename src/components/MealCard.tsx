@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { MealItem } from "../types";
 import { useBlobImgSrc } from "../hooks/useBlobImgSrc";
+import { useMealItemCardImageSrc } from "../hooks/useMealItemCardImageSrc";
 import { isRenderableImageBlob } from "../lib/image";
 import { cls } from "../lib/utils";
 import type { MealItemPatch } from "../lib/mealItems";
@@ -61,9 +62,11 @@ export function MealItemCard({
   onRemove,
 }: ItemCardProps) {
   const photoBlob = item.photo || item.thumbnail;
-  const hasPhoto = isRenderableImageBlob(photoBlob);
-  const { src: photoSrc, pending: photoSrcPending, onImgError: onPhotoImgError } =
-    useBlobImgSrc(photoBlob);
+  const hasPhoto =
+    isRenderableImageBlob(photoBlob) ||
+    !!(item.thumbStoragePath || item.photoStoragePath);
+  const { src: photoSrc, pending: photoSrcPending, onImgError: onPhotoImgError, wrapRef } =
+    useMealItemCardImageSrc(item);
 
   return (
     <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/30 p-2">
@@ -73,7 +76,7 @@ export function MealItemCard({
         }}
         className="space-y-2"
       >
-      <div className="relative overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+      <div ref={wrapRef} className="relative overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
         {hasPhoto ? (
           photoSrcPending && !photoSrc ? (
             <div className="flex aspect-square w-full items-center justify-center bg-slate-800/80">

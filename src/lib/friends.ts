@@ -978,7 +978,7 @@ async function decodeFriendMealSnapshotDoc(
     if (cached && cached.key === sig && d.metadata.fromCache) {
       return cached.meal;
     }
-    const meal = await storedToMeal(data);
+    const meal = await storedToMeal(data, { deferStorageBlobs: true });
     cache.set(d.id, { key: sig, meal });
     return meal;
   } catch (e) {
