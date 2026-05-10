@@ -33,6 +33,8 @@ import { STALL_REFRESH_HINT } from "../lib/tabLoadingMessage";
 const FEED_INITIAL_VISIBLE = 1;
 /** 스크롤 후 센티널·교차 시 한 번에 펼칠 카드 수 — 1장씩이면 체감이 느려져 묶음 로드 */
 const FEED_LOAD_CHUNK = 5;
+/** 피드 상단 N개 카드는 Storage 썸네일을 IO 대기 없이 바로 요청해 회색 로딩을 줄임 */
+const FEED_EAGER_IMAGE_CARDS = 6;
 
 export default function FeedPage() {
   const { user, firebaseReady, loading: authLoading } = useAuth();
@@ -287,7 +289,7 @@ export default function FeedPage() {
 
             {entries.length > 0 && (
               <div className="space-y-4">
-                {visibleEntries.map((e) => (
+                {visibleEntries.map((e, idx) => (
                   <FeedCard
                     key={`${e.author.uid}_${e.meal.id}`}
                     entry={e}
@@ -295,6 +297,7 @@ export default function FeedPage() {
                     myFirebaseUid={myUid}
                     myUserId={myUserId}
                     myApiKey={apiKey}
+                    eagerFeedImage={idx < FEED_EAGER_IMAGE_CARDS}
                   />
                 ))}
               </div>
@@ -326,6 +329,7 @@ interface FeedCardProps {
   /** 내 local Dexie userId — "내 게시물" 수정/재분석에 필요 */
   myUserId: string | undefined;
   myApiKey: string | undefined;
+  eagerFeedImage?: boolean;
 }
 
 function queryCarouselSlideRoots(root: HTMLElement): HTMLElement[] {
@@ -340,7 +344,14 @@ function activeCarouselIdxFromDom(root: HTMLElement): number | null {
   return Math.max(0, Math.round(scroller.scrollLeft / w));
 }
 
-function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: FeedCardProps) {
+function FeedCard({
+  entry,
+  showSocial,
+  myFirebaseUid,
+  myUserId,
+  myApiKey,
+  eagerFeedImage = false,
+}: FeedCardProps) {
   const { author, meal, isMine } = entry;
   const items = meal.items ?? [];
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -502,6 +513,7 @@ function FeedCard({ entry, showSocial, myFirebaseUid, myUserId, myApiKey }: Feed
                 canAnalyze={isMine && !!myApiKey}
                 showPhotoAnalyzingOverlay={false}
                 reanalyzeBusy={imageReanalyzeBusyId === it.id}
+                eagerFeedImage={eagerFeedImage}
                 onEdit={isMine ? () => setEditingItemId(it.id) : undefined}
                 onReanalyze={
                   isMine && it.photo ? () => void handleReanalyzeByImage(it) : undefined

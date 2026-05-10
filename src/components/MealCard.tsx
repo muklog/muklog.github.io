@@ -44,6 +44,8 @@ interface ItemCardProps {
   reanalyzeBusy?: boolean;
   /** 부모에서 활성 슬라이드 카드만 넘기면 해당 카드 DOM 으로 PNG 공유 캡처 */
   shareCaptureRef?: MutableRefObject<HTMLDivElement | null>;
+  /** 피드 상단 등 — Storage 이미지를 IO 대기 없이 바로 요청 */
+  eagerFeedImage?: boolean;
   onReanalyze?: () => void;
   onEdit?: () => void;
   onRemove?: () => void;
@@ -57,6 +59,7 @@ export function MealItemCard({
   showPhotoAnalyzingOverlay = true,
   reanalyzeBusy = false,
   shareCaptureRef,
+  eagerFeedImage = false,
   onReanalyze,
   onEdit,
   onRemove,
@@ -66,7 +69,7 @@ export function MealItemCard({
     isRenderableImageBlob(photoBlob) ||
     !!(item.thumbStoragePath || item.photoStoragePath);
   const { src: photoSrc, pending: photoSrcPending, onImgError: onPhotoImgError, wrapRef } =
-    useMealItemCardImageSrc(item);
+    useMealItemCardImageSrc(item, { eagerImage: eagerFeedImage });
 
   return (
     <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/30 p-2">
@@ -86,7 +89,7 @@ export function MealItemCard({
             <img
               src={photoSrc}
               alt="식사 사진"
-              loading="lazy"
+              loading={eagerFeedImage ? "eager" : "lazy"}
               decoding="async"
               className="aspect-square w-full object-cover"
               onError={onPhotoImgError}

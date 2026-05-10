@@ -3,7 +3,7 @@
  * 객체 경로는 `users/{firebaseUid}/media/...` 로 통일한다.
  * Firestore에 `{uid}/media/...`(users 접두사 없음)만 있는 레거시 문서는 읽기 시 `users/` 를 붙여 재시도한다.
  */
-import { deleteObject, getBlob, listAll, ref, uploadBytes } from "firebase/storage";
+import { deleteObject, getBlob, getDownloadURL, listAll, ref, uploadBytes } from "firebase/storage";
 import type { FirebaseStorage } from "firebase/storage";
 import { ensureAuthTokenForFirestore, getFirebaseAuth, getFirebaseStorage } from "./firebaseApp";
 
@@ -110,6 +110,33 @@ export function canonicalStorageReadPath(normalizedObjectPath: string): string {
   const m = /^([^/]+)\/(media\/.+)$/.exec(p);
   if (m) return `users/${m[1]}/${m[2]}`;
   return p;
+}
+
+/**
+ * 피드 등 `<img src>` 용 — getBlob+XHR+프리플라이트 대신 짧은 메타 요청 후 브라우저가 이미지를 직접 받는다.
+ */
+export async function getDownloadUrlForStoragePath(storagePathOrUrl: string): Promise<string> {
+  const st = await storageWithAuth();
+  const path = canonicalStorageReadPath(normalizeStorageObjectPath(storagePathOrUrl));
+
+  async function urlFor(p: string): Promise<string> {
+    return getDownloadURL(ref(st, p));
+  }
+
+  try {
+    return await urlFor(path);
+  } catch (e) {
+    const authUid = getFirebaseAuth().currentUser?.uid;
+    const match = /^users\/([^/]+)\/(.+)$/.exec(path);
+    if (authUid && match && match[1] !== authUid) {
+      try {
+        return await urlFor(`users/${authUid}/${match[2]}`);
+      } catch {
+        /* 원 오류 */
+      }
+    }
+    throw e;
+  }
 }
 
 export async function blobFromStoragePath(storagePathOrUrl: string): Promise<Blob> {
