@@ -27,6 +27,7 @@ service firebase.storage {
         );
     }
 
+    /** 식단·건강 사진 모두 `users/{uid}/media/...` 만 사용 */
     match /users/{ownerUid}/media/meals/{path=**} {
       allow read: if signedIn() && (
         request.auth.uid == ownerUid ||
@@ -35,33 +36,8 @@ service firebase.storage {
       allow write: if signedIn() && request.auth.uid == ownerUid;
     }
 
-    /**
-     * 일부 환경·콘솔에서는 users/ 없이 {firebaseUid}/media/meals/ 만 보입니다.
-     * users/ 규칙과 중복되지 않게 첫 세그먼트가 "users" 가 아닐 때만 허용합니다.
-     */
-    match /{ownerUid}/media/meals/{path=**} {
-      allow read: if signedIn()
-        && ownerUid != "users"
-        && ownerUid.size() >= 15
-        && (
-          request.auth.uid == ownerUid ||
-          viewerShareCalendarOk(ownerUid)
-        );
-      allow write: if signedIn()
-        && ownerUid != "users"
-        && ownerUid.size() >= 15
-        && request.auth.uid == ownerUid;
-    }
-
     match /users/{ownerUid}/media/health/{path=**} {
       allow read, write: if signedIn() && request.auth.uid == ownerUid;
-    }
-
-    match /{ownerUid}/media/health/{path=**} {
-      allow read, write: if signedIn()
-        && ownerUid != "users"
-        && ownerUid.size() >= 15
-        && request.auth.uid == ownerUid;
     }
 
     match /{anyPath=**} {
