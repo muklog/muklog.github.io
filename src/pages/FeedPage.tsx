@@ -164,6 +164,22 @@ export default function FeedPage() {
       });
     };
 
+    /**
+     * PC 큰 화면에서 "카드 1개 + 안내문"만으로 스크롤 높이가 생기지 않으면
+     * engage 이벤트가 오지 않아 영원히 멈출 수 있다.
+     * 이 경우에는 뷰포트를 채울 때까지 한 장씩 자동 보충한다.
+     */
+    const autoFillIfNotScrollable = () => {
+      if (!alive || !main) return;
+      if (visibleCountRef.current >= entriesLenRef.current) return;
+      if (main.scrollHeight > main.clientHeight + 8) return;
+      const len = entriesLenRef.current;
+      setVisibleCount((prev) => {
+        if (prev >= len) return prev;
+        return Math.min(prev + FEED_LOAD_CHUNK, len);
+      });
+    };
+
     /** IntersectionObserver: 센티널이 뷰포트에 들어올 때 한 장 추가 */
     const opts: IntersectionObserverInit = {
       root: null,
@@ -205,18 +221,31 @@ export default function FeedPage() {
     window.addEventListener("wheel", engage, { passive: true });
     window.addEventListener("touchmove", engage, { passive: true });
     main?.addEventListener("scroll", engage, { passive: true });
+    main?.addEventListener("wheel", engage, { passive: true });
 
     window.addEventListener("scroll", onScrollFill, { passive: true });
     main?.addEventListener("scroll", onScrollFill, { passive: true });
 
+    const rafA = requestAnimationFrame(autoFillIfNotScrollable);
+    const rafB = requestAnimationFrame(() => requestAnimationFrame(autoFillIfNotScrollable));
+    const onResize = () => autoFillIfNotScrollable();
+    window.addEventListener("resize", onResize, { passive: true });
+    const mainResizeObs = main ? new ResizeObserver(() => autoFillIfNotScrollable()) : null;
+    if (main && mainResizeObs) mainResizeObs.observe(main);
+
     return () => {
       alive = false;
+      cancelAnimationFrame(rafA);
+      cancelAnimationFrame(rafB);
       window.removeEventListener("scroll", engage);
       window.removeEventListener("wheel", engage);
       window.removeEventListener("touchmove", engage);
       main?.removeEventListener("scroll", engage);
+      main?.removeEventListener("wheel", engage);
       window.removeEventListener("scroll", onScrollFill);
       main?.removeEventListener("scroll", onScrollFill);
+      window.removeEventListener("resize", onResize);
+      mainResizeObs?.disconnect();
       obs.disconnect();
     };
   }, [entries.length, visibleCount]);
