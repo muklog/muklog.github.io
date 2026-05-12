@@ -22,6 +22,8 @@ import NotificationsPage from "./pages/NotificationsPage";
 import MessagesPage from "./pages/MessagesPage";
 import DmChatPage from "./pages/DmChatPage";
 import PrivacyPage from "./pages/PrivacyPage";
+import DeleteAccountGuidePage from "./pages/DeleteAccountGuidePage";
+import DataDeletionGuidePage from "./pages/DataDeletionGuidePage";
 import BottomNav from "./components/BottomNav";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { DmRealtimeProvider } from "./contexts/DmRealtimeContext";
@@ -249,6 +251,8 @@ export default function App() {
                     <Route path="/health" element={<HealthPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
                     <Route path="/privacy" element={<PrivacyPage />} />
+                    <Route path="/delete-account" element={<DeleteAccountGuidePage />} />
+                    <Route path="/data-deletion" element={<DataDeletionGuidePage />} />
                     <Route path="/onboarding" element={<OnboardingPage />} />
                     <Route path="/friends" element={<FriendsPage />} />
                     <Route path="/friends/invite/c/:inviteCode" element={<InviteCodePage />} />
