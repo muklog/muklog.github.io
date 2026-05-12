@@ -605,6 +605,7 @@ function FeedCard({
               <MealItemCard
                 item={it}
                 index={idx}
+                mealItemCount={items.length}
                 readOnly={!isMine}
                 canAnalyze={isMine && !!myApiKey}
                 showPhotoAnalyzingOverlay={false}

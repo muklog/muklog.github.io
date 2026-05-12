@@ -147,6 +147,8 @@ interface ItemCardProps {
   onReanalyze?: () => void;
   onEdit?: () => void;
   onRemove?: () => void;
+  /** 이 끼니 항목(사진) 개수 — 2 이상일 때만 사진 위 #번호 배지 표시 */
+  mealItemCount?: number;
 }
 
 export function MealItemCard({
@@ -162,6 +164,7 @@ export function MealItemCard({
   onReanalyze,
   onEdit,
   onRemove,
+  mealItemCount = 1,
 }: ItemCardProps) {
   const photoBlob = item.photo || item.thumbnail;
   const hasPhoto =
@@ -207,9 +210,11 @@ export function MealItemCard({
             <AnalyzingDelayHint active readOnly={readOnly} />
           </div>
         )}
-        <span className="pointer-events-none absolute left-2 top-2 z-20 rounded-full bg-slate-950/85 px-2 py-0.5 text-[10px] font-semibold text-slate-200 shadow-sm ring-1 ring-slate-700/80 backdrop-blur">
-          #{index + 1}
-        </span>
+        {mealItemCount >= 2 && (
+          <span className="pointer-events-none absolute left-2 top-2 z-20 rounded-full bg-slate-950/85 px-2 py-0.5 text-[10px] font-semibold text-slate-200 shadow-sm ring-1 ring-slate-700/80 backdrop-blur">
+            #{index + 1}
+          </span>
+        )}
       </div>
       <ItemAnalysisBlock
         item={item}
@@ -817,8 +822,8 @@ export function MealItemEditDialog({
           <div className="min-w-0 flex-1">
             <p className="text-[11px] text-slate-400">
               {variant === "addManual"
-                ? "사진 없이 메뉴와 영양 정보를 적어 저장하면 끼니에 추가돼요. 저장한 뒤에는 필요하면 AI로 별점·한 줄 평을 받을 수 있어요."
-                : "메뉴·영양 정보를 직접 고치고 원하면 그 값으로 AI 별점을 다시 받을 수 있어요."}
+                ? "사진 없이 메뉴와 영양 정보를 적어 저장하면 끼니에 추가돼요. 저장한 뒤에도 AI로 별점·한 줄 평을 받을 수 있어요."
+                : "메뉴·영양 정보를 직접 고치고 AI 분석을 다시 받을 수 있어요."}
             </p>
             {typeof item.rating === "number" && (
               <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-amber-300">

@@ -201,7 +201,7 @@ function SlotSection({
           <MealItemCardsCarousel
             items={items}
             renderSlide={(it, idx) => (
-              <MealItemCard item={it} index={idx} readOnly />
+              <MealItemCard item={it} index={idx} mealItemCount={items.length} readOnly />
             )}
           />
         )}

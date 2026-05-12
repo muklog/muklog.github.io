@@ -341,6 +341,7 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
                   <MealItemCard
                     item={it}
                     index={idx}
+                    mealItemCount={items.length}
                     canAnalyze={!!apiKey}
                     shareCaptureRef={carouselSlideIdx === idx ? mealShareRef : undefined}
                     onReanalyze={() => void reAnalyzeItem(it)}
