@@ -132,8 +132,9 @@ export default function FeedPage() {
     const el = sentinelRef.current;
     if (!el || visibleCount >= entries.length) return;
 
-    const main = document.querySelector<HTMLElement>("[data-app-scroll-root]");
+    let main = document.querySelector<HTMLElement>("[data-app-scroll-root]");
     let alive = true;
+    let autoFillTimer: number | null = null;
 
     /** 한 번이라도 스크롤·휠·터치하면 로드 허용. 이미 센티널이 보이는 경우 IO 가 다시 안 울 수 있어 1프레임 뒤 직접 1장 연다. */
     const engage = () => {
@@ -170,14 +171,31 @@ export default function FeedPage() {
      * 이 경우에는 뷰포트를 채울 때까지 한 장씩 자동 보충한다.
      */
     const autoFillIfNotScrollable = () => {
-      if (!alive || !main) return;
+      if (!alive) return;
+      if (!main) {
+        main = document.querySelector<HTMLElement>("[data-app-scroll-root]");
+      }
+      if (!main) return;
       if (visibleCountRef.current >= entriesLenRef.current) return;
       if (main.scrollHeight > main.clientHeight + 8) return;
       const len = entriesLenRef.current;
+      let increased = false;
       setVisibleCount((prev) => {
         if (prev >= len) return prev;
-        return Math.min(prev + FEED_LOAD_CHUNK, len);
+        const next = Math.min(prev + FEED_LOAD_CHUNK, len);
+        if (next > prev) increased = true;
+        return next;
       });
+      if (increased) scheduleAutoFillCheck();
+    };
+
+    const scheduleAutoFillCheck = () => {
+      if (!alive) return;
+      if (autoFillTimer !== null) window.clearTimeout(autoFillTimer);
+      autoFillTimer = window.setTimeout(() => {
+        autoFillTimer = null;
+        autoFillIfNotScrollable();
+      }, 120);
     };
 
     /** IntersectionObserver: 센티널이 뷰포트에 들어올 때 한 장 추가 */
@@ -228,6 +246,7 @@ export default function FeedPage() {
 
     const rafA = requestAnimationFrame(autoFillIfNotScrollable);
     const rafB = requestAnimationFrame(() => requestAnimationFrame(autoFillIfNotScrollable));
+    scheduleAutoFillCheck();
     const onResize = () => autoFillIfNotScrollable();
     window.addEventListener("resize", onResize, { passive: true });
     const mainResizeObs = main ? new ResizeObserver(() => autoFillIfNotScrollable()) : null;
@@ -235,6 +254,7 @@ export default function FeedPage() {
 
     return () => {
       alive = false;
+      if (autoFillTimer !== null) window.clearTimeout(autoFillTimer);
       cancelAnimationFrame(rafA);
       cancelAnimationFrame(rafB);
       window.removeEventListener("scroll", engage);
