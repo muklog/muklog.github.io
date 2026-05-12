@@ -22,7 +22,7 @@ import {
 } from "./db";
 import { cleanupMealSocial } from "./social";
 import { reanalyzeMealFromText } from "./ai";
-import type { MealItem, MealSlot } from "../types";
+import type { Meal, MealItem, MealSlot } from "../types";
 
 /** 저장 완료된 항목만 피드·클라우드·달력 요약에 포함 */
 export function publicMealItems(items: MealItem[] | undefined): MealItem[] {
@@ -123,16 +123,25 @@ export async function updateMealItem(
 export interface DeleteItemOptions {
   /** 원격 cleanup 에 필요한 owner(내 Firebase uid). 없으면 원격 소셜 정리만 건너뜀. */
   ownerUid?: string | null;
+  /**
+   * 피드 등에서 Dexie 에 아직 없는 meal 을 보여 줄 때 삭제가 첫 탭에서 실패하지 않도록
+   * 동일 id 의 meal 스냅샷을 넘기면 로컬에 한 번 put 한 뒤 삭제한다.
+   */
+  mealSeed?: Meal | null;
 }
 
 export async function deleteMealItem(
   mealId: string,
   itemId: string,
-  { ownerUid }: DeleteItemOptions = {},
+  { ownerUid, mealSeed }: DeleteItemOptions = {},
 ): Promise<void> {
   let deletedWholeMealId: string | undefined;
   await runDexie(async () => {
-    const cur = await db.meals.get(mealId);
+    let cur = await db.meals.get(mealId);
+    if (!cur && mealSeed && mealSeed.id === mealId) {
+      await db.meals.put(normalizeMeal(mealSeed));
+      cur = await db.meals.get(mealId);
+    }
     if (!cur) return;
     const normalized = normalizeMeal(cur);
     const remaining = normalized.items.filter((it) => it.id !== itemId);

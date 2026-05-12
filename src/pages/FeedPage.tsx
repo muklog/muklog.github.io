@@ -27,8 +27,8 @@ import { prefetchDownloadUrlsForStoragePaths } from "../lib/userMediaStorage";
 
 /**
  * 피드 탭 — 스트림은 App 의 FeedStreamProvider 에서 구독하고, 여기서는 렌더링만 합니다.
- * 첫 화면 1장만 두고, 스크롤할 때마다 피드 카드를 1장씩 연다.
- * (큰 화면에서 센티널이 처음부터 보여도 스크롤 전에는 1장만 유지)
+ * 첫 화면은 1장부터 시작하고, 스트림 준비 후 센티널·뷰포트에 따라 1장씩 연다.
+ * (짧은 콘텐츠에서는 자동 보충으로 스크롤이 생길 때까지 채움)
  * MealSocialBlock 은 카드가 뷰포트 근처에 올 때만 구독합니다.
  */
 const FEED_INITIAL_VISIBLE = 1;
@@ -68,7 +68,7 @@ export default function FeedPage() {
   const visibleCountRef = useRef(visibleCount);
   visibleCountRef.current = visibleCount;
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  /** 사용자가 한 번이라도 스크롤/휠한 뒤에만 «다음 장» 로드 — 초기에 센티널이 보여도 1장만 유지 */
+  /** 스크롤·휠 시 추가로 «다음 장» 로드 허용(스트림 준비 후 기본 true 로 IO 도 동작) */
   const feedScrollEngagedRef = useRef(false);
   /** IO 교차: false→true 일 때만 1장 추가(계속 교차인 채로 연속 증가 방지) */
   const feedIoWasIntersectingRef = useRef(false);
@@ -127,8 +127,18 @@ export default function FeedPage() {
   const loadMoreHintVisible =
     streamReady && entries.length > 0 && visibleCount < entries.length;
 
+  /**
+   * 피드 스트림이 준비되면 «스크롤 한 번» 없이도 센티널·IO 가 다음 장을 열 수 있게 한다.
+   * (한 장만으로도 스크롤이 생기면 기존 autoFill 이 멈추고, engage 가 false 면 첫 화면에서 멈춤)
+   */
+  useEffect(() => {
+    if (!streamReady || !settled || entries.length === 0) return;
+    feedScrollEngagedRef.current = true;
+  }, [streamReady, settled, entries.length]);
+
   /** 스크롤·휠·터치 후에만 다음 카드 로드(IO 교차 + 스크롤 보조) */
   useEffect(() => {
+    if (!streamReady || !settled) return;
     const el = sentinelRef.current;
     if (!el || visibleCount >= entries.length) return;
 
@@ -205,6 +215,9 @@ export default function FeedPage() {
       threshold: 0,
     };
 
+    /** effect 재실행·visibleCount 증가 직후에도 첫 교차를 false→true 로 잡아 한 장 더 연다 */
+    feedIoWasIntersectingRef.current = false;
+
     const obs = new IntersectionObserver(
       (records) => {
         const rec = records[0];
@@ -268,7 +281,7 @@ export default function FeedPage() {
       mainResizeObs?.disconnect();
       obs.disconnect();
     };
-  }, [entries.length, visibleCount]);
+  }, [streamReady, settled, entries.length, visibleCount]);
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-5">
@@ -532,7 +545,10 @@ function FeedCard({
   async function handleRemoveItem(item: MealItem) {
     if (!isMine) return;
     if (!confirm("이 사진을 삭제할까요?")) return;
-    await deleteMealItem(meal.id, item.id, { ownerUid: author.uid });
+    await deleteMealItem(meal.id, item.id, {
+      ownerUid: author.uid,
+      mealSeed: meal,
+    });
   }
 
   return (
