@@ -29,7 +29,8 @@ $env:BUBBLEWRAP_KEY_PASSWORD      = '같게-또는-다르게'
 ### `EBUSY` / `gradlew.bat` 없음
 
 - `bubblewrap update` 중 **`resource busy or locked`** 가 나오면 보통 **다른 프로세스가 `app\build` 를 잡고 있을 때**입니다. **Android Studio**에서 이 폴더를 연 프로젝트가 있으면 닫고, **탐색기**로 `app\build` 안을 보던 창도 닫은 뒤 `setup-and-build.ps1` 을 다시 실행하세요.
-- `update` 가 중간에 실패하면 **`gradlew.bat` 이 없어서** 이어지는 `build` 가 깨질 수 있습니다. 위 정리 후 **다시 `.\setup-and-build.ps1`** 하면 `setup-and-build.ps1` 이 빌드 캐시를 지우고 `update` 부터 다시 시도합니다.
+- 스크립트가 **Gradle 데몬(java)** 종료 → `app\build` 삭제/`rmdir`/이름 변경을 순서대로 시도합니다. 그래도 잠기면 **PC 재부팅** 후 `twa-android`에서만 다시 실행해 보세요.
+- `update` 가 중간에 실패하면 **`gradlew.bat` 이 없어서** 이어지는 `build` 가 깨질 수 있습니다. 위 정리 후 **다시 `.\setup-and-build.ps1`** 하면 됩니다.
 
 ## 수동 단계 (같은 결과)
 
@@ -48,6 +49,7 @@ npx --yes @bubblewrap/cli@latest build
    ```
 
 2. **Play 앱 서명**을 쓰면 콘솔 → **앱 서명**의 **SHA-256** 이 위와 다를 수 있습니다. 그 값을 `public/.well-known/assetlinks.json` 의 `sha256_cert_fingerprints` 배열에 **추가**한 뒤 `npm run build` 로 웹 재배포하세요.
+
 ## 폴더를 레포 밖에 두고 싶다면
 
 이 디렉터리 전체를 `C:\work\muklog-twa-android` 등으로 복사한 뒤 같은 명령을 실행하면 됩니다.

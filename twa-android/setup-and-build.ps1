@@ -56,22 +56,74 @@ if (-not (Test-Path ".\android.keystore")) {
 
 # bubblewrap update 가 EBUSY 로 실패하면 gradlew 가 안 생기고 이후 build 가 'gradlew.bat 없음' 으로 깨짐
 Write-Host ">>> 이전 Gradle 출력 정리 (파일 잠금·EBUSY 완화)"
+$twaRoot = (Resolve-Path ".").Path
+$twaDirName = Split-Path $twaRoot -Leaf
+
 if (Test-Path ".\gradlew.bat") {
   try {
-    & .\gradlew.bat --stop 2>$null
+    & .\gradlew.bat --stop 2>$null | Out-Null
   } catch { }
 }
 Start-Sleep -Seconds 2
-foreach ($rel in @(".\app\build", ".\build")) {
+
+# Gradle 데몬·워커가 classes.dex 등을 잡고 있으면 Remove-Item 이 실패함
+# (데몬 cmdline 에 프로젝트 경로가 안 보일 수 있어 GradleDaemon 문자열로도 종료)
+foreach ($proc in Get-CimInstance Win32_Process -Filter "Name = 'java.exe'" -ErrorAction SilentlyContinue) {
+  $cmd = $proc.CommandLine
+  if (-not $cmd) { continue }
+  $hit =
+    ($cmd -like "*${twaDirName}*") -or
+    ($cmd -like "*twa-android*") -or
+    ($cmd -match "(?i)GradleDaemon") -or
+    ($cmd -match "(?i)org\.gradle\.launcher\.daemon")
+  if ($hit) {
+    Write-Host "    종료 java (Gradle 관련) PID $($proc.ProcessId)"
+    Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+  }
+}
+Start-Sleep -Seconds 3
+
+$appBuild = Join-Path $twaRoot "app\build"
+if (Test-Path $appBuild) {
+  $removed = $false
+  for ($i = 0; $i -lt 3; $i++) {
+    try {
+      Remove-Item -LiteralPath $appBuild -Recurse -Force -ErrorAction Stop
+      $removed = $true
+      Write-Host "    제거: app\build"
+      break
+    } catch {
+      Start-Sleep -Seconds 2
+    }
+  }
+  if (-not $removed -and (Test-Path $appBuild)) {
+    cmd /c "rmdir /s /q `"$appBuild`"" 2>$null | Out-Null
+    Start-Sleep -Seconds 2
+    if (Test-Path $appBuild) { $removed = $false } else { $removed = $true; Write-Host "    제거: app\build (rmdir)" }
+  }
+  if (-not $removed -and (Test-Path $appBuild)) {
+    $trash = Join-Path (Split-Path $appBuild -Parent) ("build._trash_{0}" -f ([DateTime]::UtcNow.ToString("yyyyMMddHHmmss")))
+    try {
+      Move-Item -LiteralPath $appBuild -Destination $trash -Force -ErrorAction Stop
+      Write-Host "    이름 변경: app\build -> $(Split-Path $trash -Leaf)"
+    } catch {
+      Write-Host ""
+      Write-Host "[오류] app\build 를 비울 수 없습니다. 다음을 시도한 뒤 이 스크립트를 다시 실행하세요." -ForegroundColor Red
+      Write-Host "  - Android Studio 에서 twa-android 프로젝트 완전히 닫기 (File -> Close Project)" -ForegroundColor Yellow
+      Write-Host "  - 작업 관리자에서 java.exe 가 남아 있으면 종료 (다른 Java 앱 주의)" -ForegroundColor Yellow
+      Write-Host "  - 탐색기로 app\build 폴더를 연 창 닫기, OneDrive/백신 실시간 검사 잠시 제외" -ForegroundColor Yellow
+      exit 1
+    }
+  }
+}
+
+foreach ($rel in @(".\build")) {
   if (-not (Test-Path $rel)) { continue }
   try {
     Remove-Item -LiteralPath $rel -Recurse -Force -ErrorAction Stop
     Write-Host "    제거: $rel"
   } catch {
-    Write-Warning @"
-다음 폴더를 지우지 못했습니다: $rel
-  Android Studio 에서 이 프로젝트를 닫고, 탐색기로 twa-android\app\build 를 연 창이 있으면 닫은 뒤 스크립트를 다시 실행하세요.
-"@
+    Write-Warning "제거 실패(무시 가능): $rel"
   }
 }
 
