@@ -1041,38 +1041,74 @@ export function subscribeFriendLatestMeals(
 ): Unsubscribe {
   const fs = getFirestoreDb();
   const fetchCap = Math.min(56, Math.max(max * 3, max + 10));
-  const q = query(
+  const byDateQ = query(
     collection(fs, "users", ownerUid, "meals"),
     orderBy("date", "desc"),
     limit(fetchCap),
   );
+  /**
+   * 레거시/마이그레이션 과도기 문서 중 `date` 필드가 비어 있으면 orderBy("date") 결과에서
+   * 빠져 친구 피드가 통째로 비어 보일 수 있다. 같은 owner 컬렉션을 limit-only 로도 함께
+   * 구독해 합치면 누락을 줄일 수 있다.
+   */
+  const fallbackQ = query(collection(fs, "users", ownerUid, "meals"), limit(fetchCap));
   const cache = new Map<string, { key: string; meal: Meal }>();
-  return onSnapshot(
-    q,
+  let dateDocs: QueryDocumentSnapshot[] = [];
+  let fallbackDocs: QueryDocumentSnapshot[] = [];
+
+  const emitMerged = async () => {
+    try {
+      const byId = new Map<string, QueryDocumentSnapshot>();
+      for (const d of fallbackDocs) byId.set(d.id, d);
+      for (const d of dateDocs) byId.set(d.id, d);
+      const docs = [...byId.values()];
+      const decoded = (
+        await Promise.all(docs.map((d) => decodeFriendMealSnapshotDoc(d, cache)))
+      ).filter((m): m is Meal => m != null);
+      const alive = new Set(docs.map((d) => d.id));
+      for (const id of [...cache.keys()]) if (!alive.has(id)) cache.delete(id);
+      decoded.sort((a, b) => {
+        const ta = (a.updatedAt ?? a.createdAt ?? 0) | 0;
+        const tb = (b.updatedAt ?? b.createdAt ?? 0) | 0;
+        return tb - ta;
+      });
+      cb(decoded.slice(0, max));
+    } catch (e) {
+      console.error("[friends] latest meals snapshot decode", e);
+      onErr?.(e);
+    }
+  };
+
+  const unsubDate = onSnapshot(
+    byDateQ,
     { includeMetadataChanges: true },
-    async (snap) => {
-      try {
-        const decoded = (
-          await Promise.all(snap.docs.map((d) => decodeFriendMealSnapshotDoc(d, cache)))
-        ).filter((m): m is Meal => m != null);
-        const alive = new Set(snap.docs.map((d) => d.id));
-        for (const id of [...cache.keys()]) if (!alive.has(id)) cache.delete(id);
-        decoded.sort((a, b) => {
-          const ta = (a.updatedAt ?? a.createdAt ?? 0) | 0;
-          const tb = (b.updatedAt ?? b.createdAt ?? 0) | 0;
-          return tb - ta;
-        });
-        cb(decoded.slice(0, max));
-      } catch (e) {
-        console.error("[friends] latest meals snapshot decode", e);
-        onErr?.(e);
-      }
+    (snap) => {
+      dateDocs = snap.docs;
+      void emitMerged();
     },
     (err) => {
-      console.error("[friends] latest meals subscribe", err);
+      console.error("[friends] latest meals subscribe(byDate)", err);
       onErr?.(err);
     },
   );
+
+  const unsubFallback = onSnapshot(
+    fallbackQ,
+    { includeMetadataChanges: true },
+    (snap) => {
+      fallbackDocs = snap.docs;
+      void emitMerged();
+    },
+    (err) => {
+      console.error("[friends] latest meals subscribe(fallback)", err);
+      onErr?.(err);
+    },
+  );
+
+  return () => {
+    unsubDate();
+    unsubFallback();
+  };
 }
 
 /** 친구 meals 단일 일자 실시간 구독 */
