@@ -136,22 +136,20 @@ export function MealItemCard({
                 onLoad={() => setMealImgShown(true)}
                 onError={onPhotoImgError}
               />
-            ) : photoSrcPending ? (
+            ) : (
               <div
                 className="relative z-10 flex aspect-square w-full items-center justify-center"
                 aria-busy
               >
-                <span className="sr-only">식사 사진 불러오는 중</span>
+                <span className="sr-only">
+                  {photoSrcPending ? "식사 사진 불러오는 중" : "식사 사진 표시 준비 중"}
+                </span>
                 {!quietPhotoLoading && (
                   <Loader2
                     className="absolute bottom-3 right-3 h-6 w-6 shrink-0 animate-spin text-slate-500/90"
                     aria-hidden
                   />
                 )}
-              </div>
-            ) : (
-              <div className="relative z-10 flex aspect-square w-full items-center justify-center text-xs text-slate-500">
-                사진 없음
               </div>
             )}
           </>
