@@ -54,6 +54,27 @@ if (-not (Test-Path ".\android.keystore")) {
   & "$PSScriptRoot\create-keystore.ps1"
 }
 
+# bubblewrap update 가 EBUSY 로 실패하면 gradlew 가 안 생기고 이후 build 가 'gradlew.bat 없음' 으로 깨짐
+Write-Host ">>> 이전 Gradle 출력 정리 (파일 잠금·EBUSY 완화)"
+if (Test-Path ".\gradlew.bat") {
+  try {
+    & .\gradlew.bat --stop 2>$null
+  } catch { }
+}
+Start-Sleep -Seconds 2
+foreach ($rel in @(".\app\build", ".\build")) {
+  if (-not (Test-Path $rel)) { continue }
+  try {
+    Remove-Item -LiteralPath $rel -Recurse -Force -ErrorAction Stop
+    Write-Host "    제거: $rel"
+  } catch {
+    Write-Warning @"
+다음 폴더를 지우지 못했습니다: $rel
+  Android Studio 에서 이 프로젝트를 닫고, 탐색기로 twa-android\app\build 를 연 창이 있으면 닫은 뒤 스크립트를 다시 실행하세요.
+"@
+  }
+}
+
 Write-Host ">>> bubblewrap update (Gradle 프로젝트 생성/갱신)"
 # 대화형 버전 질문 회피 — twa-manifest 의 appVersion 과 맞춤(첫 빌드 후에는 버전만 올려서 재실행)
 npx --yes @bubblewrap/cli@latest update --appVersionName="1.0.0"

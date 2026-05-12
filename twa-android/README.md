@@ -26,6 +26,11 @@ $env:BUBBLEWRAP_KEY_PASSWORD      = '같게-또는-다르게'
 
 성공 시 이 디렉터리에 `app-release-bundle.aab`(Play 업로드용) 등이 생성됩니다.
 
+### `EBUSY` / `gradlew.bat` 없음
+
+- `bubblewrap update` 중 **`resource busy or locked`** 가 나오면 보통 **다른 프로세스가 `app\build` 를 잡고 있을 때**입니다. **Android Studio**에서 이 폴더를 연 프로젝트가 있으면 닫고, **탐색기**로 `app\build` 안을 보던 창도 닫은 뒤 `setup-and-build.ps1` 을 다시 실행하세요.
+- `update` 가 중간에 실패하면 **`gradlew.bat` 이 없어서** 이어지는 `build` 가 깨질 수 있습니다. 위 정리 후 **다시 `.\setup-and-build.ps1`** 하면 `setup-and-build.ps1` 이 빌드 캐시를 지우고 `update` 부터 다시 시도합니다.
+
 ## 수동 단계 (같은 결과)
 
 ```powershell
