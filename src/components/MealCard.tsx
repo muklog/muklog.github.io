@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -29,6 +30,99 @@ export type { MealItemPatch } from "../lib/mealItems";
 
 /** Storage URL 수신·`<img>` 디코딩 전 빈 화면 대신 PWA 아이콘(먹로그 로고) */
 const APP_LOGO_PLACEHOLDER_SRC = `${import.meta.env.BASE_URL}pwa-192.png`;
+
+/** `photoSrc` 가 바뀔 때마다 key 로 리마운트해 이전 사진의 `shown` 상태가 남지 않게 함 */
+function MealItemCardPhotoBody({
+  photoSrc,
+  photoSrcPending,
+  quietPhotoLoading,
+  eagerFeedImage,
+  onPhotoImgError,
+}: {
+  photoSrc: string | undefined;
+  photoSrcPending: boolean;
+  quietPhotoLoading: boolean;
+  eagerFeedImage: boolean;
+  onPhotoImgError: () => void;
+}) {
+  const [mealImgShown, setMealImgShown] = useState(false);
+  const mealImgRef = useRef<HTMLImageElement>(null);
+
+  useLayoutEffect(() => {
+    if (!photoSrc) return;
+    const el = mealImgRef.current;
+    if (!el) return;
+    if (el.complete && el.naturalHeight > 0) {
+      setMealImgShown(true);
+      return;
+    }
+    let cancelled = false;
+    if (typeof el.decode === "function") {
+      void el
+        .decode()
+        .then(() => {
+          if (!cancelled) setMealImgShown(true);
+        })
+        .catch(() => {
+          /* CORS·손상 이미지 등은 onLoad / onError 에 맡김 */
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [photoSrc]);
+
+  const showLogoUnderlay = !photoSrc || !mealImgShown;
+
+  return (
+    <>
+      {showLogoUnderlay && (
+        <div
+          className="absolute inset-0 z-0 flex items-center justify-center bg-gradient-to-b from-slate-800 to-slate-900"
+          aria-hidden
+        >
+          <img
+            src={APP_LOGO_PLACEHOLDER_SRC}
+            alt=""
+            className="h-[min(30%,5.75rem)] w-[min(30%,5.75rem)] object-contain opacity-[0.88]"
+            draggable={false}
+          />
+        </div>
+      )}
+      {photoSrc ? (
+        <img
+          ref={mealImgRef}
+          src={photoSrc}
+          alt="식사 사진"
+          loading={eagerFeedImage ? "eager" : "lazy"}
+          fetchPriority={eagerFeedImage ? "high" : "auto"}
+          decoding="async"
+          className={cls(
+            "relative z-10 aspect-square w-full object-cover transition-opacity duration-150",
+            mealImgShown ? "opacity-100" : "opacity-0",
+          )}
+          onLoad={() => setMealImgShown(true)}
+          onError={onPhotoImgError}
+        />
+      ) : (
+        <div
+          className="relative z-10 flex aspect-square w-full items-center justify-center"
+          aria-busy
+        >
+          <span className="sr-only">
+            {photoSrcPending ? "식사 사진 불러오는 중" : "식사 사진 표시 준비 중"}
+          </span>
+          {!quietPhotoLoading && (
+            <Loader2
+              className="absolute bottom-3 right-3 h-6 w-6 shrink-0 animate-spin text-slate-500/90"
+              aria-hidden
+            />
+          )}
+        </div>
+      )}
+    </>
+  );
+}
 
 /**
  * 끼니 안의 한 "음식 항목" 카드.
@@ -77,23 +171,6 @@ export function MealItemCard({
   const { src: photoSrc, pending: photoSrcPending, onImgError: onPhotoImgError, wrapRef } =
     useMealItemCardImageSrc(item, { eagerImage: eagerFeedImage });
 
-  const [mealImgShown, setMealImgShown] = useState(false);
-  const mealImgRef = useRef<HTMLImageElement>(null);
-
-  useEffect(() => {
-    setMealImgShown(false);
-  }, [item.id, photoSrc]);
-
-  useEffect(() => {
-    if (!photoSrc) return;
-    const el = mealImgRef.current;
-    if (el?.complete && el.naturalHeight > 0) setMealImgShown(true);
-  }, [photoSrc, item.id]);
-
-  const showMealLogoUnderlay =
-    hasPhoto &&
-    ((photoSrcPending && !photoSrc) || (!!photoSrc && !mealImgShown));
-
   return (
     <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/30 p-2">
       <div
@@ -107,52 +184,14 @@ export function MealItemCard({
         className="relative aspect-square w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-900"
       >
         {hasPhoto ? (
-          <>
-            {showMealLogoUnderlay && (
-              <div
-                className="absolute inset-0 z-0 flex items-center justify-center bg-gradient-to-b from-slate-800 to-slate-900"
-                aria-hidden
-              >
-                <img
-                  src={APP_LOGO_PLACEHOLDER_SRC}
-                  alt=""
-                  className="h-[min(30%,5.75rem)] w-[min(30%,5.75rem)] object-contain opacity-[0.88]"
-                  draggable={false}
-                />
-              </div>
-            )}
-            {photoSrc ? (
-              <img
-                ref={mealImgRef}
-                src={photoSrc}
-                alt="식사 사진"
-                loading={eagerFeedImage ? "eager" : "lazy"}
-                fetchPriority={eagerFeedImage ? "high" : "auto"}
-                decoding="async"
-                className={cls(
-                  "relative z-10 aspect-square w-full object-cover transition-opacity duration-200",
-                  mealImgShown ? "opacity-100" : "opacity-0",
-                )}
-                onLoad={() => setMealImgShown(true)}
-                onError={onPhotoImgError}
-              />
-            ) : (
-              <div
-                className="relative z-10 flex aspect-square w-full items-center justify-center"
-                aria-busy
-              >
-                <span className="sr-only">
-                  {photoSrcPending ? "식사 사진 불러오는 중" : "식사 사진 표시 준비 중"}
-                </span>
-                {!quietPhotoLoading && (
-                  <Loader2
-                    className="absolute bottom-3 right-3 h-6 w-6 shrink-0 animate-spin text-slate-500/90"
-                    aria-hidden
-                  />
-                )}
-              </div>
-            )}
-          </>
+          <MealItemCardPhotoBody
+            key={`${item.id}|${photoSrc ?? ""}`}
+            photoSrc={photoSrc}
+            photoSrcPending={photoSrcPending}
+            quietPhotoLoading={quietPhotoLoading}
+            eagerFeedImage={eagerFeedImage}
+            onPhotoImgError={onPhotoImgError}
+          />
         ) : (
           <div className="flex aspect-square w-full items-center justify-center text-xs text-slate-500">
             사진 없음
