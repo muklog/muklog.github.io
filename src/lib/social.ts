@@ -98,8 +98,11 @@ export async function setMyLike(
   ownerUid: string,
   mealId: string,
   liked: boolean,
+  authorOverride?: { name?: string; photoURL?: string },
 ): Promise<void> {
   const me = requireAuthor();
+  const actorName = authorOverride?.name?.trim() || me.name;
+  const actorPhotoURL = authorOverride?.photoURL || me.photoURL;
   const ref = doc(likesCol(ownerUid, mealId), me.uid);
   if (liked) {
     await setDoc(ref, { viewerUid: me.uid, createdAt: Date.now() });
@@ -111,8 +114,8 @@ export async function setMyLike(
           await pushActivityInboxItem(ownerUid, {
             kind: "meal_like",
             actorUid: me.uid,
-            actorName: me.name,
-            actorPhotoURL: me.photoURL,
+            actorName,
+            actorPhotoURL,
             mealOwnerUid: ownerUid,
             mealId,
             mealDate: meta.date,
@@ -301,8 +304,11 @@ export async function setMyCommentLike(
   mealId: string,
   commentId: string,
   liked: boolean,
+  authorOverride?: { name?: string; photoURL?: string },
 ): Promise<void> {
   const me = requireAuthor();
+  const actorName = authorOverride?.name?.trim() || me.name;
+  const actorPhotoURL = authorOverride?.photoURL || me.photoURL;
   const ref = doc(commentLikesCol(ownerUid, mealId, commentId), me.uid);
   if (liked) {
     await setDoc(ref, { viewerUid: me.uid, createdAt: Date.now() });
@@ -317,8 +323,8 @@ export async function setMyCommentLike(
         await pushActivityInboxItem(comment.authorUid, {
           kind: "comment_like",
           actorUid: me.uid,
-          actorName: me.name,
-          actorPhotoURL: me.photoURL,
+          actorName,
+          actorPhotoURL,
           mealOwnerUid: ownerUid,
           mealId,
           mealDate: meta.date,

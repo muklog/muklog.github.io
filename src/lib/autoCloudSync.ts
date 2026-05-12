@@ -1,7 +1,7 @@
 import { getFirebaseAuth } from "./firebaseApp";
 import { isCloudSyncMutation, syncCloudWithLocal } from "./cloudSync";
 
-const DEBOUNCE_MS = 5000;
+const DEBOUNCE_MS = 1500;
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let running = false;

@@ -101,6 +101,7 @@ export function MealItemCard({
               src={photoSrc}
               alt="식사 사진"
               loading={eagerFeedImage ? "eager" : "lazy"}
+              fetchPriority={eagerFeedImage ? "high" : "auto"}
               decoding="async"
               className="aspect-square w-full object-cover"
               onError={onPhotoImgError}

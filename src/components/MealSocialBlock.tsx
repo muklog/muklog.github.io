@@ -42,6 +42,18 @@ export default function MealSocialBlock({ ownerUid, mealId }: Props) {
   const { user } = useAuth();
   const myUid = user?.uid;
   const isOwner = myUid === ownerUid;
+  const myUserId = usePrimaryUserId();
+  const myProfile = useLiveQuery(
+    async () => (myUserId ? await runDexie(() => db.users.get(myUserId)) : undefined),
+    [myUserId],
+  );
+  const myIdentity = useMemo(
+    () => ({
+      name: resolveDisplayName(myProfile, user),
+      photoURL: resolveDisplayPhotoURL(myProfile, user?.photoURL),
+    }),
+    [myProfile, user],
+  );
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(false);
@@ -127,6 +139,7 @@ export default function MealSocialBlock({ ownerUid, mealId }: Props) {
               liked={liked}
               likeCount={likedUids?.length ?? 0}
               loading={likedUids === null}
+              actorOverride={myIdentity}
             />
             <div
               className="flex items-center gap-1.5 text-slate-400"
@@ -154,6 +167,7 @@ export default function MealSocialBlock({ ownerUid, mealId }: Props) {
                   isOwner={isOwner}
                   ownerUid={ownerUid}
                   mealId={mealId}
+                  actorOverride={myIdentity}
                 />
               ))
             )}
@@ -171,12 +185,14 @@ function LikeRow({
   liked,
   likeCount,
   loading,
+  actorOverride,
 }: {
   ownerUid: string;
   mealId: string;
   liked: boolean;
   likeCount: number;
   loading: boolean;
+  actorOverride?: { name?: string; photoURL?: string };
 }) {
   const [busy, setBusy] = useState(false);
   const [pendingLiked, setPendingLiked] = useState<boolean | null>(null);
@@ -190,7 +206,7 @@ function LikeRow({
     setBusy(true);
     setPendingLiked(!effectiveLiked);
     try {
-      await setMyLike(ownerUid, mealId, !effectiveLiked);
+      await setMyLike(ownerUid, mealId, !effectiveLiked, actorOverride);
     } catch (e) {
       setPendingLiked(null);
       alert(userFacingStorageErrorMessage(e));
@@ -230,6 +246,7 @@ function ThreadItem({
   isOwner,
   ownerUid,
   mealId,
+  actorOverride,
 }: {
   comment: MealComment;
   replies: MealComment[];
@@ -237,6 +254,7 @@ function ThreadItem({
   isOwner: boolean;
   ownerUid: string;
   mealId: string;
+  actorOverride?: { name?: string; photoURL?: string };
 }) {
   const [replying, setReplying] = useState(false);
   return (
@@ -247,6 +265,7 @@ function ThreadItem({
         isOwner={isOwner}
         ownerUid={ownerUid}
         mealId={mealId}
+        actorOverride={actorOverride}
         onReplyClick={() => setReplying((v) => !v)}
         replying={replying}
       />
@@ -260,6 +279,7 @@ function ThreadItem({
               isOwner={isOwner}
               ownerUid={ownerUid}
               mealId={mealId}
+              actorOverride={actorOverride}
               isReply
             />
           ))}
@@ -287,6 +307,7 @@ function CommentRow({
   isOwner,
   ownerUid,
   mealId,
+  actorOverride,
   onReplyClick,
   replying,
   isReply,
@@ -296,6 +317,7 @@ function CommentRow({
   isOwner: boolean;
   ownerUid: string;
   mealId: string;
+  actorOverride?: { name?: string; photoURL?: string };
   onReplyClick?: () => void;
   replying?: boolean;
   isReply?: boolean;
@@ -334,7 +356,7 @@ function CommentRow({
   async function toggleLike() {
     setPendingLike(!effectiveLiked);
     try {
-      await setMyCommentLike(ownerUid, mealId, comment.id, !effectiveLiked);
+      await setMyCommentLike(ownerUid, mealId, comment.id, !effectiveLiked, actorOverride);
     } catch (e) {
       setPendingLike(null);
       alert(userFacingStorageErrorMessage(e));
