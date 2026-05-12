@@ -229,6 +229,8 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
         };
     await runDexie(() => db.meals.put(nextMeal));
     afterUserDataMutation();
+    // 사진 추가 직후에는 친구 피드/친구 일자 화면 반영을 우선한다.
+    requestAutoCloudSync({ immediate: true });
     setScrollCarouselToItemId(itemId);
 
     if (apiKey) {
@@ -411,6 +413,7 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
               void (async () => {
                 await runDexie(() => db.meals.put(base));
                 afterUserDataMutation();
+                requestAutoCloudSync({ immediate: true });
                 setEditingItemId(id);
               })();
             }}
