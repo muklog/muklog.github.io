@@ -10,6 +10,13 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 // CI 에서 VITE_BASE_PATH 로 설정. 로컬은 루트 기준과 동일하게 "/".
 const base = process.env.VITE_BASE_PATH ?? "/";
 
+/** navigateFallback 이 `/.well-known/*` 까지 가로채면 assetlinks.json 대신 index.html 이 내려감 */
+const baseNoTrail = base.replace(/\/$/, "");
+const escapedBase = baseNoTrail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const navigateFallbackDenylist = [
+  escapedBase === "" ? /^\/\.well-known\// : new RegExp(`^${escapedBase}/\\.well-known/`),
+];
+
 /** HashRouter — 매니페스트 start_url 에 해시를 넣어 설치 후 첫 주소와 라우터 진입을 맞춤 */
 const pwaStartUrl = base === "/" ? "/#/" : `${base.replace(/\/$/, "")}/#/`;
 
@@ -61,8 +68,9 @@ export default defineConfig(({ command }) => ({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
+        globPatterns: ["**/*.{js,css,html,svg,png,ico,json,webmanifest}"],
         navigateFallback: `${base}index.html`,
+        navigateFallbackDenylist,
         // 캐시는 자산만, API 호출은 항상 네트워크
         runtimeCaching: [
           {
