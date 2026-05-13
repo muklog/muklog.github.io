@@ -8,8 +8,10 @@
  */
 import sharp from "sharp";
 import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import pngToIco from "png-to-ico";
 
 /** 한쪽당 잘라낼 비율 (0.06 → 좌우·상하 각 6%, 가운데 88%만 사용) */
 const EDGE_INSET_RATIO = 0.06;
@@ -58,3 +60,17 @@ for (const [px, name] of sizes) {
     .toFile(outPath);
   console.warn(" wrote", name);
 }
+
+/** 브라우저 기본 요청 `/favicon.ico` — 루트에 ICO 가 있으면 404 콘솔 노이즈 제거 */
+const icoSizes = [48, 32, 16];
+const icoBuffers = [];
+for (const px of icoSizes) {
+  const buf = await basePipeline()
+    .resize(px, px, { fit: "cover", position: "centre" })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+  icoBuffers.push(buf);
+}
+const icoOut = join(root, "public", "favicon.ico");
+await writeFile(icoOut, await pngToIco(icoBuffers));
+console.warn(" wrote favicon.ico");
