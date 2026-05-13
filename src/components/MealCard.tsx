@@ -25,10 +25,10 @@ import { isRenderableImageBlob } from "../lib/image";
 import { cls } from "../lib/utils";
 import type { MealItemPatch } from "../lib/mealItems";
 import { userFacingStorageErrorMessage } from "../lib/idbRetry";
+import appIconSrc from "../../assets/app-icon.png?url";
 export type { MealItemPatch } from "../lib/mealItems";
 
-/** Storage URL 수신·`<img>` 디코딩 전 빈 화면 대신 PWA 아이콘(먹로그 로고) */
-const APP_LOGO_PLACEHOLDER_SRC = `${import.meta.env.BASE_URL}pwa-192.png`;
+/** 사진 로딩 전·디코딩 전 자리 — 소스 아이콘과 동일한 비율의 둥근 모서리 */
 
 /** `photoSrc` 가 바뀔 때마다 key 로 리마운트해 이전 사진의 `shown` 상태가 남지 않게 함 */
 function MealItemCardPhotoBody({
@@ -80,12 +80,17 @@ function MealItemCardPhotoBody({
           className="absolute inset-0 z-0 flex items-center justify-center bg-gradient-to-b from-slate-800 to-slate-900"
           aria-hidden
         >
-          <img
-            src={APP_LOGO_PLACEHOLDER_SRC}
-            alt=""
-            className="h-[min(30%,5.75rem)] w-[min(30%,5.75rem)] object-contain opacity-[0.88]"
-            draggable={false}
-          />
+          <div
+            className="relative h-[min(30%,5.75rem)] w-[min(30%,5.75rem)] shrink-0 overflow-hidden rounded-[22%] shadow-[0_10px_28px_-10px_rgba(0,0,0,0.65)] ring-1 ring-white/12"
+            aria-hidden
+          >
+            <img
+              src={appIconSrc}
+              alt=""
+              className="h-full w-full object-cover opacity-[0.94]"
+              draggable={false}
+            />
+          </div>
         </div>
       )}
       {photoSrc ? (
