@@ -93,16 +93,21 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm run build
 
+      - name: Verify Digital Asset Links in dist
+        run: test -f dist/.well-known/assetlinks.json && ls -la dist/.well-known/
+
       # 새로고침 시 404 방지 - SPA fallback
       - name: SPA fallback (404.html)
         run: cp dist/index.html dist/404.html
 
       # configure-pages 는 저장소에 Pages(API)가 아직 없으면 404로 실패한다.
       # Vite 빌드는 아래 outputs가 필요 없으므로 이 단계는 생략한다.
+      # v4 는 tar 시 --exclude=".[^/]*" 로 .well-known 전체가 빠져 assetlinks.json 이 404 가 됨
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v5
         with:
           path: dist
+          include-hidden-files: true
 
   deploy:
     needs: build
