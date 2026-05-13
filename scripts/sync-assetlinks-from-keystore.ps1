@@ -78,19 +78,24 @@ if ($env:PLAY_APP_SIGNING_SHA256 -and $env:PLAY_APP_SIGNING_SHA256.Trim().Length
   }
 }
 
-$jsonObj = @(
-  @{
-    relation = @("delegate_permission/common.handle_all_urls")
-    target     = @{
-      namespace               = "android_app"
-      package_name            = $PackageName
-      sha256_cert_fingerprints = @($fps.ToArray())
+# PowerShell ConvertTo-Json 은 요소 1개짜리 배열을 객체로 풀어 쓰는 경우가 있어, Digital Asset Links 규격(JSON 배열 루트)을 문자열로 고정한다.
+$fpLines = ($fps | ForEach-Object { "        `"$_`"" }) -join ",`n"
+$json = @"
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "$PackageName",
+      "sha256_cert_fingerprints": [
+$fpLines
+      ]
     }
   }
-)
-$json = $jsonObj | ConvertTo-Json -Depth 6
+]
+"@
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-[System.IO.File]::WriteAllText($outPath, $json + "`n", $utf8NoBom)
+[System.IO.File]::WriteAllText($outPath, $json.TrimEnd() + "`n", $utf8NoBom)
 Write-Host "작성됨: $outPath"
 Write-Host "  package_name: $PackageName"
 foreach ($fp in $fps) {

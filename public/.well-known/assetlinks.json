@@ -5,7 +5,8 @@
       "namespace": "android_app",
       "package_name": "io.github.muklog.app",
       "sha256_cert_fingerprints": [
-        "0000000000000000000000000000000000000000000000000000000000000000"
+        "BF:5E:07:27:3B:6B:41:5D:C5:CE:64:CF:CC:EE:0B:4F:6B:37:65:63:08:66:59:01:48:BD:52:49:C3:40:D6:A4",
+        "C0:4D:25:8D:AF:CD:16:FA:DE:42:4E:40:C9:D6:E9:50:38:FA:BE:0B:90:40:7B:A6:6B:FB:E1:82:2C:BC:F8:80"
       ]
     }
   }
