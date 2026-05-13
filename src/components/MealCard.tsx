@@ -701,8 +701,6 @@ export function MealItemEditDialog({
   const [pro, setPro] = useState<string>(numToStr(item.nutrition?.protein));
   const [fat, setFat] = useState<string>(numToStr(item.nutrition?.fat));
   const [sugar, setSugar] = useState<string>(numToStr(item.nutrition?.sugar));
-  const [tagInput, setTagInput] = useState("");
-  const [tags, setTags] = useState<string[]>(item.nutrition?.healthTags ?? []);
   const [busy, setBusy] = useState<null | "save" | "reanalyze">(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -732,13 +730,14 @@ export function MealItemEditDialog({
     }
     setBusy(reanalyze ? "reanalyze" : "save");
     try {
+      const preservedTags = item.nutrition?.healthTags?.filter(Boolean) ?? [];
       const nutrition: MealItem["nutrition"] = {
         calories: strToNum(cal),
         carbs: strToNum(carb),
         protein: strToNum(pro),
         fat: strToNum(fat),
         sugar: strToNum(sugar),
-        healthTags: tags.length ? tags : undefined,
+        healthTags: preservedTags.length ? preservedTags : undefined,
       };
       const hasAny =
         nutrition.calories !== undefined ||
@@ -761,17 +760,6 @@ export function MealItemEditDialog({
     } finally {
       setBusy(null);
     }
-  }
-
-  function addTag() {
-    const t = tagInput.trim().replace(/^#/, "");
-    if (!t) return;
-    if (tags.includes(t)) {
-      setTagInput("");
-      return;
-    }
-    setTags([...tags, t]);
-    setTagInput("");
   }
 
   return (
@@ -823,7 +811,7 @@ export function MealItemEditDialog({
             <p className="text-[11px] text-slate-400">
               {variant === "addManual"
                 ? "사진 없이 메뉴와 영양 정보를 적어 저장하면 끼니에 추가돼요. 저장한 뒤에도 AI로 별점·한 줄 평을 받을 수 있어요."
-                : "메뉴·영양 정보를 직접 고치고 AI 분석을 다시 받을 수 있어요."}
+                : "메뉴·영양 정보를 직접 고치고 AI 분석을 다시 받을 수 있어요. 태그는 AI만 붙입니다."}
             </p>
             {typeof item.rating === "number" && (
               <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-amber-300">
@@ -862,49 +850,6 @@ export function MealItemEditDialog({
               <input inputMode="numeric" value={sugar} onChange={(e) => setSugar(e.target.value)} className="input" />
             </Field>
           </div>
-
-          <Field label="태그">
-            <div className="space-y-2">
-              <div className="flex flex-wrap gap-1.5">
-                {tags.map((t) => (
-                  <span
-                    key={t}
-                    className="inline-flex items-center gap-1 rounded-full bg-brand-500/15 px-2 py-1 text-xs text-brand-200"
-                  >
-                    #{t}
-                    <button
-                      type="button"
-                      onClick={() => setTags(tags.filter((x) => x !== t))}
-                      className="text-brand-200/70 hover:text-rose-300"
-                      aria-label="태그 제거"
-                    >
-                      <X size={10} />
-                    </button>
-                  </span>
-                ))}
-                {tags.length === 0 && (
-                  <span className="text-[11px] text-slate-500">예: 고단백, 균형잡힘</span>
-                )}
-              </div>
-              <div className="flex gap-1.5">
-                <input
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === ",") {
-                      e.preventDefault();
-                      addTag();
-                    }
-                  }}
-                  placeholder="태그 입력 후 Enter"
-                  className="input text-xs"
-                />
-                <button type="button" onClick={addTag} className="btn-secondary px-3 py-2 text-xs">
-                  추가
-                </button>
-              </div>
-            </div>
-          </Field>
         </div>
 
         <div className="mt-4 space-y-2">

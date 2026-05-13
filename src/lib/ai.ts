@@ -343,20 +343,21 @@ export async function analyzeMealImage(
 }
 
 // ---------- 텍스트 기반 재분석 ----------
-// 사용자가 AI 결과(메뉴/영양)를 직접 고친 뒤 그 값을 근거로 별점/한줄평을
-// 다시 받아보고 싶을 때 사용한다. 이미지가 없어도 동작한다.
+// 사용자가 AI 결과(메뉴·영양)를 직접 고친 뒤 별점·한줄평·영양 추정·태그를
+// 다시 받을 때 사용한다. 이미지가 없어도 동작한다.
 
 export interface ReanalyzeInput {
   menuText: string;
   nutrition?: MealAnalysis["nutrition"];
 }
 
-const REANALYZE_PROMPT_BASE = `당신은 친절한 한국인 영양사입니다. 사용자는 이미 메뉴 이름과 영양 정보(본인이 직접 입력하거나 수정한 값)를 제공합니다. 이 값을 **사실로 신뢰하고** 별점(rating)과 한 줄평(aiComment), 그리고 필요하다면 healthTags 만 다시 평가하세요.
+const REANALYZE_PROMPT_BASE = `당신은 친절한 한국인 영양사입니다. 사용자가 **메뉴 이름**(및 필요하면 직접 적어 둔 영양 수치)을 수정했고, 그 내용을 바탕으로 식사를 **처음부터 다시 평가**해 달라고 합니다.
 
 중요한 규칙:
-- menuText, nutrition.calories/carbs/protein/fat/sugar 는 사용자가 준 값을 **수정하지 말고 그대로 되돌려 주세요**. (수치가 비어 있으면 비운 채로.)
-- 평가 대상은 rating(1~5), aiComment(30자 내외 다정한 말투), healthTags(1~4개) 입니다.
-- 영양 수치가 매우 부족하거나 편향(예: 탄수 80g · 단백 3g)이면 그 점을 반영해 감점/조언하세요.
+- menuText: 사용자가 입력한 문자열을 **그대로** JSON 의 menuText 에 넣어 되돌려 주세요. (요약·번역·삭제 금지.)
+- nutrition.calories, carbs, protein, fat, sugar: 사용자가 적어 둔 값이 있으면 **참고용 힌트**로만 쓰고, 메뉴 설명에 맞는 **일반적인 1인분 추정치**를 당신이 다시 산출해 채워 주세요. 사용자가 비워 둔 항목도 가능하면 합리적으로 추정합니다.
+- rating(1~5), aiComment(30자 내외 다정한 말투), healthTags(1~4개) 역시 위 메뉴·추정 영양을 반영해 **새로** 매깁니다.
+- 영양 밸런스가 한쪽으로 치우치면 별점·한줄평·태그에 그 점이 드러나게 하세요.
 - 끼니 맥락이 함께 주어지면 그 기준에 맞춰 평가하세요.
 
 개인정보·프라이버시 규칙:
@@ -422,18 +423,22 @@ export async function reanalyzeMealFromText(
     const text = res.response.text();
     const parsed = safeParseJson<MealAnalysis>(text);
     parsed.rating = Math.max(1, Math.min(5, Math.round(Number(parsed.rating) || 3)));
-    // 사용자 수치를 우선한다 — 모델이 바꾸더라도 되돌림.
     parsed.menuText = menuText;
     parsed.aiComment = String(parsed.aiComment ?? "");
     const userN = input.nutrition ?? {};
     const modelN = parsed.nutrition ?? {};
+    const pickMacro = (m: unknown, u: unknown): number | undefined => {
+      if (typeof m === "number" && Number.isFinite(m)) return m;
+      if (typeof u === "number" && Number.isFinite(u)) return u;
+      return undefined;
+    };
     parsed.nutrition = {
-      calories: userN.calories ?? modelN.calories,
-      carbs: userN.carbs ?? modelN.carbs,
-      protein: userN.protein ?? modelN.protein,
-      fat: userN.fat ?? modelN.fat,
-      sugar: userN.sugar ?? modelN.sugar,
-      healthTags: Array.isArray(modelN.healthTags)
+      calories: pickMacro(modelN.calories, userN.calories),
+      carbs: pickMacro(modelN.carbs, userN.carbs),
+      protein: pickMacro(modelN.protein, userN.protein),
+      fat: pickMacro(modelN.fat, userN.fat),
+      sugar: pickMacro(modelN.sugar, userN.sugar),
+      healthTags: Array.isArray(modelN.healthTags) && modelN.healthTags.length > 0
         ? modelN.healthTags
         : userN.healthTags,
     };

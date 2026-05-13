@@ -40,12 +40,53 @@ function clearInput(el: HTMLInputElement | null) {
   if (el) el.value = "";
 }
 
+/** 카메라 앱에서 돌아온 직후 `document.hidden` 인 동안은 파일 버퍼가 비어 있는 경우가 많다. */
+function waitUntilDocumentVisible(timeoutMs = 12_000): Promise<void> {
+  if (typeof document === "undefined" || document.visibilityState === "visible") {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const done = () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.clearTimeout(timer);
+      resolve();
+    };
+    const onVis = () => {
+      if (document.visibilityState === "visible") done();
+    };
+    const timer = window.setTimeout(done, timeoutMs);
+    document.addEventListener("visibilitychange", onVis);
+  });
+}
+
+async function readFileAsNonEmptyBuffer(file: File): Promise<ArrayBuffer | null> {
+  try {
+    const buf = await file.arrayBuffer();
+    if (buf.byteLength > 0) return buf;
+  } catch {
+    /* 일부 WebView 에서 첫 arrayBuffer 만 실패하는 경우 */
+  }
+  return await new Promise((resolve) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const r = fr.result;
+      resolve(r instanceof ArrayBuffer && r.byteLength > 0 ? r : null);
+    };
+    fr.onerror = () => resolve(null);
+    try {
+      fr.readAsArrayBuffer(file);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 /**
  * 카메라(WebView·모바일 크롬)에서는 촬영 직후 `size`만 갱신되고 `arrayBuffer()`가 비었다가
  * 늦게 채워지는 경우가 있다. 원본 File 핸들을 그대로 넘기지 않고, 읽기에 성공한 바이트로만 File을 만든다.
  */
 async function coerceFileToReadableImage(file: File): Promise<File | null> {
-  const steps = [0, 50, 120, 280, 500, 800, 1200, 1800, 2600];
+  const steps = [0, 50, 120, 280, 500, 800, 1200, 1800, 2600, 3500, 5000, 7000];
   const mime = file.type && file.type.length > 0 ? file.type : "image/jpeg";
   const name = file.name || "photo.jpg";
 
@@ -55,8 +96,8 @@ async function coerceFileToReadableImage(file: File): Promise<File | null> {
       await new Promise<void>((r) => setTimeout(r, ms));
     }
     try {
-      const buf = await file.arrayBuffer();
-      if (buf.byteLength > 0) {
+      const buf = await readFileAsNonEmptyBuffer(file);
+      if (buf && buf.byteLength > 0) {
         return new File([buf], name, { type: mime });
       }
     } catch (e) {
@@ -176,6 +217,7 @@ export default function PhotoUpload({
         requestAnimationFrame(() => resolve());
       });
     });
+    await waitUntilDocumentVisible();
 
     setBusy(true);
     try {
@@ -219,6 +261,10 @@ export default function PhotoUpload({
           }
         }
       }
+    } catch (e) {
+      console.error("[PhotoUpload] handleFiles 예외", e);
+      const detail = e instanceof Error ? e.message : String(e);
+      alert(`사진을 불러오는 중 오류가 났습니다.\n${detail}\n\n앨범에서 같은 사진을 다시 고르거나 잠시 후 촬영을 다시 시도해 주세요.`);
     } finally {
       setBusy(false);
       setBusyLabel(null);

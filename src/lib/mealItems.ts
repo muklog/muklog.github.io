@@ -186,7 +186,7 @@ export interface SaveItemContext {
  *
  * opts.reanalyze=false: 사용자가 수동으로 수정한 값만 반영(manuallyEdited=true).
  * opts.reanalyze=true : 값 반영 → analyzing 플래그 → Gemini 텍스트 기반 재분석
- *                      → rating/aiComment/healthTags 갱신. 실패 시 error 상태로.
+ *                      → rating/aiComment/nutrition(수치·healthTags) 갱신. 실패 시 error 상태로.
  *
  * apiKey 가 없으면 reanalyze 요청이 와도 조용히 수동 저장으로 폴백한다.
  */
