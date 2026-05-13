@@ -682,7 +682,7 @@ interface EditDialogProps {
    * - addManual: 사진 없이 새 항목만 적는 흐름(제목·안내 문구가 «추가»에 맞음)
    */
   variant?: "edit" | "addManual";
-  /** 저장 후 AI 에게 별점·한줄평 재분석 요청 (텍스트 기반). 구현되어 있지 않으면 버튼 숨김. */
+  /** 저장 후 AI 에게 별점·한줄평·영양·태그 재분석 요청 (텍스트 기반). 구현되어 있지 않으면 버튼 숨김. */
   canReanalyze?: boolean;
   onClose: () => void;
   onSave: (patch: MealItemPatch, opts: { reanalyze: boolean }) => Promise<void> | void;
