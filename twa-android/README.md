@@ -26,6 +26,18 @@ $env:BUBBLEWRAP_KEY_PASSWORD      = '같게-또는-다르게'
 .\setup-and-build.ps1
 ```
 
+### 내부 테스트(11) + 비공개 테스트(12) AAB 두 개 연속 빌드
+
+Play는 **트랙마다 다른 versionCode**를 쓰더라도 번들마다 코드가 올라가야 합니다. 아래는 **11 → 내부**, **12 → 비공개**로 두 번 빌드해 `twa-android/releases/`에 복사합니다.
+
+```powershell
+$env:BUBBLEWRAP_KEYSTORE_PASSWORD = '...'
+$env:BUBBLEWRAP_KEY_PASSWORD      = '...'
+npm run android:build-aabs:internal-closed
+```
+
+산출: `twa-android/releases/muklog-internal-v11.aab`, `muklog-closed-v12.aab`
+
 처음에는 `android.keystore`가 없으므로 `create-keystore.ps1`이 자동으로 호출됩니다.  
 **키스토어와 비밀번호를 분실하면 Play 앱 업데이트 서명이 불가능**하니 안전하게 보관하세요.
 

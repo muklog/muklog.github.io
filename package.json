@@ -22,6 +22,7 @@
     "gen:play-graphic": "node scripts/gen-play-feature-graphic.mjs",
     "android:bubblewrap": "npx --yes @bubblewrap/cli@latest",
     "android:patch-splash": "node scripts/patch-twa-splash-rounded.mjs",
+    "android:build-aabs:internal-closed": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-twa-internal-closed-aabs.ps1",
     "assetlinks:sync": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/sync-assetlinks-from-keystore.ps1"
   },
   "dependencies": {
