@@ -361,7 +361,7 @@ export default function SettingsPage() {
             개인정보 처리방침 · 서비스 안내
           </Link>
         </p>
-        <p className="text-[11px] text-slate-600">먹로그 v0.1.7</p>
+        <p className="text-[11px] text-slate-600">먹로그 v0.1.8</p>
       </section>
     </div>
   );

@@ -25,7 +25,7 @@ const EDGE_INSET_RATIO = 0;
  * 최종 PNG 한 변(px)에서 실제 그림이 들어가는 안쪽 정사각형 비율.
  * 작을수록 런처 마스크에 덜 잘림(여백↑). 대략 0.62~0.78 사이에서 조절.
  */
-const ICON_CONTENT_RATIO = 0.66;
+const ICON_CONTENT_RATIO = 0.70;
 
 /** letterbox / 바깥 여백 — manifest background_color 와 맞춤 */
 const ICON_BG = { r: 15, g: 23, b: 42, alpha: 1 };

@@ -281,20 +281,6 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
     void analysisTailRef.current;
   }
 
-  async function handleNutritionSave(item: MealItem, nutrition: MealItem["nutrition"]) {
-    if (!meal) return;
-    await updateMealItem(
-      meal.id,
-      item.id,
-      (it) => ({
-        ...it,
-        nutrition: { ...it.nutrition, ...nutrition },
-        manuallyEdited: true,
-      }),
-      { bumpMealUpdatedAt: true },
-    );
-  }
-
   async function removeItem(itemId: string) {
     if (!meal) return;
     if (!confirm("이 사진을 삭제할까요?")) return;
@@ -367,7 +353,6 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
                     shareCaptureRef={carouselSlideIdx === idx ? mealShareRef : undefined}
                     onReanalyze={() => void reAnalyzeItem(it)}
                     onEdit={() => setEditingItemId(it.id)}
-                    onSaveNutrition={(nutrition) => void handleNutritionSave(it, nutrition)}
                     removeBusy={removeBusyId === it.id}
                     onRemove={() => void removeItem(it.id)}
                   />
