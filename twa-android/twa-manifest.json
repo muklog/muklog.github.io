@@ -1,6 +1,6 @@
 {
   "packageId": "io.github.muklog.app",
-  "host": "https://muklog.github.io",
+  "host": "muklog.github.io",
   "name": "먹로그 — 식단·건강 기록",
   "launcherName": "먹로그",
   "display": "standalone",
@@ -20,8 +20,8 @@
     "path": "./android.keystore",
     "alias": "muklog"
   },
-  "appVersionName": "0.1.2",
-  "appVersionCode": 14,
+  "appVersionName": "0.1.3",
+  "appVersionCode": 16,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://muklog.github.io/manifest.webmanifest",
@@ -39,5 +39,5 @@
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
   "displayOverride": [],
-  "appVersion": "0.1.2"
+  "appVersion": "0.1.3"
 }
