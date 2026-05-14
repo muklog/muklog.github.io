@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useFeedStream, type FeedAuthor, type FeedEntry } from "../contexts/FeedStreamContext";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -22,6 +22,7 @@ import { getAppShareAbsoluteUrl } from "../lib/siteUrl";
 import FeedAlertsHeaderIcons from "../components/FeedAlertsHeaderIcons";
 import AddToHomeScreenButton from "../components/AddToHomeScreenButton";
 import { MEAL_SLOT_EMOJI, MEAL_SLOT_LABELS, type MealItem } from "../types";
+import { MAX_MEAL_ITEMS } from "../lib/mealLimits";
 import { STALL_REFRESH_HINT } from "../lib/tabLoadingMessage";
 import { prefetchDownloadUrlsForStoragePaths } from "../lib/userMediaStorage";
 
@@ -445,6 +446,7 @@ function FeedCard({
   eagerFeedImage = false,
   quietPhotoLoading = true,
 }: FeedCardProps) {
+  const navigate = useNavigate();
   const { author, meal, isMine } = entry;
   const items = meal.items ?? [];
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -642,6 +644,17 @@ function FeedCard({
                 }
                 removeBusy={removeBusyId === it.id}
                 onRemove={isMine ? () => void handleRemoveItem(it) : undefined}
+                onAddMealItem={
+                  isMine
+                    ? () => {
+                        if (items.length >= MAX_MEAL_ITEMS) {
+                          alert(`한 끼니에는 사진을 최대 ${MAX_MEAL_ITEMS}장까지 올릴 수 있어요.`);
+                          return;
+                        }
+                        navigate(`/day/${meal.date}?slot=${meal.slot}`);
+                      }
+                    : undefined
+                }
               />
             )}
           />

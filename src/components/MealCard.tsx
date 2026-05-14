@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Loader2,
   Pencil,
+  Plus,
   RefreshCw,
   Sparkles,
   Star,
@@ -156,6 +157,8 @@ interface ItemCardProps {
   onSaveNutrition?: (nutrition: MealItem["nutrition"]) => void | Promise<void>;
   /** 삭제 API 진행 중 — 해당 카드 삭제 버튼만 스피너 */
   removeBusy?: boolean;
+  /** 이 끼니에 음식 추가 — 달력 해당 날짜·슬롯으로 이동 */
+  onAddMealItem?: () => void;
   /** 이 끼니 항목(사진) 개수 — 2 이상일 때만 사진 위 #번호 배지 표시 */
   mealItemCount?: number;
 }
@@ -175,6 +178,7 @@ export function MealItemCard({
   onRemove,
   onSaveNutrition,
   removeBusy = false,
+  onAddMealItem,
   mealItemCount = 1,
 }: ItemCardProps) {
   const photoBlob = item.photo || item.thumbnail;
@@ -237,6 +241,7 @@ export function MealItemCard({
         onRemove={onRemove}
         onSaveNutrition={onSaveNutrition}
         removeBusy={removeBusy}
+        onAddMealItem={onAddMealItem}
       />
       </div>
     </div>
@@ -383,6 +388,8 @@ interface AnalysisProps {
   onSaveNutrition?: (nutrition: MealItem["nutrition"]) => void | Promise<void>;
   /** 삭제 진행 중 — 삭제 버튼 비활성·스피너 */
   removeBusy?: boolean;
+  /** 이 끼니에 사진·항목 추가(달력 해당 슬롯으로 이동) */
+  onAddMealItem?: () => void;
 }
 
 /** Firestore 상태 필드(analyzing)와 실제 본문이 잠깐 어긋나도 결과가 오면 받침판을 우선 표시한다. */
@@ -622,6 +629,7 @@ export function ItemAnalysisBlock({
   onRemove,
   onSaveNutrition,
   removeBusy = false,
+  onAddMealItem,
 }: AnalysisProps) {
   if (mealItemHasSyncedAnalysisPayload(item)) {
     const showInlineNutrition = !readOnly && !!onSaveNutrition;
@@ -708,6 +716,17 @@ export function ItemAnalysisBlock({
               )}
             </span>
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
+              {onAddMealItem && (
+                <button
+                  type="button"
+                  onClick={onAddMealItem}
+                  disabled={removeBusy || reanalyzeBusy}
+                  className="inline-flex items-center gap-1 text-brand-300/95 hover:text-brand-200 disabled:opacity-40"
+                  aria-label="이 끼니에 음식 추가"
+                >
+                  <Plus size={11} strokeWidth={2.5} /> 추가
+                </button>
+              )}
               {onEdit && (
                 <button
                   type="button"

@@ -136,16 +136,14 @@ function truncateWithEllipsis(ctx: CanvasRenderingContext2D, text: string, maxWi
   return ellipsis;
 }
 
-function stripUrlSchemeForWatermark(url: string): string {
-  const hostAndPath = url.replace(/^https?:\/\//i, "");
-  return hostAndPath.replace(/\/+$/, "");
-}
+/** 캡처 PNG 하단에만 쓰임 — 웹 주소 대신 고정 카피 */
+export const SHARE_CARD_WATERMARK_TAGLINE = "먹로그 — 사진만 찍으면 AI가 식단 기록";
 
 function computeWatermarkLayout(
   canvasWidth: number,
   cssWidthRef: number,
-  /** 워터마크에만 쓰임 — 스킴·끝의 `/` 제외한 호스트·경로 */
-  watermarkHostAndPath: string,
+  /** 하단 한 덩어리 문구 (줄바꿈만 허용) */
+  footTagline: string,
 ): {
   barPx: number;
   fontPx: number;
@@ -167,7 +165,7 @@ function computeWatermarkLayout(
   const ctx = scratch.getContext("2d")!;
   const fontPxStart = Math.max(10, Math.round(11 * scaleRef));
   const minFont = Math.max(8, Math.round(8 * scaleRef));
-  const fullSingle = `먹로그 — ${watermarkHostAndPath}`;
+  const fullSingle = footTagline.trim() || "먹로그";
 
   let chosenFont = minFont;
   let lines: string[] = [fullSingle];
@@ -177,8 +175,6 @@ function computeWatermarkLayout(
     let candidate: string[];
     if (ctx.measureText(fullSingle).width <= maxW) {
       candidate = [fullSingle];
-    } else if (ctx.measureText("먹로그").width <= maxW) {
-      candidate = ["먹로그", ...greedyWrapLine(ctx, watermarkHostAndPath, maxW)];
     } else {
       candidate = greedyWrapLine(ctx, fullSingle, maxW);
     }
@@ -279,6 +275,8 @@ export async function shareMealCardFromElement(
     promoUrl: string;
     shareTitle?: string;
     shareText?: string;
+    /** 캡처 이미지 하단 문구 — 기본은 URL 없이 고정 카피 */
+    watermarkTagline?: string;
   },
 ): Promise<void> {
   const w = element.offsetWidth;
@@ -329,8 +327,8 @@ export async function shareMealCardFromElement(
   const cssWRef = Math.max(element.clientWidth, 280);
   const { canvas: cardCanvas, width: rw, height: rh } = scaleBitmapToMaxEdge(img, img.width, img.height);
 
-  const wmUrlDisplay = stripUrlSchemeForWatermark(opts.promoUrl);
-  const wmLayout = computeWatermarkLayout(rw, cssWRef, wmUrlDisplay);
+  const wmTagline = (opts.watermarkTagline ?? SHARE_CARD_WATERMARK_TAGLINE).trim();
+  const wmLayout = computeWatermarkLayout(rw, cssWRef, wmTagline);
 
   const canvas = document.createElement("canvas");
   canvas.width = rw;
@@ -352,28 +350,40 @@ export async function shareMealCardFromElement(
     lastModified: Date.now(),
   });
 
+  const title = opts.shareTitle ?? "먹로그 식단";
+  const text = opts.shareText ?? `먹로그에서 기록한 식단이에요 — ${opts.promoUrl}`;
+
   if (typeof navigator.share === "function") {
-    const payload: ShareData = {
-      files: [file],
-      title: opts.shareTitle ?? "먹로그 식단",
-      text: opts.shareText ?? `먹로그 식단 기록 — ${opts.promoUrl}`,
-    };
+    const withFiles: ShareData = { files: [file], title, text };
+    const canTryFiles =
+      typeof navigator.canShare !== "function" || navigator.canShare({ files: [file] });
+
+    if (canTryFiles) {
+      try {
+        await navigator.share(withFiles);
+        return;
+      } catch (e) {
+        const err = e as { name?: string };
+        if (err?.name === "AbortError") return;
+        console.warn("[shareMealCardImage] share(files)", e);
+      }
+    }
+
     try {
-      // canShare 는 일부 브라우저에서 파일 공유를 거짓으로 막아 첫 탭이 곧바로 다운로드로 가는 경우가 있어,
-      // 지원 여부는 share 호출로만 판별한다.
-      await navigator.share(payload);
+      await navigator.share({
+        title,
+        text: `${text}\n${opts.promoUrl}`,
+        url: opts.promoUrl,
+      });
       return;
     } catch (e) {
       const err = e as { name?: string };
       if (err?.name === "AbortError") return;
-      console.warn("[shareMealCardImage] navigator.share", e);
+      console.warn("[shareMealCardImage] share(url)", e);
     }
   }
 
-  const dl = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = dl;
-  a.download = opts.filename;
-  a.click();
-  URL.revokeObjectURL(dl);
+  alert(
+    "이 브라우저나 기기에서는 이미지를 바로 공유할 수 없어요. 갤러리에 저장하지는 않았어요. Chrome 등 최신 브라우저에서 다시 시도하거나, 화면을 캡처해 공유해 주세요.",
+  );
 }
