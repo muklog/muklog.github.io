@@ -19,6 +19,7 @@
     "deploy:storage-cors": "gsutil cors set storage-cors.json gs://healthhealth-23fa9.firebasestorage.app",
     "deploy:storage-cors:appspot": "gsutil cors set storage-cors.json gs://healthhealth-23fa9.appspot.com",
     "gen:icons": "node scripts/gen-pwa-icons.mjs",
+    "preview:launcher-icon": "node scripts/preview-android-launcher-icon.mjs",
     "gen:play-graphic": "node scripts/gen-play-feature-graphic.mjs",
     "android:bubblewrap": "npx --yes @bubblewrap/cli@latest",
     "android:patch-splash": "node scripts/patch-twa-splash-rounded.mjs",

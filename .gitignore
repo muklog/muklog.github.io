@@ -25,6 +25,9 @@ pnpm-debug.log*
 .env.local
 .env.*.local
 
+# 로컬 런처 마스크 미리보기 (npm run preview:launcher-icon)
+launcher-icon-mask-preview.png
+
 # PWA
 dev-dist
 

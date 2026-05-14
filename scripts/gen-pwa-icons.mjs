@@ -3,6 +3,9 @@
  *
  * 원본 교체 후: node scripts/gen-pwa-icons.mjs
  *
+ * 안드로이드 런처에 가까운 잘림 미리보기: `npm run preview:launcher-icon` → 루트에 `launcher-icon-mask-preview.png`
+ * (제조사마다 마스크는 조금 다름). Android Studio 에서 `twa-android` mipmap 을 열면 더 정확한 형태별 미리보기 가능.
+ *
  * 안드로이드 적응형 아이콘(둥근 사각형)은 가장자리가 잘리므로,
  * 그림을 캔버스의 일부 비율 안에만 맞춰 넣고 나머지는 배경색으로 채웁니다.
  *
