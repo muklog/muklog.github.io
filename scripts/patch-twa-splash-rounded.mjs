@@ -16,7 +16,7 @@ const iconPath = join(root, "assets", "app-icon.png");
 const resRoot = join(root, "twa-android", "app", "src", "main", "res");
 
 /** gen-pwa-icons.mjs 의 ICON_CONTENT_RATIO 와 맞춤 — 스플래시 아이콘도 런처와 비슷한 비율로 안쪽 배치 */
-const SPLASH_ICON_CONTENT_RATIO = 0.73;
+const SPLASH_ICON_CONTENT_RATIO = 0.78;
 const SPLASH_ICON_BG = { r: 15, g: 23, b: 42, alpha: 1 };
 
 async function roundedIconPng(sidePx) {
