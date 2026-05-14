@@ -452,6 +452,8 @@ function FeedCard({
   const [carouselSlideIdx, setCarouselSlideIdx] = useState(0);
   /** 피드에서 사진 재분석 중일 때 버튼 스피너만 씀 (전 카드 분석 중 UI 없음) */
   const [imageReanalyzeBusyId, setImageReanalyzeBusyId] = useState<string | null>(null);
+  /** 삭제가 끝날 때까지 해당 항목 삭제 버튼에 스피너 */
+  const [removeBusyId, setRemoveBusyId] = useState<string | null>(null);
   const [shareBusy, setShareBusy] = useState(false);
   const mealShareRef = useRef<HTMLDivElement | null>(null);
   const editingItem = items.find((it) => it.id === editingItemId) ?? null;
@@ -542,13 +544,32 @@ function FeedCard({
     }
   }
 
+  async function handleNutritionSave(item: MealItem, nutrition: MealItem["nutrition"]) {
+    if (!isMine) return;
+    await updateMealItem(
+      meal.id,
+      item.id,
+      (it) => ({
+        ...it,
+        nutrition: { ...it.nutrition, ...nutrition },
+        manuallyEdited: true,
+      }),
+      { bumpMealUpdatedAt: true },
+    );
+  }
+
   async function handleRemoveItem(item: MealItem) {
     if (!isMine) return;
     if (!confirm("이 사진을 삭제할까요?")) return;
-    await deleteMealItem(meal.id, item.id, {
-      ownerUid: author.uid,
-      mealSeed: meal,
-    });
+    setRemoveBusyId(item.id);
+    try {
+      await deleteMealItem(meal.id, item.id, {
+        ownerUid: author.uid,
+        mealSeed: meal,
+      });
+    } finally {
+      setRemoveBusyId(null);
+    }
   }
 
   return (
@@ -616,6 +637,10 @@ function FeedCard({
                 onReanalyze={
                   isMine && it.photo ? () => void handleReanalyzeByImage(it) : undefined
                 }
+                onSaveNutrition={
+                  isMine ? (nutrition) => void handleNutritionSave(it, nutrition) : undefined
+                }
+                removeBusy={removeBusyId === it.id}
                 onRemove={isMine ? () => void handleRemoveItem(it) : undefined}
               />
             )}

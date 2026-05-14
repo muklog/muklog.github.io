@@ -152,6 +152,10 @@ interface ItemCardProps {
   onReanalyze?: () => void;
   onEdit?: () => void;
   onRemove?: () => void;
+  /** 칼로리·탄단지당 직접 저장 (내 피드·달력 등에서만 넘김) */
+  onSaveNutrition?: (nutrition: MealItem["nutrition"]) => void | Promise<void>;
+  /** 삭제 API 진행 중 — 해당 카드 삭제 버튼만 스피너 */
+  removeBusy?: boolean;
   /** 이 끼니 항목(사진) 개수 — 2 이상일 때만 사진 위 #번호 배지 표시 */
   mealItemCount?: number;
 }
@@ -169,6 +173,8 @@ export function MealItemCard({
   onReanalyze,
   onEdit,
   onRemove,
+  onSaveNutrition,
+  removeBusy = false,
   mealItemCount = 1,
 }: ItemCardProps) {
   const photoBlob = item.photo || item.thumbnail;
@@ -229,6 +235,8 @@ export function MealItemCard({
         onReanalyze={onReanalyze}
         onEdit={onEdit}
         onRemove={onRemove}
+        onSaveNutrition={onSaveNutrition}
+        removeBusy={removeBusy}
       />
       </div>
     </div>
@@ -372,6 +380,9 @@ interface AnalysisProps {
   onEdit?: () => void;
   /** 사진 위가 아닌 분석 영역에서 삭제 (내 기록·피드 등) */
   onRemove?: () => void;
+  onSaveNutrition?: (nutrition: MealItem["nutrition"]) => void | Promise<void>;
+  /** 삭제 진행 중 — 삭제 버튼 비활성·스피너 */
+  removeBusy?: boolean;
 }
 
 /** Firestore 상태 필드(analyzing)와 실제 본문이 잠깐 어긋나도 결과가 오면 받침판을 우선 표시한다. */
@@ -391,6 +402,18 @@ function mealItemHasSyncedAnalysisPayload(item: MealItem): boolean {
     return true;
   }
   return typeof item.rating === "number" && item.rating >= 1;
+}
+
+function numToStr(n: number | undefined): string {
+  return n === undefined || Number.isNaN(n) ? "" : String(n);
+}
+
+function strToNum(s: string): number | undefined {
+  const t = s.trim();
+  if (!t) return undefined;
+  const n = Number(t);
+  if (!Number.isFinite(n)) return undefined;
+  return n;
 }
 
 const MACRO_ROWS: {
@@ -456,6 +479,139 @@ function AnalyzingDelayHint({ active, readOnly }: { active: boolean; readOnly: b
   );
 }
 
+function NutritionInlineEditor({
+  item,
+  disabled,
+  onSave,
+}: {
+  item: MealItem;
+  disabled?: boolean;
+  onSave: (nutrition: MealItem["nutrition"]) => void | Promise<void>;
+}) {
+  const [cal, setCal] = useState(() => numToStr(item.nutrition?.calories));
+  const [carb, setCarb] = useState(() => numToStr(item.nutrition?.carbs));
+  const [pro, setPro] = useState(() => numToStr(item.nutrition?.protein));
+  const [fat, setFat] = useState(() => numToStr(item.nutrition?.fat));
+  const [sugar, setSugar] = useState(() => numToStr(item.nutrition?.sugar));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setCal(numToStr(item.nutrition?.calories));
+    setCarb(numToStr(item.nutrition?.carbs));
+    setPro(numToStr(item.nutrition?.protein));
+    setFat(numToStr(item.nutrition?.fat));
+    setSugar(numToStr(item.nutrition?.sugar));
+  }, [item.id, item.updatedAt]);
+
+  const draftNutrition = useMemo((): NonNullable<MealItem["nutrition"]> => {
+    return {
+      calories: strToNum(cal),
+      carbs: strToNum(carb),
+      protein: strToNum(pro),
+      fat: strToNum(fat),
+      sugar: strToNum(sugar),
+      healthTags: item.nutrition?.healthTags?.length ? [...item.nutrition.healthTags] : undefined,
+    };
+  }, [cal, carb, pro, fat, sugar, item.nutrition?.healthTags]);
+
+  const showMacroBars = MACRO_ROWS.some(
+    (row) => typeof draftNutrition[row.key] === "number" && draftNutrition[row.key]! > 0,
+  );
+
+  async function submitSave() {
+    setSaving(true);
+    try {
+      await onSave({ ...draftNutrition });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2.5 rounded-lg border border-slate-700/50 bg-slate-900/35 p-2.5">
+      <p className="text-[10px] font-medium tracking-wide text-slate-500">
+        칼로리·영양 <span className="font-normal text-slate-600">· 수정 후 저장</span>
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="col-span-2 block space-y-1 text-[10px] text-slate-500">
+          <span className="text-slate-400">칼로리 (kcal)</span>
+          <input
+            inputMode="decimal"
+            value={cal}
+            onChange={(e) => setCal(e.target.value)}
+            disabled={disabled || saving}
+            className="input w-full py-1.5 text-sm"
+          />
+        </label>
+        <label className="block space-y-1 text-[10px] text-slate-500">
+          <span className="text-slate-400">탄수화물 (g)</span>
+          <input
+            inputMode="decimal"
+            value={carb}
+            onChange={(e) => setCarb(e.target.value)}
+            disabled={disabled || saving}
+            className="input w-full py-1.5 text-sm"
+          />
+        </label>
+        <label className="block space-y-1 text-[10px] text-slate-500">
+          <span className="text-slate-400">단백질 (g)</span>
+          <input
+            inputMode="decimal"
+            value={pro}
+            onChange={(e) => setPro(e.target.value)}
+            disabled={disabled || saving}
+            className="input w-full py-1.5 text-sm"
+          />
+        </label>
+        <label className="block space-y-1 text-[10px] text-slate-500">
+          <span className="text-slate-400">지방 (g)</span>
+          <input
+            inputMode="decimal"
+            value={fat}
+            onChange={(e) => setFat(e.target.value)}
+            disabled={disabled || saving}
+            className="input w-full py-1.5 text-sm"
+          />
+        </label>
+        <label className="col-span-2 block space-y-1 text-[10px] text-slate-500">
+          <span className="text-slate-400">당 (g)</span>
+          <input
+            inputMode="decimal"
+            value={sugar}
+            onChange={(e) => setSugar(e.target.value)}
+            disabled={disabled || saving}
+            className="input w-full py-1.5 text-sm"
+          />
+        </label>
+      </div>
+      {showMacroBars ? <NutritionMacroBars nutrition={draftNutrition} /> : null}
+      {(draftNutrition.calories !== undefined || (draftNutrition.healthTags?.length ?? 0) > 0) && (
+        <div className="flex flex-wrap gap-1.5">
+          {draftNutrition.calories !== undefined && (
+            <span className="chip bg-slate-700/60 text-[11px] text-slate-200">
+              🔥 {Math.round(draftNutrition.calories)}kcal
+            </span>
+          )}
+          {draftNutrition.healthTags?.map((t) => (
+            <span key={t} className="chip bg-brand-500/15 text-[11px] text-brand-300">
+              #{t}
+            </span>
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => void submitSave()}
+        disabled={disabled || saving}
+        className="btn-secondary flex w-full items-center justify-center gap-2 py-2 text-xs font-medium disabled:opacity-50"
+      >
+        {saving ? <Loader2 size={14} className="shrink-0 animate-spin" aria-hidden /> : null}
+        영양 정보 저장
+      </button>
+    </div>
+  );
+}
+
 export function ItemAnalysisBlock({
   item,
   readOnly = false,
@@ -464,8 +620,11 @@ export function ItemAnalysisBlock({
   onReanalyze,
   onEdit,
   onRemove,
+  onSaveNutrition,
+  removeBusy = false,
 }: AnalysisProps) {
   if (mealItemHasSyncedAnalysisPayload(item)) {
+    const showInlineNutrition = !readOnly && !!onSaveNutrition;
     return (
       <div className="space-y-3 rounded-xl bg-slate-800/40 p-3">
         <div className="flex items-start justify-between gap-2">
@@ -487,35 +646,57 @@ export function ItemAnalysisBlock({
             <span className="ml-0.5">{item.rating ?? "-"}</span>
           </span>
         </div>
+        {!readOnly && canAnalyze && onReanalyze && (
+          <button
+            type="button"
+            onClick={onReanalyze}
+            disabled={reanalyzeBusy}
+            className={cls(
+              "btn-secondary flex w-full items-center justify-center gap-2 py-2.5 text-sm font-medium",
+              reanalyzeBusy && "pointer-events-none opacity-70",
+            )}
+          >
+            {reanalyzeBusy ? (
+              <Loader2 size={16} className="shrink-0 animate-spin text-brand-400" aria-hidden />
+            ) : (
+              <Sparkles size={16} className="shrink-0 text-brand-400" aria-hidden />
+            )}
+            AI 다시 분석
+          </button>
+        )}
         {item.aiComment && (
           <p className="break-words text-xs leading-relaxed text-slate-400 whitespace-pre-wrap">
             <Sparkles size={11} className="mb-0.5 mr-1 inline text-brand-400" />
             {item.aiComment}
           </p>
         )}
-        {item.nutrition && (
-          <div className="space-y-2">
-            <NutritionMacroBars nutrition={item.nutrition} />
-            {(item.nutrition.calories !== undefined ||
-              (item.nutrition.healthTags?.length ?? 0) > 0) && (
-              <div className="flex flex-wrap gap-1.5">
-                {item.nutrition.calories !== undefined && (
-                  <span className="chip bg-slate-700/60 text-slate-200">
-                    🔥 {item.nutrition.calories}kcal
-                  </span>
-                )}
-                {item.nutrition.healthTags?.map((t) => (
-                  <span key={t} className="chip bg-brand-500/15 text-brand-300">
-                    #{t}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+        {showInlineNutrition ? (
+          <NutritionInlineEditor item={item} disabled={reanalyzeBusy} onSave={onSaveNutrition} />
+        ) : (
+          item.nutrition && (
+            <div className="space-y-2">
+              <NutritionMacroBars nutrition={item.nutrition} />
+              {(item.nutrition.calories !== undefined ||
+                (item.nutrition.healthTags?.length ?? 0) > 0) && (
+                <div className="flex flex-wrap gap-1.5">
+                  {item.nutrition.calories !== undefined && (
+                    <span className="chip bg-slate-700/60 text-slate-200">
+                      🔥 {item.nutrition.calories}kcal
+                    </span>
+                  )}
+                  {item.nutrition.healthTags?.map((t) => (
+                    <span key={t} className="chip bg-brand-500/15 text-brand-300">
+                      #{t}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
         )}
         {!readOnly && (
-          <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
-            <span className="inline-flex items-center gap-1">
+          <div className="flex items-center justify-between gap-2 border-t border-slate-800/60 pt-2 text-[11px] text-slate-500">
+            <span className="inline-flex min-w-0 items-center gap-1">
               {item.manuallyEdited ? (
                 <>
                   <Pencil size={11} /> 직접 수정됨
@@ -526,38 +707,31 @@ export function ItemAnalysisBlock({
                 </>
               )}
             </span>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
               {onEdit && (
-                <button onClick={onEdit} className="inline-flex items-center gap-1 hover:text-slate-300">
-                  <Pencil size={11} /> 수정
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  disabled={removeBusy || reanalyzeBusy}
+                  className="inline-flex items-center gap-1 hover:text-slate-300 disabled:opacity-40"
+                >
+                  <Pencil size={11} /> 메뉴·한줄평 수정
                 </button>
               )}
               {onRemove && (
                 <button
                   type="button"
                   onClick={onRemove}
-                  className="inline-flex items-center gap-1 text-rose-300/90 hover:text-rose-200"
+                  disabled={removeBusy || reanalyzeBusy}
+                  className="inline-flex items-center gap-1 text-rose-300/90 hover:text-rose-200 disabled:opacity-40"
                   aria-label="이 사진 삭제"
                 >
-                  <Trash2 size={11} /> 삭제
-                </button>
-              )}
-              {canAnalyze && onReanalyze && (
-                <button
-                  type="button"
-                  onClick={onReanalyze}
-                  disabled={reanalyzeBusy}
-                  className={cls(
-                    "inline-flex items-center gap-1 hover:text-slate-300 disabled:pointer-events-none",
-                    reanalyzeBusy && "text-slate-400",
-                  )}
-                >
-                  {reanalyzeBusy ? (
-                    <Loader2 size={11} className="animate-spin text-brand-400" aria-hidden />
+                  {removeBusy ? (
+                    <Loader2 size={11} className="shrink-0 animate-spin text-brand-400" aria-hidden />
                   ) : (
-                    <RefreshCw size={11} />
+                    <Trash2 size={11} />
                   )}
-                  다시 분석
+                  삭제
                 </button>
               )}
             </div>
@@ -627,10 +801,16 @@ export function ItemAnalysisBlock({
               <button
                 type="button"
                 onClick={onRemove}
-                className="btn-secondary flex-1 border-rose-500/25 py-2 text-sm text-rose-200 hover:border-rose-500/40 hover:bg-rose-500/10 sm:min-w-[7rem]"
+                disabled={removeBusy || reanalyzeBusy}
+                className="btn-secondary flex-1 border-rose-500/25 py-2 text-sm text-rose-200 hover:border-rose-500/40 hover:bg-rose-500/10 disabled:opacity-50 sm:min-w-[7rem]"
                 aria-label="이 사진 삭제"
               >
-                <Trash2 size={14} /> 삭제
+                {removeBusy ? (
+                  <Loader2 size={14} className="animate-spin" aria-hidden />
+                ) : (
+                  <Trash2 size={14} />
+                )}
+                삭제
               </button>
             )}
           </div>
@@ -667,10 +847,16 @@ export function ItemAnalysisBlock({
         <button
           type="button"
           onClick={onRemove}
-          className="btn-secondary flex-1 border-rose-500/25 py-2 text-sm text-rose-200 hover:border-rose-500/40 hover:bg-rose-500/10 sm:min-w-[8rem]"
+          disabled={removeBusy || reanalyzeBusy}
+          className="btn-secondary flex-1 border-rose-500/25 py-2 text-sm text-rose-200 hover:border-rose-500/40 hover:bg-rose-500/10 disabled:opacity-50 sm:min-w-[8rem]"
           aria-label="이 사진 삭제"
         >
-          <Trash2 size={14} /> 삭제
+          {removeBusy ? (
+            <Loader2 size={14} className="animate-spin" aria-hidden />
+          ) : (
+            <Trash2 size={14} />
+          )}
+          삭제
         </button>
       )}
     </div>
@@ -916,16 +1102,4 @@ function Field({
       {children}
     </label>
   );
-}
-
-function numToStr(n: number | undefined): string {
-  return n === undefined || Number.isNaN(n) ? "" : String(n);
-}
-
-function strToNum(s: string): number | undefined {
-  const t = s.trim();
-  if (!t) return undefined;
-  const n = Number(t);
-  if (!Number.isFinite(n)) return undefined;
-  return n;
 }
