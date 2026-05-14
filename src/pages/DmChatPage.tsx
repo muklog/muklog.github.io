@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
 import { ArrowLeft, Loader2, Send, Trash2 } from "lucide-react";
@@ -19,7 +19,7 @@ import {
 import { getFirestoreDb } from "../lib/firebaseApp";
 import type { DmMessageDoc } from "../types";
 import FirebaseLoginCard from "../components/FirebaseLoginCard";
-import { cls } from "../lib/utils";
+import { cls, dateKey, formatKoDate } from "../lib/utils";
 
 export default function DmChatPage() {
   const { threadId = "" } = useParams();
@@ -234,14 +234,32 @@ export default function DmChatPage() {
             const mine = m.senderUid === meUid;
             const next = messages[i + 1];
             const showTime = !next || next.senderUid !== m.senderUid;
+            const ts = m.createdAt ?? 0;
+            const prevTs = messages[i - 1]?.createdAt ?? 0;
+            const dk = (t: number) =>
+              Number.isFinite(t) && t > 0 ? dateKey(new Date(t)) : "";
+            const curDay = dk(ts);
+            const prevDay = dk(prevTs);
+            const showDayDivider =
+              curDay !== "" &&
+              (i === 0 || prevDay === "" || prevDay !== curDay);
             return (
-              <Bubble
-                key={m.id}
-                mine={mine}
-                text={m.text}
-                createdAt={m.createdAt ?? 0}
-                showTime={showTime}
-              />
+              <Fragment key={m.id}>
+                {showDayDivider ? (
+                  <div
+                    className="flex shrink-0 items-center gap-2 py-2"
+                    role="separator"
+                    aria-label={formatKoDate(new Date(ts))}
+                  >
+                    <span className="h-px flex-1 bg-slate-800" aria-hidden />
+                    <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
+                      {formatKoDate(new Date(ts))}
+                    </span>
+                    <span className="h-px flex-1 bg-slate-800" aria-hidden />
+                  </div>
+                ) : null}
+                <Bubble mine={mine} text={m.text} createdAt={ts} showTime={showTime} />
+              </Fragment>
             );
           })
         )}

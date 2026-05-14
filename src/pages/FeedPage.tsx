@@ -27,15 +27,15 @@ import { prefetchDownloadUrlsForStoragePaths } from "../lib/userMediaStorage";
 
 /**
  * 피드 탭 — 스트림은 App 의 FeedStreamProvider 에서 구독하고, 여기서는 렌더링만 합니다.
- * 첫 화면은 1장부터 시작하고, 스트림 준비 후 센티널·뷰포트에 따라 1장씩 연다.
+ * 첫 화면 2장 + 스크롤·센티널마다 2장씩 열어 이미지 로딩이 덜 눈에 띄게 한다.
  * (짧은 콘텐츠에서는 자동 보충으로 스크롤이 생길 때까지 채움)
  * MealSocialBlock 은 카드가 뷰포트 근처에 올 때만 구독합니다.
  */
-const FEED_INITIAL_VISIBLE = 1;
+const FEED_INITIAL_VISIBLE = 2;
 /** 센티널 교차·스크롤 보충 시 한 번에 추가하는 카드 수 */
-const FEED_LOAD_CHUNK = 1;
+const FEED_LOAD_CHUNK = 2;
 /** 보이는 카드 + 바로 다음 몇 장까지 썸네일 URL 선요청 */
-const FEED_PREFETCH_AHEAD = 2;
+const FEED_PREFETCH_AHEAD = 4;
 /** 피드 상단 N개 카드는 Storage 썸네일을 IO 대기 없이 바로 요청 */
 const FEED_EAGER_IMAGE_CARDS = 6;
 
@@ -70,7 +70,7 @@ export default function FeedPage() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   /** 스크롤·휠 시 추가로 «다음 장» 로드 허용(스트림 준비 후 기본 true 로 IO 도 동작) */
   const feedScrollEngagedRef = useRef(false);
-  /** IO 교차: false→true 일 때만 1장 추가(계속 교차인 채로 연속 증가 방지) */
+  /** IO 교차: false→true 일 때만 청크만큼 추가(계속 교차인 채로 연속 증가 방지) */
   const feedIoWasIntersectingRef = useRef(false);
 
   /** 다른 탭에서 남은 main 스크롤이 있으면 감지 줄이 화면 밖으로 밀려 IO가 영원히 안 도는 경우가 있음 */
@@ -91,7 +91,7 @@ export default function FeedPage() {
   const visibleEntries =
     entries.length <= visibleCount ? entries : entries.slice(0, visibleCount);
 
-  /** 현재까지 연 카드 + 앞으로 1~2장 분량만 선요청 (한 장씩 열 때 네트워크 낭비 줄임) */
+  /** 현재까지 연 카드 + 앞쪽 몇 장 분량 썸네일 선요청 (2장씩 열 때도 앞서 로드) */
   useEffect(() => {
     if (!streamReady || !settled || entries.length === 0) return;
     const cap = Math.min(visibleCount + FEED_PREFETCH_AHEAD, entries.length);
@@ -129,7 +129,7 @@ export default function FeedPage() {
 
   /**
    * 피드 스트림이 준비되면 «스크롤 한 번» 없이도 센티널·IO 가 다음 장을 열 수 있게 한다.
-   * (한 장만으로도 스크롤이 생기면 기존 autoFill 이 멈추고, engage 가 false 면 첫 화면에서 멈춤)
+   * (카드가 적어 스크롤이 안 생기면 autoFill 이 뷰포트 채울 때까지 보충)
    */
   useEffect(() => {
     if (!streamReady || !settled || entries.length === 0) return;
@@ -146,7 +146,7 @@ export default function FeedPage() {
     let alive = true;
     let autoFillTimer: number | null = null;
 
-    /** 한 번이라도 스크롤·휠·터치하면 로드 허용. 이미 센티널이 보이는 경우 IO 가 다시 안 울 수 있어 1프레임 뒤 직접 1장 연다. */
+    /** 한 번이라도 스크롤·휠·터치하면 로드 허용. 이미 센티널이 보이는 경우 IO 가 다시 안 울 수 있어 1프레임 뒤 직접 한 청크 연다. */
     const engage = () => {
       if (feedScrollEngagedRef.current) return;
       feedScrollEngagedRef.current = true;
@@ -178,7 +178,7 @@ export default function FeedPage() {
     /**
      * PC 큰 화면에서 "카드 1개 + 안내문"만으로 스크롤 높이가 생기지 않으면
      * engage 이벤트가 오지 않아 영원히 멈출 수 있다.
-     * 이 경우에는 뷰포트를 채울 때까지 한 장씩 자동 보충한다.
+     * 이 경우에는 뷰포트를 채울 때까지 FEED_LOAD_CHUNK 씩 자동 보충한다.
      */
     const autoFillIfNotScrollable = () => {
       if (!alive) return;
@@ -208,14 +208,14 @@ export default function FeedPage() {
       }, 120);
     };
 
-    /** IntersectionObserver: 센티널이 뷰포트에 들어올 때 한 장 추가 */
+    /** IntersectionObserver: 센티널이 뷰포트에 들어올 때 한 청크 추가 */
     const opts: IntersectionObserverInit = {
       root: null,
       rootMargin: "900px 0px",
       threshold: 0,
     };
 
-    /** effect 재실행·visibleCount 증가 직후에도 첫 교차를 false→true 로 잡아 한 장 더 연다 */
+    /** effect 재실행·visibleCount 증가 직후에도 첫 교차를 false→true 로 잡아 한 청크 더 연다 */
     feedIoWasIntersectingRef.current = false;
 
     const obs = new IntersectionObserver(

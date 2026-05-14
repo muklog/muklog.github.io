@@ -1,10 +1,12 @@
 /**
- * assets/app-icon.png → 탭 파비콘 + PWA PNG (설치·스플래시·apple-touch 아이콘)
+ * assets/app-icon.png → 탭 파비콘 + PWA PNG (설치·스플래시·TWA 런처)
  *
  * 원본 교체 후: node scripts/gen-pwa-icons.mjs
  *
- * 원본에 안전 여백이 있어 런처에서 테두리가 비어 보이면, 아래 비율로 가운데만 잘라 씁니다.
- * 이미 꽉 찬 아이콘이면 0 으로 두세요.
+ * 안드로이드 적응형 아이콘(둥근 사각형)은 가장자리가 잘리므로,
+ * 그림을 캔버스의 일부 비율 안에만 맞춰 넣고 나머지는 배경색으로 채웁니다.
+ *
+ * (과거) 원본 가장자리를 잘라 쓰려면 EDGE_INSET_RATIO 를 0보다 크게.
  */
 import sharp from "sharp";
 import { existsSync } from "node:fs";
@@ -13,8 +15,17 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import pngToIco from "png-to-ico";
 
-/** 한쪽당 잘라낼 비율 (0.06 → 좌우·상하 각 6%, 가운데 88%만 사용) */
-const EDGE_INSET_RATIO = 0.06;
+/** 원본에서 한쪽당 잘라낼 비율. 0 = 크롭 없음. */
+const EDGE_INSET_RATIO = 0;
+
+/**
+ * 최종 PNG 한 변(px)에서 실제 그림이 들어가는 안쪽 정사각형 비율.
+ * 작을수록 런처 마스크에 덜 잘림(여백↑). 0.66~0.78 권장.
+ */
+const ICON_CONTENT_RATIO = 0.74;
+
+/** letterbox / 바깥 여백 — manifest background_color 와 맞춤 */
+const ICON_BG = { r: 15, g: 23, b: 42, alpha: 1 };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -40,36 +51,62 @@ function basePipeline() {
   return p.extract({ left, top, width: cropW, height: cropH });
 }
 
+if (inset > 0) {
+  console.warn(
+    `[gen-pwa-icons] 가장자리 ${Math.round(inset * 100)}%씩 크롭 후 리사이즈 (${sw}×${sh} → ${cropW}×${cropH})`,
+  );
+}
+console.warn(
+  `[gen-pwa-icons] 안전 여백: 그림 ${Math.round(ICON_CONTENT_RATIO * 100)}% 안쪽에 맞춤 (배경 #0f172a)`,
+);
+
+/**
+ * @param {number} px
+ * @returns {Promise<Buffer>}
+ */
+async function renderAppIconPng(px) {
+  const innerPx = Math.max(1, Math.round(px * ICON_CONTENT_RATIO));
+  const innerBuf = await basePipeline()
+    .resize(innerPx, innerPx, {
+      fit: "contain",
+      position: "centre",
+      background: ICON_BG,
+    })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+
+  const pad = px - innerPx;
+  const edge = Math.floor(pad / 2);
+  return sharp(innerBuf)
+    .extend({
+      top: edge,
+      bottom: pad - edge,
+      left: edge,
+      right: pad - edge,
+      background: ICON_BG,
+    })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+}
+
 const sizes = [
   [48, "favicon.png"],
   [192, "pwa-192.png"],
   [512, "pwa-512.png"],
 ];
 
-if (inset > 0) {
-  console.warn(
-    `[gen-pwa-icons] 가장자리 ${Math.round(inset * 100)}%씩 크롭 후 리사이즈 (${sw}×${sh} → ${cropW}×${cropH})`,
-  );
-}
-
 for (const [px, name] of sizes) {
   const outPath = join(root, "public", name);
-  await basePipeline()
-    .resize(px, px, { fit: "cover", position: "centre" })
-    .png({ compressionLevel: 9 })
-    .toFile(outPath);
+  const buf = await renderAppIconPng(px);
+  await sharp(buf).png({ compressionLevel: 9 }).toFile(outPath);
   console.warn(" wrote", name);
 }
 
-/** 브라우저 기본 요청 `/favicon.ico` — 루트에 ICO 가 있으면 404 콘솔 노이즈 제거 */
+/** 브라우저 기본 요청 `/favicon.ico` */
 const icoSizes = [48, 32, 16];
 const icoBuffers = [];
 for (const px of icoSizes) {
-  const buf = await basePipeline()
-    .resize(px, px, { fit: "cover", position: "centre" })
-    .png({ compressionLevel: 9 })
-    .toBuffer();
-  icoBuffers.push(buf);
+  icoBuffers.push(await renderAppIconPng(px));
 }
 const icoOut = join(root, "public", "favicon.ico");
 await writeFile(icoOut, await pngToIco(icoBuffers));

@@ -15,13 +15,39 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const iconPath = join(root, "assets", "app-icon.png");
 const resRoot = join(root, "twa-android", "app", "src", "main", "res");
 
+/** gen-pwa-icons.mjs 의 ICON_CONTENT_RATIO 와 맞춤 — 스플래시 아이콘도 런처와 비슷한 비율로 안쪽 배치 */
+const SPLASH_ICON_CONTENT_RATIO = 0.74;
+const SPLASH_ICON_BG = { r: 15, g: 23, b: 42, alpha: 1 };
+
 async function roundedIconPng(sidePx) {
   const radius = Math.max(8, Math.round(sidePx * 0.22));
-  const resized = await sharp(iconPath).rotate().resize(sidePx, sidePx, { fit: "cover" }).png().toBuffer();
+  const inner = Math.max(1, Math.round(sidePx * SPLASH_ICON_CONTENT_RATIO));
+  const innerBuf = await sharp(iconPath)
+    .rotate()
+    .resize(inner, inner, {
+      fit: "contain",
+      position: "centre",
+      background: SPLASH_ICON_BG,
+    })
+    .png()
+    .toBuffer();
+  const pad = sidePx - inner;
+  const off = Math.floor(pad / 2);
+  const padded = await sharp({
+    create: {
+      width: sidePx,
+      height: sidePx,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite([{ input: innerBuf, left: off, top: off }])
+    .png()
+    .toBuffer();
   const maskSvg = Buffer.from(
     `<svg width="${sidePx}" height="${sidePx}" xmlns="http://www.w3.org/2000/svg"><rect width="${sidePx}" height="${sidePx}" rx="${radius}" ry="${radius}" fill="#fff"/></svg>`,
   );
-  return sharp(resized)
+  return sharp(padded)
     .composite([{ input: maskSvg, blend: "dest-in" }])
     .png()
     .toBuffer();
