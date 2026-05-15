@@ -137,7 +137,7 @@ function truncateWithEllipsis(ctx: CanvasRenderingContext2D, text: string, maxWi
 }
 
 /** 캡처 PNG 하단에만 쓰임 — 웹 주소 대신 고정 카피 */
-export const SHARE_CARD_WATERMARK_TAGLINE = "먹로그 — 사진만 찍으면 AI가 식단 기록";
+export const SHARE_CARD_WATERMARK_TAGLINE = "먹로그 — https://muklog.github.io";
 
 function computeWatermarkLayout(
   canvasWidth: number,

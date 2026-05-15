@@ -541,25 +541,27 @@ export function ItemAnalysisBlock({
           </div>
         )}
         {!readOnly && (
-          <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
-            <span className="inline-flex items-center gap-1">
-              {item.manuallyEdited ? (
-                <>
-                  <Pencil size={11} /> 직접 수정됨
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 size={11} /> AI 분석 완료
-                </>
-              )}
-            </span>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="space-y-2 border-t border-slate-700/35 pt-2">
+            <p className="text-[11px] text-slate-500">
+              <span className="inline-flex items-center gap-1">
+                {item.manuallyEdited ? (
+                  <>
+                    <Pencil size={11} className="shrink-0" /> 직접 수정됨
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={11} className="shrink-0" /> AI 분석 완료
+                  </>
+                )}
+              </span>
+            </p>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
               {onAddMealItem && (
                 <button
                   type="button"
                   onClick={onAddMealItem}
                   disabled={removeBusy || reanalyzeBusy}
-                  className="inline-flex items-center gap-1 text-brand-300/95 hover:text-brand-200 disabled:opacity-40"
+                  className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-brand-300/95 hover:text-brand-200 disabled:opacity-40"
                   aria-label="이 끼니에 음식 추가"
                 >
                   <Plus size={11} strokeWidth={2.5} /> 추가
@@ -570,7 +572,7 @@ export function ItemAnalysisBlock({
                   type="button"
                   onClick={onEdit}
                   disabled={removeBusy || reanalyzeBusy}
-                  className="inline-flex items-center gap-1 hover:text-slate-300 disabled:opacity-40"
+                  className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap hover:text-slate-300 disabled:opacity-40"
                 >
                   <Pencil size={11} /> 수정
                 </button>
@@ -580,7 +582,7 @@ export function ItemAnalysisBlock({
                   type="button"
                   onClick={onRemove}
                   disabled={removeBusy || reanalyzeBusy}
-                  className="inline-flex items-center gap-1 text-rose-300/90 hover:text-rose-200 disabled:opacity-40"
+                  className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-rose-300/90 hover:text-rose-200 disabled:opacity-40"
                   aria-label="이 사진 삭제"
                 >
                   {removeBusy ? (
@@ -597,7 +599,7 @@ export function ItemAnalysisBlock({
                   onClick={onReanalyze}
                   disabled={reanalyzeBusy}
                   className={cls(
-                    "inline-flex items-center gap-1 hover:text-slate-300 disabled:pointer-events-none",
+                    "inline-flex shrink-0 items-center gap-1 whitespace-nowrap hover:text-slate-300 disabled:pointer-events-none",
                     reanalyzeBusy && "text-slate-400",
                   )}
                 >

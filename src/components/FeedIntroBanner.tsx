@@ -13,12 +13,11 @@ export default function FeedIntroBanner() {
         나의 한 끼를 기록하고, 친구와 서로 응원하는 식단 다이어리
       </p>
       <p className="mt-2 text-[11px] text-slate-500">
-        문의{" "}
         <a
-          href="mailto:gogojeje1022@gmail.com"
-          className="text-brand-400 underline-offset-2 hover:underline"
+          href="mailto:gogojeje1022@gmail.com?subject=%EC%95%88%EB%93%9C%EB%A1%9C%EC%9D%B4%EB%93%9C%20%EC%95%B1%20%ED%85%8C%EC%8A%A4%ED%84%B0%20%EC%8B%A0%EC%B2%AD"
+          className="font-medium text-brand-400 underline-offset-2 hover:underline"
         >
-          gogojeje1022@gmail.com
+          안드로이드 앱 테스터 신청
         </a>
       </p>
     </aside>
