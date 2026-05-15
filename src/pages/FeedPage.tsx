@@ -4,19 +4,14 @@ import { useAuth } from "../contexts/AuthContext";
 import { useFeedStream, type FeedAuthor, type FeedEntry } from "../contexts/FeedStreamContext";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Loader2, Plus, Rss, Share2, Sparkles, UserPlus } from "lucide-react";
-import { getAnalysisProfileForUser, getSettings } from "../lib/db";
+import { getSettings } from "../lib/db";
 import { usePrimaryUserId } from "../hooks/usePrimaryUserId";
 import { MealItemCard, MealItemCardsCarousel, MealItemEditDialog } from "../components/MealCard";
 import MealSocialBlock from "../components/MealSocialBlock";
 import MealMultiPhotoSummaryChips from "../components/MealMultiPhotoSummaryChips";
 import FeedIntroBanner from "../components/FeedIntroBanner";
 import { dateKey, formatKoDate, suggestMealSlotForNow } from "../lib/utils";
-import {
-  deleteMealItem,
-  saveMealItemPatch,
-  updateMealItem,
-} from "../lib/mealItems";
-import { analyzeMealImage } from "../lib/ai";
+import { deleteMealItem, saveMealItemPatch } from "../lib/mealItems";
 import { shareMealCardFromElement } from "../lib/shareMealCardImage";
 import { getAppShareAbsoluteUrl } from "../lib/siteUrl";
 import FeedAlertsHeaderIcons from "../components/FeedAlertsHeaderIcons";
@@ -452,8 +447,6 @@ function FeedCard({
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   /** 공유·캡처 시 현재 보이는 슬라이드와 맞춤 */
   const [carouselSlideIdx, setCarouselSlideIdx] = useState(0);
-  /** 피드에서 사진 재분석 중일 때 버튼 스피너만 씀 (전 카드 분석 중 UI 없음) */
-  const [imageReanalyzeBusyId, setImageReanalyzeBusyId] = useState<string | null>(null);
   /** 삭제가 끝날 때까지 해당 항목 삭제 버튼에 스피너 */
   const [removeBusyId, setRemoveBusyId] = useState<string | null>(null);
   const [shareBusy, setShareBusy] = useState(false);
@@ -499,50 +492,6 @@ function FeedCard({
         r.node.style.position = r.position;
       }
       setShareBusy(false);
-    }
-  }
-
-  async function handleReanalyzeByImage(item: MealItem) {
-    if (!isMine || !myApiKey || !item.photo || !myUserId) return;
-    setImageReanalyzeBusyId(item.id);
-    try {
-      const profile = await getAnalysisProfileForUser(myUserId);
-      const result = await analyzeMealImage(
-        myApiKey,
-        item.photo,
-        meal.slot,
-        undefined,
-        profile,
-      );
-      await updateMealItem(
-        meal.id,
-        item.id,
-        (it) => ({
-          ...it,
-          menuText: result.menuText,
-          rating: result.rating,
-          aiComment: result.aiComment,
-          nutrition: result.nutrition,
-          isMealPhoto: result.isMealPhoto,
-          analysisStatus: "done",
-          analysisError: undefined,
-          manuallyEdited: false,
-        }),
-        { bumpMealUpdatedAt: false },
-      );
-    } catch (e) {
-      await updateMealItem(
-        meal.id,
-        item.id,
-        (it) => ({
-          ...it,
-          analysisStatus: "error",
-          analysisError: e instanceof Error ? e.message : String(e),
-        }),
-        { bumpMealUpdatedAt: false },
-      );
-    } finally {
-      setImageReanalyzeBusyId(null);
     }
   }
 
@@ -616,15 +565,10 @@ function FeedCard({
                 index={idx}
                 mealItemCount={items.length}
                 readOnly={!isMine}
-                canAnalyze={isMine && !!myApiKey}
                 showPhotoAnalyzingOverlay={false}
-                reanalyzeBusy={imageReanalyzeBusyId === it.id}
                 eagerFeedImage={eagerFeedImage}
                 quietPhotoLoading={quietPhotoLoading}
                 onEdit={isMine ? () => setEditingItemId(it.id) : undefined}
-                onReanalyze={
-                  isMine && it.photo ? () => void handleReanalyzeByImage(it) : undefined
-                }
                 removeBusy={removeBusyId === it.id}
                 onRemove={isMine ? () => void handleRemoveItem(it) : undefined}
                 onAddMealItem={
