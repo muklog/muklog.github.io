@@ -37,6 +37,7 @@ import {
 } from "../components/MealCard";
 import MealMultiPhotoSummaryChips from "../components/MealMultiPhotoSummaryChips";
 import MealSocialBlock from "../components/MealSocialBlock";
+import CloudSyncIssueBanner from "../components/CloudSyncIssueBanner";
 import { usePrimaryUserIdState } from "../hooks/usePrimaryUserId";
 import { useAuth } from "../contexts/AuthContext";
 import { formatKoDate } from "../lib/utils";
@@ -107,6 +108,8 @@ export default function DayPage() {
       {!validDate && (
         <div className="card p-4 text-center text-sm text-rose-300">잘못된 날짜입니다.</div>
       )}
+
+      <CloudSyncIssueBanner />
 
       {userId && validDate &&
         MEAL_SLOTS.map((slot) => (

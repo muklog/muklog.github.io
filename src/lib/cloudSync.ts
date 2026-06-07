@@ -889,40 +889,142 @@ async function pushMembers(uid: string, users: User[]): Promise<void> {
   if (n > 0) await batch.commit();
 }
 
-async function pushMeals(uid: string, meals: Meal[]): Promise<void> {
+/**
+ * 한 끼니 push 가 실패해도 다음 항목으로 넘어가도록 try/catch 로 감싼다.
+ * 과거에는 한 사진의 Storage 업로드만 실패해도 루프 전체가 빠져나가
+ * «이후 모든 끼니»가 영영 Firestore 에 못 올라가는 캐스케이드 버그가 있었다.
+ * (친구는 자기 화면엔 보이는데 팔로워에겐 새 식단이 안 보이는 증상)
+ *
+ * 또한 batch 단위 commit 이 실패하더라도 끼니별로 개별 set 으로 폴백해
+ * 일부라도 클라우드에 올라가도록 한다.
+ */
+async function pushMeals(
+  uid: string,
+  meals: Meal[],
+  failed: CloudSyncFailedItem[],
+): Promise<void> {
   const fs = getFirestoreDb();
-  let batch = writeBatch(fs);
-  let n = 0;
+  type Pending = { meal: Meal; stored: MealStored };
+  let pending: Pending[] = [];
+
+  async function flush(): Promise<void> {
+    if (pending.length === 0) return;
+    const slice = pending;
+    pending = [];
+    try {
+      const batch = writeBatch(fs);
+      for (const { meal, stored } of slice) {
+        batch.set(doc(fs, "users", uid, "meals", meal.id), stored);
+      }
+      await batch.commit();
+    } catch (e) {
+      console.warn(
+        "[cloudSync] meals batch.commit 실패 — 끼니별 setDoc 으로 폴백",
+        e,
+      );
+      for (const { meal, stored } of slice) {
+        try {
+          await setDoc(doc(fs, "users", uid, "meals", meal.id), stored);
+        } catch (perItem) {
+          console.warn("[cloudSync] meal setDoc 실패", meal.id, perItem);
+          failed.push({
+            kind: "meal",
+            mealId: meal.id,
+            date: meal.date,
+            slot: meal.slot,
+            error: formatCloudSyncItemError(perItem),
+          });
+        }
+      }
+    }
+  }
+
   for (const raw of meals) {
     const m = normalizeMeal(raw);
-    const stored = await mealToStored(m, uid);
-    if (!stored) continue;
-    batch.set(doc(fs, "users", uid, "meals", m.id), stored);
-    n++;
-    if (n >= BATCH) {
-      await batch.commit();
-      batch = writeBatch(fs);
-      n = 0;
+    let stored: MealStored | null;
+    try {
+      stored = await mealToStored(m, uid);
+    } catch (e) {
+      console.warn("[cloudSync] mealToStored 실패", m.id, m.date, m.slot, e);
+      failed.push({
+        kind: "meal",
+        mealId: m.id,
+        date: m.date,
+        slot: m.slot,
+        error: formatCloudSyncItemError(e),
+      });
+      continue;
     }
+    if (!stored) continue;
+    pending.push({ meal: m, stored });
+    if (pending.length >= BATCH) await flush();
   }
-  if (n > 0) await batch.commit();
+  await flush();
 }
 
-async function pushHealth(uid: string, rows: HealthRecord[]): Promise<void> {
+async function pushHealth(
+  uid: string,
+  rows: HealthRecord[],
+  failed: CloudSyncFailedItem[],
+): Promise<void> {
   const fs = getFirestoreDb();
-  let batch = writeBatch(fs);
-  let n = 0;
-  for (const h of rows) {
-    const stored = await healthToStored(h, uid);
-    batch.set(doc(fs, "users", uid, "health", h.id), stored);
-    n++;
-    if (n >= BATCH) {
+  type Pending = { health: HealthRecord; stored: HealthStored };
+  let pending: Pending[] = [];
+
+  async function flush(): Promise<void> {
+    if (pending.length === 0) return;
+    const slice = pending;
+    pending = [];
+    try {
+      const batch = writeBatch(fs);
+      for (const { health, stored } of slice) {
+        batch.set(doc(fs, "users", uid, "health", health.id), stored);
+      }
       await batch.commit();
-      batch = writeBatch(fs);
-      n = 0;
+    } catch (e) {
+      console.warn(
+        "[cloudSync] health batch.commit 실패 — 건강기록별 setDoc 으로 폴백",
+        e,
+      );
+      for (const { health, stored } of slice) {
+        try {
+          await setDoc(doc(fs, "users", uid, "health", health.id), stored);
+        } catch (perItem) {
+          console.warn("[cloudSync] health setDoc 실패", health.id, perItem);
+          failed.push({
+            kind: "health",
+            recordId: health.id,
+            recordDate: health.recordDate,
+            error: formatCloudSyncItemError(perItem),
+          });
+        }
+      }
     }
   }
-  if (n > 0) await batch.commit();
+
+  for (const h of rows) {
+    let stored: HealthStored;
+    try {
+      stored = await healthToStored(h, uid);
+    } catch (e) {
+      console.warn(
+        "[cloudSync] healthToStored 실패",
+        h.id,
+        h.recordDate,
+        e,
+      );
+      failed.push({
+        kind: "health",
+        recordId: h.id,
+        recordDate: h.recordDate,
+        error: formatCloudSyncItemError(e),
+      });
+      continue;
+    }
+    pending.push({ health: h, stored });
+    if (pending.length >= BATCH) await flush();
+  }
+  await flush();
 }
 
 async function pushPublicSettings(uid: string, s: AppSettings): Promise<void> {
@@ -971,6 +1073,81 @@ export function formatCloudSyncError(e: unknown): string {
   return base;
 }
 
+/**
+ * 한 끼니/건강 기록이 클라우드로 올라가지 못한 경우의 상세 정보.
+ * 한 건의 실패가 전체 동기화를 막지 않도록 push 루프 안에서 모은다.
+ */
+export type CloudSyncFailedItem =
+  | {
+      kind: "meal";
+      mealId: string;
+      date: string;
+      slot: Meal["slot"];
+      error: string;
+    }
+  | {
+      kind: "health";
+      recordId: string;
+      recordDate: string;
+      error: string;
+    };
+
+export type CloudSyncIssueState = {
+  /** 동기화는 일부 성공했지만 개별 항목이 실패한 경우 — 또는 sync 자체가 throw 한 경우 */
+  failedItems: CloudSyncFailedItem[];
+  /** sync 자체가 throw 한 마지막 메시지 (네트워크·권한 등) */
+  lastError?: string;
+  /** 동기화 시도 종료 시각 (Date.now()) */
+  at: number;
+};
+
+const CLOUD_SYNC_ISSUE_EVENT = "muklog:cloud-sync-issue";
+let lastCloudSyncIssueState: CloudSyncIssueState | null = null;
+
+function emitCloudSyncIssueState(next: CloudSyncIssueState): void {
+  lastCloudSyncIssueState = next;
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(
+      new CustomEvent<CloudSyncIssueState>(CLOUD_SYNC_ISSUE_EVENT, { detail: next }),
+    );
+  } catch (e) {
+    console.warn("[cloudSync] issue 이벤트 디스패치 실패", e);
+  }
+}
+
+export function getLastCloudSyncIssueState(): CloudSyncIssueState | null {
+  return lastCloudSyncIssueState;
+}
+
+export function subscribeCloudSyncIssues(
+  cb: (state: CloudSyncIssueState) => void,
+): () => void {
+  if (typeof window === "undefined") return () => {};
+  const handler = (e: Event) => {
+    const detail = (e as CustomEvent<CloudSyncIssueState>).detail;
+    if (detail) cb(detail);
+  };
+  window.addEventListener(CLOUD_SYNC_ISSUE_EVENT, handler);
+  return () => window.removeEventListener(CLOUD_SYNC_ISSUE_EVENT, handler);
+}
+
+/** 한 끼니 실패 메시지를 사람이 읽기 좋게 — 카메라 직후 빈 파일, Storage 권한 등 */
+export function formatCloudSyncItemError(err: unknown): string {
+  const base = err instanceof Error ? err.message : String(err ?? "");
+  const code = (err as { code?: string })?.code;
+  if (code === "storage/unauthorized") {
+    return `${base || "Storage 권한 거부"} — 로그인 상태를 확인하고 새로고침 후 다시 시도해 주세요.`;
+  }
+  if (code === "storage/retry-limit-exceeded" || /network error|fetch failed/i.test(base)) {
+    return `${base || "네트워크 오류"} — 잠시 후 다시 시도하면 보통 풀립니다.`;
+  }
+  if (/사진이 아직 준비되지 않았거나|이미지를 JPEG/i.test(base)) {
+    return `${base} — 같은 사진을 앨범에서 다시 선택하거나, 한 번 더 촬영해 보세요.`;
+  }
+  return base || "알 수 없는 오류";
+}
+
 let cloudSyncMutationDepth = 0;
 
 /** 동기화 트랜잭션이 로컬 DB를 쓰는 동안 true — 자동 동기화 재호출 방지 */
@@ -983,9 +1160,14 @@ export function isCloudSyncMutation(): boolean {
  * 식단·건강 사진 본문은 Firebase Storage, Firestore 에는 메타·Storage 경로만 둡니다.
  * 과거 레코드는 pull 시 Base64 만 있는 문서도 그대로 읽습니다.
  * Gemini 키는 users/{uid}/config/private 에만 저장됩니다.
+ *
+ * 한 끼니/건강기록의 Storage 업로드 실패는 전체 동기화를 막지 않고
+ * `CloudSyncIssueState` 로 모아 UI 가 안내할 수 있게 이벤트로 알린다.
  */
 export async function syncCloudWithLocal(): Promise<void> {
   cloudSyncMutationDepth++;
+  const failedItems: CloudSyncFailedItem[] = [];
+  let topLevelError: string | undefined;
   try {
     const auth = getFirebaseAuth();
     const uid = auth.currentUser?.uid;
@@ -1155,13 +1337,26 @@ export async function syncCloudWithLocal(): Promise<void> {
     await deleteRemoteHealthNotIn(uid, new Set(mergedHealth.map((x) => x.id)));
 
     await pushMembers(uid, mergedMembers);
-    await pushMeals(uid, mergedMeals);
-    await pushHealth(uid, mergedHealth);
+    await pushMeals(uid, mergedMeals, failedItems);
+    await pushHealth(uid, mergedHealth, failedItems);
 
     const latestLocal = await getSettings();
     await pushPublicSettings(uid, latestLocal);
     await pushPrivateSettings(uid, latestLocal);
+  } catch (e) {
+    topLevelError = formatCloudSyncError(e);
+    throw e;
   } finally {
     cloudSyncMutationDepth--;
+    if (failedItems.length > 0 || topLevelError) {
+      emitCloudSyncIssueState({
+        failedItems,
+        lastError: topLevelError,
+        at: Date.now(),
+      });
+    } else if (lastCloudSyncIssueState) {
+      // 성공적으로 한 차례 끝나면 이전 경고 해제
+      emitCloudSyncIssueState({ failedItems: [], at: Date.now() });
+    }
   }
 }

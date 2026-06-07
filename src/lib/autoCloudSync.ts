@@ -20,9 +20,30 @@ async function runSyncOnce(): Promise<void> {
   try {
     await syncCloudWithLocal();
   } catch (e) {
+    // syncCloudWithLocal 내부 finally 에서 issue 이벤트를 이미 디스패치하므로
+    // 여기서는 콘솔 경고만 남긴다(silent fail 방지는 UI 측 배너가 담당).
     console.warn("[autoCloudSync]", e);
   } finally {
     running = false;
+  }
+}
+
+/** 사용자가 배너에서 «다시 시도» 를 눌렀을 때 호출 — 동기화 한 번 강제 실행 */
+export async function runCloudSyncNow(): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    if (!getFirebaseAuth().currentUser) return;
+  } catch {
+    return;
+  }
+  if (running) {
+    runAgain = true;
+    return;
+  }
+  await runSyncOnce();
+  while (runAgain) {
+    runAgain = false;
+    await runSyncOnce();
   }
 }
 

@@ -10,6 +10,7 @@ import { MealItemCard, MealItemCardsCarousel, MealItemEditDialog } from "../comp
 import MealSocialBlock from "../components/MealSocialBlock";
 import MealMultiPhotoSummaryChips from "../components/MealMultiPhotoSummaryChips";
 import FeedIntroBanner from "../components/FeedIntroBanner";
+import CloudSyncIssueBanner from "../components/CloudSyncIssueBanner";
 import { dateKey, formatKoDate, suggestMealSlotForNow } from "../lib/utils";
 import { deleteMealItem, saveMealItemPatch } from "../lib/mealItems";
 import { shareMealCardFromElement } from "../lib/shareMealCardImage";
@@ -311,6 +312,7 @@ export default function FeedPage() {
       </header>
 
       <FeedIntroBanner />
+      <CloudSyncIssueBanner />
 
       {firebaseReady && !user && !authLoading && (
         <p className="rounded-lg border border-slate-800 bg-slate-900/30 px-3 py-2 text-center text-[11px] text-slate-400">
