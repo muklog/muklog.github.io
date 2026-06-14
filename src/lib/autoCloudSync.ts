@@ -1,19 +1,73 @@
 import { getFirebaseAuth } from "./firebaseApp";
-import { isCloudSyncMutation, syncCloudWithLocal } from "./cloudSync";
+import {
+  getLastCloudSyncIssueState,
+  isCloudSyncMutation,
+  syncCloudWithLocal,
+} from "./cloudSync";
 
 const DEBOUNCE_MS = 1500;
+
+/**
+ * 동기화가 실패(개별 사진 업로드 실패 또는 sync 자체 throw)하면, 사용자가 아무것도
+ * 하지 않아도 스스로 복구되도록 지수 백오프로 자동 재시도한다. 한 번이라도 깨끗하게
+ * 끝나면 백오프는 초기화된다. 새 변경(사진 추가 등)·탭 복귀·온라인 복귀 시에도 초기화.
+ */
+const RETRY_DELAYS_MS = [3_000, 8_000, 20_000, 45_000, 90_000];
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let runAgain = false;
 let listenersStarted = false;
 
-async function runSyncOnce(): Promise<void> {
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryAttempt = 0;
+
+function isAuthed(): boolean {
   try {
-    if (!getFirebaseAuth().currentUser) return;
+    return !!getFirebaseAuth().currentUser;
   } catch {
+    return false;
+  }
+}
+
+function clearRetry(): void {
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+  retryAttempt = 0;
+}
+
+/** 직전 동기화 사이클에서 미해결 실패가 남았으면 백오프로 다음 시도를 예약한다. */
+function scheduleRetryIfNeeded(cycleStartedAt: number): void {
+  if (typeof window === "undefined") return;
+  const issue = getLastCloudSyncIssueState();
+  const hadIssues =
+    !!issue &&
+    issue.at >= cycleStartedAt &&
+    (issue.failedItems.length > 0 || !!issue.lastError);
+
+  if (!hadIssues) {
+    // 깨끗하게 끝남 — 백오프 초기화
+    clearRetry();
     return;
   }
+  if (retryAttempt >= RETRY_DELAYS_MS.length) {
+    // 자동 재시도 소진 — 배너의 수동 «다시 시도» 와 online/visible 복귀에 맡긴다.
+    return;
+  }
+  const delay = RETRY_DELAYS_MS[retryAttempt]!;
+  retryAttempt++;
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    if (!isAuthed()) return;
+    void runSyncCycle();
+  }, delay);
+}
+
+async function runSyncOnce(): Promise<void> {
+  if (!isAuthed()) return;
   if (isCloudSyncMutation()) return;
 
   running = true;
@@ -21,44 +75,40 @@ async function runSyncOnce(): Promise<void> {
     await syncCloudWithLocal();
   } catch (e) {
     // syncCloudWithLocal 내부 finally 에서 issue 이벤트를 이미 디스패치하므로
-    // 여기서는 콘솔 경고만 남긴다(silent fail 방지는 UI 측 배너가 담당).
+    // 여기서는 콘솔 경고만 남긴다(silent fail 방지는 UI 측 배너 + 자동 재시도가 담당).
     console.warn("[autoCloudSync]", e);
   } finally {
     running = false;
   }
 }
 
-/** 사용자가 배너에서 «다시 시도» 를 눌렀을 때 호출 — 동기화 한 번 강제 실행 */
-export async function runCloudSyncNow(): Promise<void> {
-  if (typeof window === "undefined") return;
-  try {
-    if (!getFirebaseAuth().currentUser) return;
-  } catch {
-    return;
-  }
+/**
+ * 한 사이클: 진행 중이면 후속 실행만 예약하고, 아니면 끝까지 돌린 뒤 남은 실패가
+ * 있으면 자동 재시도를 예약한다.
+ */
+async function runSyncCycle(): Promise<void> {
   if (running) {
     runAgain = true;
     return;
   }
+  const cycleStartedAt = Date.now();
   await runSyncOnce();
   while (runAgain) {
     runAgain = false;
     await runSyncOnce();
   }
+  scheduleRetryIfNeeded(cycleStartedAt);
+}
+
+/** 사용자가 배너에서 «다시 시도» 를 눌렀을 때 호출 — 백오프 초기화 후 즉시 한 사이클 */
+export async function runCloudSyncNow(): Promise<void> {
+  if (typeof window === "undefined" || !isAuthed()) return;
+  clearRetry();
+  await runSyncCycle();
 }
 
 function kickSync(): void {
-  void (async () => {
-    if (running) {
-      runAgain = true;
-      return;
-    }
-    await runSyncOnce();
-    while (runAgain) {
-      runAgain = false;
-      await runSyncOnce();
-    }
-  })();
+  void runSyncCycle();
 }
 
 /**
@@ -72,15 +122,17 @@ function kickSync(): void {
  * sync 가 진행 중이어도 후속 실행이 보장되도록 항상 kickSync 까지 호출한다.
  */
 export function requestAutoCloudSync(options?: { immediate?: boolean }): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (!getFirebaseAuth().currentUser) return;
-  } catch {
-    return;
+  if (typeof window === "undefined" || !isAuthed()) return;
+
+  // 새 사용자 변경·복귀가 들어오면 백오프 스케줄을 초기화해 즉시 다시 시도한다.
+  // (오래된 백오프 대기 때문에 방금 추가한 사진 업로드가 늦어지는 것을 막는다.)
+  retryAttempt = 0;
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
   }
 
   // 진행 중인 sync 가 있다면 즉시 후속 실행을 예약해 둔다(immediate 여부 무관).
-  // kickSync 안에서도 동일한 처리를 하지만, 호출 자체를 생략하지 않도록 보장한다.
   if (isCloudSyncMutation()) {
     runAgain = true;
   }

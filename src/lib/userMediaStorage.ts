@@ -17,6 +17,34 @@ async function storageWithAuth(): Promise<FirebaseStorage> {
   return getFirebaseStorage();
 }
 
+/** 권한 오류가 아닌 일시적 실패(네트워크 깜빡임 등)는 짧게 재시도. 빈 blob 은 즉시 거부. */
+const UPLOAD_RETRY_DELAYS_MS = [0, 400, 1200];
+
+async function uploadBytesResilient(
+  storageRef: ReturnType<typeof ref>,
+  blob: Blob,
+  meta: { contentType: string },
+): Promise<void> {
+  if (!blob || blob.size === 0) {
+    throw new Error("업로드할 이미지 데이터가 비어 있습니다.");
+  }
+  let lastErr: unknown;
+  for (let i = 0; i < UPLOAD_RETRY_DELAYS_MS.length; i++) {
+    const wait = UPLOAD_RETRY_DELAYS_MS[i]!;
+    if (wait > 0) await new Promise<void>((r) => setTimeout(r, wait));
+    try {
+      await uploadBytes(storageRef, blob, meta);
+      return;
+    } catch (e) {
+      lastErr = e;
+      const code = (e as { code?: string })?.code;
+      // 권한·인증 오류는 재시도해도 풀리지 않으므로 즉시 중단(상위에서 안내·재인증).
+      if (code === "storage/unauthorized" || code === "storage/unauthenticated") break;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr ?? "이미지 업로드 실패"));
+}
+
 export function mealItemPhotoRef(uid: string, mealId: string, itemId: string): string {
   return `users/${uid}/media/meals/${mealId}/items/${itemId}/photo.jpg`;
 }
@@ -44,8 +72,8 @@ export async function uploadMealItemImages(
   const photoStoragePath = mealItemPhotoRef(uid, mealId, itemId);
   const thumbStoragePath = mealItemThumbRef(uid, mealId, itemId);
   await Promise.all([
-    uploadBytes(ref(st, photoStoragePath), photoJpeg, META.photo),
-    uploadBytes(ref(st, thumbStoragePath), thumbJpeg, META.thumb),
+    uploadBytesResilient(ref(st, photoStoragePath), photoJpeg, META.photo),
+    uploadBytesResilient(ref(st, thumbStoragePath), thumbJpeg, META.thumb),
   ]);
   return { photoStoragePath, thumbStoragePath };
 }
@@ -60,8 +88,8 @@ export async function uploadHealthImages(
   const photoStoragePath = healthPhotoRef(uid, recordId);
   const thumbStoragePath = healthThumbRef(uid, recordId);
   await Promise.all([
-    uploadBytes(ref(st, photoStoragePath), photoJpeg, META.photo),
-    uploadBytes(ref(st, thumbStoragePath), thumbJpeg, META.thumb),
+    uploadBytesResilient(ref(st, photoStoragePath), photoJpeg, META.photo),
+    uploadBytesResilient(ref(st, thumbStoragePath), thumbJpeg, META.thumb),
   ]);
   return { photoStoragePath, thumbStoragePath };
 }

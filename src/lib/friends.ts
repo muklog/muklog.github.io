@@ -1055,6 +1055,15 @@ export function subscribeFriendLatestMeals(
   const cache = new Map<string, { key: string; meal: Meal }>();
   let dateDocs: QueryDocumentSnapshot[] = [];
   let fallbackDocs: QueryDocumentSnapshot[] = [];
+  /**
+   * 두 구독 중 하나만 일시적으로 끊겨도(모바일 네트워크 깜빡임·토큰 갱신·탭 복귀 시
+   * 리스너 재시작 등) 친구 식단이 통째로 사라지면 안 된다. 따라서 «한 번이라도 정상
+   * 전달했는지»와 «각 구독의 에러 여부»를 추적해, 두 구독이 모두 실패했고 단 한 번도
+   * 데이터를 받지 못한 콜드 스타트 완전 실패일 때만 onErr 로 비우도록 한다.
+   */
+  let everEmitted = false;
+  let dateErrored = false;
+  let fallbackErrored = false;
 
   const emitMerged = async () => {
     try {
@@ -1072,23 +1081,32 @@ export function subscribeFriendLatestMeals(
         const tb = (b.updatedAt ?? b.createdAt ?? 0) | 0;
         return tb - ta;
       });
+      everEmitted = true;
       cb(decoded.slice(0, max));
     } catch (e) {
       console.error("[friends] latest meals snapshot decode", e);
-      onErr?.(e);
+      // 디코드 실패는 한 번이라도 정상 표시한 적이 있으면 화면을 비우지 않는다.
+      if (!everEmitted) onErr?.(e);
     }
+  };
+
+  /** 두 구독이 모두 실패했고, 한 번도 데이터를 못 받았을 때만 «빈 상태»로 신호한다. */
+  const reportFatalIfNeeded = (err: unknown) => {
+    if (dateErrored && fallbackErrored && !everEmitted) onErr?.(err);
   };
 
   const unsubDate = onSnapshot(
     byDateQ,
     { includeMetadataChanges: true },
     (snap) => {
+      dateErrored = false;
       dateDocs = snap.docs;
       void emitMerged();
     },
     (err) => {
       console.error("[friends] latest meals subscribe(byDate)", err);
-      onErr?.(err);
+      dateErrored = true;
+      reportFatalIfNeeded(err);
     },
   );
 
@@ -1096,12 +1114,14 @@ export function subscribeFriendLatestMeals(
     fallbackQ,
     { includeMetadataChanges: true },
     (snap) => {
+      fallbackErrored = false;
       fallbackDocs = snap.docs;
       void emitMerged();
     },
     (err) => {
       console.error("[friends] latest meals subscribe(fallback)", err);
-      onErr?.(err);
+      fallbackErrored = true;
+      reportFatalIfNeeded(err);
     },
   );
 

@@ -259,6 +259,9 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
         },
         () => {
           setFriendMealsByOwner((prev) => {
+            // 이미 받아둔 친구 식단이 있으면 일시적 오류로 비우지 않고 유지(last-known-good).
+            // 한 번도 데이터를 못 받은 경우에만 빈 상태로 두어 빈-상태 UI 가 뜨게 한다.
+            if (prev.has(s.ownerUid)) return prev;
             const next = new Map(prev);
             next.set(s.ownerUid, []);
             return next;
@@ -291,7 +294,8 @@ export function FeedStreamProvider({ children }: { children: ReactNode }) {
       myUid,
       MAX_MINE,
       (rows) => setMyRemoteMeals(rows),
-      () => setMyRemoteMeals([]),
+      // 일시 오류로 내 원격 폴백을 비우지 않는다 — 이미 받아둔 게 있으면 유지.
+      () => setMyRemoteMeals((prev) => (prev && prev.length > 0 ? prev : [])),
     );
     return () => unsub();
   }, [myUid, feedFirestoreLive]);
