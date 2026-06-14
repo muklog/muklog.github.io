@@ -1077,8 +1077,10 @@ export function subscribeFriendLatestMeals(
       const alive = new Set(docs.map((d) => d.id));
       for (const id of [...cache.keys()]) if (!alive.has(id)) cache.delete(id);
       decoded.sort((a, b) => {
-        const ta = (a.updatedAt ?? a.createdAt ?? 0) | 0;
-        const tb = (b.updatedAt ?? b.createdAt ?? 0) | 0;
+        // 주의: 밀리초 타임스탬프에 `| 0` 을 쓰면 32비트로 잘려 정렬이 깨진다
+        // (최신 식단이 상위 N 밖으로 밀려 피드에서 누락됨). 반드시 원래 숫자로 비교.
+        const ta = a.updatedAt ?? a.createdAt ?? 0;
+        const tb = b.updatedAt ?? b.createdAt ?? 0;
         return tb - ta;
       });
       everEmitted = true;
