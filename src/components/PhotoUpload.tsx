@@ -160,6 +160,18 @@ export default function PhotoUpload({
    */
   const captureProp = !preferCamera ? undefined : true;
 
+  /**
+   * 앨범(갤러리) 버튼 동작 — 삼성 인터넷 특이사항 회피.
+   * - 삼성 인터넷은 `accept="image/*"` 와일드카드면 선택창에 카메라를 끼워 넣는다.
+   *   명시적 이미지 MIME 목록으로 주면 카메라 없이 갤러리/파일로 바로 간다.
+   * - 삼성 인터넷 v29+ 는 `accept=image/* + multiple` 조합에서 갤러리 선택 후 input 이
+   *   멈추는(freeze) 버그가 있어, 삼성에서는 multiple 을 끈다(한 장씩 추가).
+   */
+  const galleryAccept = omitCapture
+    ? "image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/bmp"
+    : GALLERY_FILE_ACCEPT;
+  const galleryMultiple = omitCapture ? false : multipleGallery;
+
   /** 편집 후 압축·DB 반영이 간헐적으로 실패하는 기기용 짧은 재시도 */
   async function finishEditedSquare(squareJpegBlob: Blob) {
     let last: unknown;
@@ -278,7 +290,7 @@ export default function PhotoUpload({
 
   const btnClass = variant === "primary" ? "btn-primary" : "btn-secondary";
   const galleryAria =
-    multipleGallery === true ? "갤러리에서 선택 (여러 장 가능)" : "사진 선택·앨범에서 가져오기";
+    galleryMultiple === true ? "갤러리에서 선택 (여러 장 가능)" : "사진 선택·앨범에서 가져오기";
 
   const blocked = !!(disabled || busy);
   const editorFile = editorQueue[0];
@@ -347,8 +359,8 @@ export default function PhotoUpload({
         ref={galRef}
         id={galInputId}
         type="file"
-        accept={GALLERY_FILE_ACCEPT}
-        multiple={multipleGallery}
+        accept={galleryAccept}
+        multiple={galleryMultiple}
         disabled={blocked}
         className="sr-only"
         onPointerDown={() => clearInput(galRef.current)}
