@@ -153,8 +153,12 @@ export default function PhotoUpload({
     Math.max(960, squareCropExportSidePxProp ?? Math.min(Math.max(maxDim, 960), 2048)),
   );
 
-  /** 빈 capture(카메라 의도) — environment 는 일부 브라우저에서 갤러리만 뜸. 삼성 인터넷만 속성 생략. */
-  const captureProp = !preferCamera || omitCapture ? undefined : true;
+  /**
+   * 메인 버튼은 카메라 직행이 목적이므로 capture 를 켠다(삼성 인터넷 포함).
+   * 과거엔 삼성 인터넷의 빈-파일 이슈로 capture 를 생략했지만, 이제 빈-파일 재시도
+   * 로직(coerceFileToReadableImage)이 있어 카메라 직행을 우선한다. 앨범은 별도 버튼.
+   */
+  const captureProp = !preferCamera ? undefined : true;
 
   /** 편집 후 압축·DB 반영이 간헐적으로 실패하는 기기용 짧은 재시도 */
   async function finishEditedSquare(squareJpegBlob: Blob) {
@@ -311,7 +315,7 @@ export default function PhotoUpload({
           "flex flex-1 cursor-pointer items-center justify-center gap-2 py-3",
           blocked && "pointer-events-none opacity-55",
         )}
-        aria-label={omitCapture ? `${label}(카메라 포함 기기 선택)` : `${label}(촬영)`}
+        aria-label={`${label}(촬영)`}
       >
         {busy ? <Loader2 size={18} className="animate-spin" aria-hidden /> : <Camera size={18} aria-hidden />}
         {busy ? (busyLabel ? `처리 중… ${busyLabel}` : "처리 중…") : label}

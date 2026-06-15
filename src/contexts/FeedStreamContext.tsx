@@ -26,10 +26,16 @@ import { resolveDisplayName, resolveDisplayPhotoURL } from "../lib/identity";
 const FEED_FRIENDS_GATE_MS = 4200;
 
 /** 공유 문서의 ownerName 이 이메일·UID 같이 보이면 닉네임 로딩 전까지 노출하지 않음 */
+/** 기기 기본 프로필명 — 친구 화면에 그대로 노출하면 안 되는 값들 */
+function isGenericProfileName(name: string): boolean {
+  return name === "내 프로필" || name === "나";
+}
+
 function feedFriendDisplayName(share: Share, pub: PublicProfile | undefined): string {
   const fromPub = pub?.displayName?.trim();
-  if (fromPub) return fromPub;
+  if (fromPub && !isGenericProfileName(fromPub)) return fromPub;
   const raw = share.ownerName?.trim() ?? "";
+  if (isGenericProfileName(raw)) return "친구";
   if (raw.includes("@")) return "친구";
   if (/^[a-zA-Z0-9_-]{20,36}$/.test(raw)) return "친구";
   if (raw.length > 0) return raw;

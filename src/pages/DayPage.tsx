@@ -52,16 +52,28 @@ export default function DayPage() {
   const { id: userId, loading: userLoading } = usePrimaryUserIdState();
   const { user, firebaseReady } = useAuth();
 
+  const ownerUid = firebaseReady ? user?.uid : undefined;
+  // 동기화 후 meal.userId 가 로컬 프로필 id → Firebase uid 로 통합될 수 있어,
+  // 피드(FeedStreamContext)처럼 두 id 를 모두 조회해야 방금 추가한 사진이 곧바로 보인다.
   const meals = useLiveQuery(
-    async () =>
-      userId && date
-        ? (
-            await runDexie(() =>
-              db.meals.where("[userId+date]").equals([userId, date]).toArray(),
-            )
-          ).map(normalizeMeal)
-        : undefined,
-    [userId, date],
+    async () => {
+      if (!date) return undefined;
+      const ownerIds = [userId, ownerUid].filter(
+        (v): v is string => typeof v === "string" && v.length > 0,
+      );
+      if (ownerIds.length === 0) return undefined;
+      const lists = await Promise.all(
+        ownerIds.map((oid) =>
+          runDexie(() =>
+            db.meals.where("[userId+date]").equals([oid, date]).toArray(),
+          ),
+        ),
+      );
+      const byId = new Map<string, Meal>();
+      for (const row of lists.flat()) byId.set(row.id, normalizeMeal(row));
+      return [...byId.values()];
+    },
+    [userId, ownerUid, date],
   );
 
   const mealsBySlot = useMemo(() => {
@@ -120,7 +132,7 @@ export default function DayPage() {
             userId={userId}
             meal={mealsBySlot.get(slot)}
             apiKey={settings?.geminiApiKey}
-            ownerUid={firebaseReady ? user?.uid : undefined}
+            ownerUid={ownerUid}
           />
         ))}
     </div>

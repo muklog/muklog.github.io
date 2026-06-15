@@ -601,9 +601,11 @@ function pickPrimarySelfProfile(pool: User[], firebaseUid: string): User {
   const byRecency = [...pool].sort(
     (a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt),
   );
-  const custom = byRecency.find(
-    (u) => u.name?.trim() && u.name !== "내 프로필",
-  );
+  const custom =
+    byRecency.find((u) => u.name?.trim() && u.name !== "내 프로필") ??
+    byRecency.find(
+      (u) => u.avatarKind === "upload" || u.avatarKind === "preset",
+    );
   const base = custom ?? byRecency[0]!;
   const latest = Math.max(...pool.map((u) => u.updatedAt ?? u.createdAt));
   return {
@@ -627,7 +629,14 @@ function consolidateToFirebaseProfile(
   const healthUserIds = new Set(healthRows.map((h) => h.userId));
   const touchedIds = new Set([...mealUserIds, ...healthUserIds]);
 
-  let pool = members.filter((u) => touchedIds.has(u.id));
+  // 식단·건강을 가진 프로필 + 커스텀 닉네임/아바타를 가진 프로필을 모두 후보로 둔다.
+  // 커스텀 프로필 행의 id 가 (과거 id 불일치로) 식단 userId 와 어긋나면 풀에서 빠져
+  // "내 프로필" 스텁이 primary 로 뽑히고, 결국 사용자가 정한 닉네임/아바타가 사라진다.
+  const hasCustomIdentity = (u: User) =>
+    (!!u.name?.trim() && u.name !== "내 프로필") ||
+    u.avatarKind === "upload" ||
+    u.avatarKind === "preset";
+  let pool = members.filter((u) => touchedIds.has(u.id) || hasCustomIdentity(u));
   if (pool.length === 0) pool = [...members];
 
   if (pool.length === 0) {
