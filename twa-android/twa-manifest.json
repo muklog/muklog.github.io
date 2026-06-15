@@ -20,8 +20,8 @@
     "path": "./android.keystore",
     "alias": "muklog"
   },
-  "appVersionName": "0.1.19",
-  "appVersionCode": 40,
+  "appVersionName": "0.1.20",
+  "appVersionCode": 42,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://muklog.github.io/manifest.webmanifest",
@@ -39,5 +39,5 @@
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
   "displayOverride": [],
-  "appVersion": "0.1.18"
+  "appVersion": "0.1.19"
 }

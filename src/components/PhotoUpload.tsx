@@ -161,15 +161,13 @@ export default function PhotoUpload({
   const captureProp = !preferCamera ? undefined : true;
 
   /**
-   * 앨범(갤러리) 버튼 동작 — 삼성 인터넷 특이사항 회피.
-   * - 삼성 인터넷은 `accept="image/*"` 와일드카드면 선택창에 카메라를 끼워 넣는다.
-   *   명시적 이미지 MIME 목록으로 주면 카메라 없이 갤러리/파일로 바로 간다.
-   * - 삼성 인터넷 v29+ 는 `accept=image/* + multiple` 조합에서 갤러리 선택 후 input 이
-   *   멈추는(freeze) 버그가 있어, 삼성에서는 multiple 을 끈다(한 장씩 추가).
+   * 앨범(갤러리) 버튼 — 삼성 인터넷에서 어떤 앱(갤러리/파일/카메라)으로 열지는
+   * OS 가 정하며 웹에서 강제로 갤러리만 띄우거나 카메라를 제거할 수 없다.
+   * (명시적 MIME 목록은 캠코더 옵션을 추가하는 역효과가 있어 `image/*` 를 유지)
+   * 다만 삼성 인터넷 v29+ 는 `image/* + multiple` 조합에서 갤러리 선택 후 input 이
+   * 멈추는(freeze) 버그가 있어, 삼성에서는 multiple 을 끈다(한 장씩 추가).
    */
-  const galleryAccept = omitCapture
-    ? "image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/bmp"
-    : GALLERY_FILE_ACCEPT;
+  const galleryAccept = GALLERY_FILE_ACCEPT;
   const galleryMultiple = omitCapture ? false : multipleGallery;
 
   /** 편집 후 압축·DB 반영이 간헐적으로 실패하는 기기용 짧은 재시도 */
