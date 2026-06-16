@@ -10,14 +10,16 @@ export default function FeedIntroBanner() {
         <Sparkles size={12} className="inline" /> 먹로그
       </p>
       <p className="mt-1 text-sm font-semibold leading-snug text-slate-100">
-        나의 한 끼를 기록하고, 친구와 서로 응원하는 식단 다이어리
+        나의 한 끼를 기록하고,
+        <br />
+        친구와 서로 공유하는 식단 다이어리
       </p>
       <p className="mt-2 text-[11px] text-slate-500">
         <a
-          href="mailto:gogojeje1022@gmail.com?subject=%EC%95%88%EB%93%9C%EB%A1%9C%EC%9D%B4%EB%93%9C%20%EC%95%B1%20%ED%85%8C%EC%8A%A4%ED%84%B0%20%EC%8B%A0%EC%B2%AD"
+          href="mailto:gogojeje1022@gmail.com?subject=%EB%A8%B9%EB%A1%9C%EA%B7%B8%20%EB%AC%B8%EC%9D%98"
           className="font-medium text-brand-400 underline-offset-2 hover:underline"
         >
-          안드로이드 앱 테스터 신청
+          문의 이메일 보내기
         </a>
       </p>
     </aside>
