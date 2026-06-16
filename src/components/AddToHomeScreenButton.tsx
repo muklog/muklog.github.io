@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Home, Info, Plus, X } from "lucide-react";
+import { Download, Home, Info, Plus, X } from "lucide-react";
 import { cls } from "../lib/utils";
+
+/** 구글 플레이 스토어 — 먹로그 안드로이드(TWA) 앱 */
+const PLAY_STORE_URL =
+  "https://play.google.com/store/apps/details?id=io.github.muklog.app";
 
 function standaloneDisplay(): boolean {
   if (typeof window === "undefined") return false;
@@ -17,9 +21,10 @@ function iosLikely(): boolean {
   );
 }
 
-function samsungInternetLikely(): boolean {
+/** 안드로이드 — 플레이 스토어 앱 설치 유도가 의미 있는 환경 */
+function androidLikely(): boolean {
   if (typeof navigator === "undefined") return false;
-  return /SamsungBrowser/i.test(navigator.userAgent);
+  return /Android/i.test(navigator.userAgent);
 }
 
 /** 집+플러스 아이콘 — 피드 상단에서 웹 이용 안내(수동 추가) 유도 */
@@ -55,6 +60,26 @@ export default function AddToHomeScreenButton({ className }: { className?: strin
       >
         <Home size={14} className="shrink-0" /> 식단
       </Link>
+    );
+  }
+
+  // 안드로이드 웹: 플레이 스토어 앱 설치로 바로 유도(아이폰·데스크톱은 네이티브 앱이 없어 아래 안내 유지).
+  if (androidLikely()) {
+    return (
+      <a
+        href={PLAY_STORE_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cls(
+          "btn-secondary inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap py-2 pl-2.5 pr-2.5 text-sm sm:pl-3 sm:pr-3",
+          className,
+        )}
+        title="구글 플레이에서 앱 설치"
+        aria-label="앱 설치"
+      >
+        <Download size={16} className="shrink-0" />
+        <span className="max-[359px]:sr-only">앱 설치</span>
+      </a>
     );
   }
 
@@ -104,37 +129,39 @@ export default function AddToHomeScreenButton({ className }: { className?: strin
                 <p className="flex gap-2 rounded-lg border border-brand-500/25 bg-brand-500/8 px-3 py-2.5 text-xs text-brand-100/95">
                   <Info size={16} className="mt-0.5 shrink-0 text-brand-400" aria-hidden />
                   <span>
-                    정식 앱은 <strong className="text-slate-100">구글 플레이 스토어</strong>에서 받는 방향으로 안내할
-                    예정이에요. 지금은 웹으로 이용 중이시라면, 아래 순서대로{" "}
-                    <strong className="text-slate-100">브라우저에서 직접</strong> 홈 화면에 추가해 주세요. (이
-                    화면에서 자동 설치를 띄우지는 않아요.)
+                    <strong className="text-slate-100">안드로이드</strong>는 구글 플레이에서{" "}
+                    <strong className="text-slate-100">먹로그</strong> 앱을 바로 설치할 수 있어요. 아이폰·PC에서 웹으로
+                    쓰고 계시면, 아래 순서대로 <strong className="text-slate-100">브라우저에서 직접</strong> 홈 화면에
+                    추가해 주세요.
                   </span>
                 </p>
+                <a
+                  href={PLAY_STORE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-primary inline-flex w-full items-center justify-center gap-1.5 py-2.5 text-sm"
+                >
+                  <Download size={16} className="shrink-0" /> 구글 플레이에서 앱 설치 (안드로이드)
+                </a>
                 <p>
-                  <strong className="text-slate-100">Android·PC (크롬·웨일·삼성 인터넷 등):</strong> 메뉴에서{" "}
-                  <strong className="text-slate-100">앱 설치</strong> 또는{" "}
-                  <strong className="text-slate-100">홈 화면에 추가</strong>를 찾아 진행해 주세요.
+                  <strong className="text-slate-100">PC (크롬·엣지·웨일 등):</strong> 아래{" "}
+                  <strong className="text-slate-100">1. 크롬·엣지</strong> 순서대로 진행해 주세요.
                 </p>
                 <p>
                   <strong className="text-slate-100">iPhone·iPad (사파리):</strong> 아래{" "}
-                  <strong className="text-slate-100">3. 사파리</strong> 순서대로 추가해 주세요. 아이폰 크롬도 보통
+                  <strong className="text-slate-100">2. 사파리</strong> 순서대로 추가해 주세요. 아이폰 크롬도 보통
                   비슷합니다.
                 </p>
-                {samsungInternetLikely() ? (
-                  <p className="rounded-lg border border-brand-500/25 bg-brand-500/5 px-3 py-2 text-xs text-brand-100/95">
-                    지금 브라우저: <strong>2. 삼성 인터넷</strong>
-                  </p>
-                ) : null}
                 {iosLikely() ? (
                   <p className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-amber-100/95">
-                    지금 기기: <strong>3. 사파리</strong>
+                    지금 기기: <strong>2. 사파리</strong>
                   </p>
                 ) : null}
               </div>
 
               <div className="mt-4 space-y-4 border-t border-slate-800 pt-4">
                 <section>
-                  <h3 className="mb-2 text-sm font-semibold text-slate-100">1. 크롬 (Android·Windows 등)</h3>
+                  <h3 className="mb-2 text-sm font-semibold text-slate-100">1. 크롬·엣지 (PC)</h3>
                   <ol className="list-decimal space-y-1.5 pl-4 text-sm text-slate-300">
                     <li>
                       주소창 오른쪽 <strong className="text-slate-100">설치</strong> 아이콘이 있으면 누르고, 없으면{" "}
@@ -147,30 +174,12 @@ export default function AddToHomeScreenButton({ className }: { className?: strin
                       보세요.
                     </li>
                     <li>
-                      안내에 따라 마친 뒤, 홈 화면의 <strong className="text-slate-100">새 아이콘</strong>으로
-                      실행해 보세요.
+                      안내에 따라 마친 뒤, <strong className="text-slate-100">새 아이콘</strong>으로 실행해 보세요.
                     </li>
                   </ol>
                 </section>
                 <section>
-                  <h3 className="mb-2 text-sm font-semibold text-slate-100">2. 삼성 인터넷</h3>
-                  <ol className="list-decimal space-y-1.5 pl-4 text-sm text-slate-300">
-                    <li>
-                      <strong className="text-slate-100">메뉴</strong>(하단 <strong className="text-slate-100">⋮</strong>·
-                      ≡)를 누릅니다.
-                    </li>
-                    <li>
-                      <strong className="text-slate-100">페이지 추가</strong> /{" "}
-                      <strong className="text-slate-100">홈 화면에 바로가기</strong> /{" "}
-                      <strong className="text-slate-100">홈 화면에 추가</strong> 중 표시되는 항목을 누릅니다.
-                    </li>
-                    <li>
-                      <strong className="text-slate-100">추가</strong>로 완료합니다.
-                    </li>
-                  </ol>
-                </section>
-                <section>
-                  <h3 className="mb-2 text-sm font-semibold text-slate-100">3. 사파리 (iPhone·iPad)</h3>
+                  <h3 className="mb-2 text-sm font-semibold text-slate-100">2. 사파리 (iPhone·iPad)</h3>
                   <ol className="list-decimal space-y-1.5 pl-4 text-sm text-slate-300">
                     <li>
                       하단 <strong className="text-slate-100">공유</strong>
