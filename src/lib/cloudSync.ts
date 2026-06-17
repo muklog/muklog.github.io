@@ -193,6 +193,10 @@ async function itemStoredToItem(
 
   /** 한쪽 파일만 깨져도 다른 쪽·Base64 폴백을 쓰려고 경로별로 따로 받는다. */
   if (photoStoragePath || thumbStoragePath) {
+    // 로컬에도 Storage 경로를 남겨 두면, 다음 동기화에서 같은 이미지를 다시 업로드하지
+    // 않고 메타만 갱신할 수 있다(분석 done 등 메타-only 변경의 전파가 빠르고 안정적).
+    if (photoStoragePath) item.photoStoragePath = photoStoragePath;
+    if (thumbStoragePath) item.thumbStoragePath = thumbStoragePath;
     try {
       if (photoStoragePath) item.photo = await blobFromStoragePath(photoStoragePath);
     } catch (e) {
@@ -755,6 +759,18 @@ async function mealToStored(m: Meal, ownerFirebaseUid: string): Promise<MealStor
   const stored: MealItemStored[] = [];
   for (const it of cloudItems) {
     const meta = toItemMeta(it);
+    // 이미 Storage 에 올라간 이미지는 매 동기화마다 다시 올리지 않는다.
+    // 재업로드는 느릴 뿐 아니라, 실패하면 분석 'done' 같은 메타-only 변경까지 막혀
+    // 친구 화면에 'analyzing' 이 계속 남는 원인이 된다. 경로가 둘 다 있으면 메타만 갱신.
+    if (it.photoStoragePath && it.thumbStoragePath) {
+      stored.push({
+        ...meta,
+        photoStoragePath: it.photoStoragePath,
+        thumbStoragePath: it.thumbStoragePath,
+        photoMimeType: "image/jpeg",
+      });
+      continue;
+    }
     const source = it.photo?.size ? it.photo : it.thumbnail?.size ? it.thumbnail : null;
     if (!source) {
       if (it.photoStoragePath || it.thumbStoragePath) {

@@ -211,7 +211,9 @@ export function MealItemCard({
             사진 없음
           </div>
         )}
-        {showPhotoAnalyzingOverlay && item.analysisStatus === "analyzing" && (
+        {showPhotoAnalyzingOverlay &&
+          item.analysisStatus === "analyzing" &&
+          !mealItemHasSyncedAnalysisPayload(item) && (
           <div
             className="absolute inset-0 z-[15] flex flex-col items-center justify-center gap-2 bg-slate-950/60 backdrop-blur-[2px]"
             aria-busy

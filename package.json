@@ -1,7 +1,7 @@
 {
   "name": "muklog",
   "private": true,
-  "version": "0.1.21",
+  "version": "0.1.22",
   "type": "module",
   "description": "달력·식단·AI 분석과 친구 피드 — 한 기기에서는 내 프로필로 기록하는 먹로그 웹앱",
   "scripts": {
