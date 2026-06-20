@@ -11,6 +11,7 @@ import {
   runDexie,
   uid,
 } from "../lib/db";
+import { userFacingStorageErrorMessage } from "../lib/idbRetry";
 import { requestAutoCloudSync } from "../lib/autoCloudSync";
 import { analyzeMealImage } from "../lib/ai";
 import { shareMealCardFromElement } from "../lib/shareMealCardImage";
@@ -205,56 +206,68 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
         const row = await db.meals.get(meal.id);
         if (row) return normalizeMeal(row);
       }
-      const rows = await db.meals
-        .where("[userId+date]")
-        .equals([userId, date])
-        .filter((r) => r.slot === slot)
-        .toArray();
-      const row = rows[0];
-      return row ? normalizeMeal(row) : undefined;
+      const ownerIds = [userId, ownerUid].filter(
+        (v): v is string => typeof v === "string" && v.length > 0,
+      );
+      for (const oid of [...new Set(ownerIds)]) {
+        const rows = await db.meals
+          .where("[userId+date]")
+          .equals([oid, date])
+          .filter((r) => r.slot === slot)
+          .toArray();
+        const row = rows[0];
+        if (row) return normalizeMeal(row);
+      }
+      return undefined;
     });
   }
 
   async function addItemWithPhoto(photo: Blob, thumbnail: Blob) {
-    const base = await mealRowForSlot();
-    const currentItems = base?.items ?? [];
-    if (currentItems.length >= MAX_MEAL_ITEMS) {
-      throw new Error(`한 끼니에는 사진을 최대 ${MAX_MEAL_ITEMS}장까지 올릴 수 있어요.`);
+    if (!photo?.size || !thumbnail?.size) {
+      throw new Error("사진 데이터가 비어 있습니다. 다시 촬영하거나 앨범에서 선택해 주세요.");
     }
-    const now = Date.now();
-    const itemId = uid();
-    const newItem: MealItem = {
-      id: itemId,
-      photo,
-      thumbnail,
-      analysisStatus: apiKey ? "analyzing" : "skipped",
-      createdAt: now,
-      updatedAt: now,
-    };
-    const mealId = base?.id ?? uid();
-    const nextMeal: Meal = base
-      ? { ...base, items: [...currentItems, newItem], updatedAt: now }
-      : {
-          id: mealId,
-          userId,
-          date,
-          slot,
-          items: [newItem],
-          createdAt: now,
-          updatedAt: now,
-        };
-    await runDexie(() => db.meals.put(nextMeal));
-    afterUserDataMutation();
-    // 사진 추가 직후에는 친구 피드/친구 일자 화면 반영을 우선한다.
-    requestAutoCloudSync({ immediate: true });
-    setScrollCarouselToItemId(itemId);
+    try {
+      const base = await mealRowForSlot();
+      const currentItems = base?.items ?? [];
+      if (currentItems.length >= MAX_MEAL_ITEMS) {
+        throw new Error(`한 끼니에는 사진을 최대 ${MAX_MEAL_ITEMS}장까지 올릴 수 있어요.`);
+      }
+      const now = Date.now();
+      const itemId = uid();
+      const newItem: MealItem = {
+        id: itemId,
+        photo,
+        thumbnail,
+        analysisStatus: apiKey ? "analyzing" : "skipped",
+        createdAt: now,
+        updatedAt: now,
+      };
+      const mealId = base?.id ?? uid();
+      const nextMeal: Meal = base
+        ? { ...base, items: [...currentItems, newItem], updatedAt: now }
+        : {
+            id: mealId,
+            userId,
+            date,
+            slot,
+            items: [newItem],
+            createdAt: now,
+            updatedAt: now,
+          };
+      await runDexie(() => db.meals.put(nextMeal));
+      afterUserDataMutation();
+      requestAutoCloudSync({ immediate: true });
+      setScrollCarouselToItemId(itemId);
 
-    if (apiKey) {
-      const mid = nextMeal.id;
-      analysisTailRef.current = analysisTailRef.current
-        .then(() => runAnalysis(mid, itemId, photo, apiKey))
-        .catch(() => {});
-      void analysisTailRef.current;
+      if (apiKey) {
+        const mid = nextMeal.id;
+        analysisTailRef.current = analysisTailRef.current
+          .then(() => runAnalysis(mid, itemId, photo, apiKey))
+          .catch(() => {});
+        void analysisTailRef.current;
+      }
+    } catch (e) {
+      throw new Error(userFacingStorageErrorMessage(e));
     }
   }
 

@@ -191,7 +191,7 @@ export function MealItemCard({
         ref={(el) => {
           if (shareCaptureRef) shareCaptureRef.current = el;
         }}
-        className="space-y-2"
+        className="share-capture-root space-y-2"
       >
       <div
         ref={wrapRef}
@@ -444,11 +444,11 @@ function NutritionMacroBars({ nutrition }: { nutrition: NonNullable<MealItem["nu
   const total = values.reduce((s, row) => s + row.g, 0);
 
   return (
-    <div className="space-y-1.5" role="group" aria-label="영양소 비율 (그램 기준)">
+    <div className="space-y-1.5 share-capture-macro-bars" role="group" aria-label="영양소 비율 (그램 기준)">
       {values.map((row) => {
         const widthPct = total > 0 ? (row.g / total) * 100 : 0;
         return (
-          <div key={row.key} className="flex items-center gap-2">
+          <div key={row.key} className="flex items-center gap-2 share-capture-macro-row">
             <span className="w-[3.25rem] shrink-0 text-[10px] text-slate-400">{row.label}</span>
             <div className="relative h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-700/85">
               <div
@@ -501,7 +501,7 @@ export function ItemAnalysisBlock({
           <p className="min-w-0 flex-1 break-words text-sm font-medium leading-relaxed text-slate-100">
             {item.menuText ?? "—"}
           </p>
-          <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-2 py-1 text-xs font-bold text-amber-300">
+          <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-2 py-1 text-xs font-bold text-amber-300 share-capture-rating">
             {[1, 2, 3, 4, 5].map((i) => (
               <Star
                 key={i}
@@ -513,12 +513,12 @@ export function ItemAnalysisBlock({
                 )}
               />
             ))}
-            <span className="ml-0.5">{item.rating ?? "-"}</span>
+            <span className="share-capture-rating-text ml-0.5">{item.rating ?? "-"}</span>
           </span>
         </div>
         {item.aiComment && (
-          <p className="break-words text-xs leading-relaxed text-slate-400 whitespace-pre-wrap">
-            <Sparkles size={11} className="mb-0.5 mr-1 inline text-brand-400" />
+          <p className="share-capture-ai-comment break-words text-xs leading-relaxed text-slate-400 whitespace-pre-wrap">
+            <Sparkles size={11} className="share-capture-hide-in-export mb-0.5 mr-1 inline text-brand-400" />
             {item.aiComment}
           </p>
         )}
@@ -527,10 +527,13 @@ export function ItemAnalysisBlock({
             <NutritionMacroBars nutrition={item.nutrition} />
             {(item.nutrition.calories !== undefined ||
               (item.nutrition.healthTags?.length ?? 0) > 0) && (
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1.5 share-capture-nutrition-chips">
                 {item.nutrition.calories !== undefined && (
-                  <span className="chip bg-slate-700/60 text-slate-200">
-                    🔥 {item.nutrition.calories}kcal
+                  <span className="chip bg-slate-700/60 text-slate-200 share-capture-calorie-chip">
+                    <span className="share-capture-hide-in-export" aria-hidden>
+                      🔥{" "}
+                    </span>
+                    {item.nutrition.calories}kcal
                   </span>
                 )}
                 {item.nutrition.healthTags?.map((t) => (
@@ -543,7 +546,7 @@ export function ItemAnalysisBlock({
           </div>
         )}
         {!readOnly && (
-          <div className="flex items-center gap-2 pt-1 text-[11px] text-slate-500">
+          <div className="exclude-from-share-capture flex items-center gap-2 pt-1 text-[11px] text-slate-500">
             <span className="inline-flex shrink-0 items-center gap-1">
               {item.manuallyEdited ? (
                 <>

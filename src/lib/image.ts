@@ -337,8 +337,12 @@ export async function decodeToRotatedCanvas(
 /**
  * 회전·확대·패닝한 뒤 정사각형 한 장으로 내보냅니다.
  */
-export async function exportSquareCropJpeg(blob: Blob, opts: PhotoSquareCropOpts): Promise<Blob> {
-  const { canvas: rot, Rw, Rh } = await decodeToRotatedCanvas(blob, opts.quarterTurns);
+export async function exportSquareCropJpegFromRotatedCanvas(
+  rotCanvas: HTMLCanvasElement,
+  Rw: number,
+  Rh: number,
+  opts: Omit<PhotoSquareCropOpts, "quarterTurns">,
+): Promise<Blob> {
   const S = opts.outputSidePx;
   const ratio = S / opts.previewSidePx;
   const panXO = opts.panX * ratio;
@@ -349,8 +353,14 @@ export async function exportSquareCropJpeg(blob: Blob, opts: PhotoSquareCropOpts
   out.height = S;
   const ox = out.getContext("2d");
   if (!ox) throw new Error("canvas 2d 사용 불가");
-  drawSquareCoverCrop(ox, rot, Rw, Rh, S, panXO, panYO, opts.zoom);
+  drawSquareCoverCrop(ox, rotCanvas, Rw, Rh, S, panXO, panYO, opts.zoom);
   return canvasToBlobWithFallback(out, "image/jpeg", opts.jpegQuality ?? 0.92);
+}
+
+export async function exportSquareCropJpeg(blob: Blob, opts: PhotoSquareCropOpts): Promise<Blob> {
+  const { canvas: rot, Rw, Rh } = await decodeToRotatedCanvas(blob, opts.quarterTurns);
+  const { quarterTurns: _qt, ...rest } = opts;
+  return exportSquareCropJpegFromRotatedCanvas(rot, Rw, Rh, rest);
 }
 
 export async function makeThumbnail(file: Blob): Promise<Blob> {

@@ -5,7 +5,7 @@ import {
   clampPanForSquareCover,
   decodeImage,
   drawSquareCoverCrop,
-  exportSquareCropJpeg,
+  exportSquareCropJpegFromRotatedCanvas,
   rotatedSourceCanvas,
   squareCoverScaleK,
   type DecodedImage,
@@ -392,22 +392,6 @@ export default function PhotoEditDialog({
     const K = squareCoverScaleK(Rw, Rh, side, zoom);
     const clamped = clampPanForSquareCover(Rw, Rh, K, side, panForExportX, panForExportY);
 
-    let pixelBlob: Blob = file;
-    try {
-      const ab = await file.arrayBuffer();
-      if (ab.byteLength < 24) {
-        alert(
-          "사진 데이터가 비어 있거나 카메라가 아직 저장 중이에요.\n잠시 후 다시 확인을 눌러 주세요.",
-        );
-        return;
-      }
-      pixelBlob = new Blob([ab], {
-        type: file.type && file.type.length > 0 ? file.type : "image/jpeg",
-      });
-    } catch (e) {
-      console.warn("[PhotoEditDialog] 픽셀 스냅샷 실패, File 직접 사용", e);
-    }
-
     confirmLockRef.current = true;
     setBusyConfirm(true);
     let lastErr: unknown;
@@ -417,8 +401,7 @@ export default function PhotoEditDialog({
           if (attempt > 0) {
             await new Promise<void>((r) => setTimeout(r, 200 * attempt));
           }
-          const blobFile = await exportSquareCropJpeg(pixelBlob, {
-            quarterTurns,
+          const blobFile = await exportSquareCropJpegFromRotatedCanvas(rotCanvas, Rw, Rh, {
             zoom,
             panX: clamped.panX,
             panY: clamped.panY,

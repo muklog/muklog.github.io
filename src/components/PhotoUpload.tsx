@@ -2,6 +2,7 @@ import { Fragment, useId, useRef, useState, type RefObject } from "react";
 import { Camera, ImagePlus, Loader2 } from "lucide-react";
 import { compressImage, type CompressOptions } from "../lib/image";
 import { shouldOmitCaptureOnFileInputs } from "../lib/filePickerCapabilities";
+import { userFacingStorageErrorMessage } from "../lib/idbRetry";
 import { cls } from "../lib/utils";
 import PhotoEditDialog from "./PhotoEditDialog";
 
@@ -144,6 +145,7 @@ export default function PhotoUpload({
 
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
+  const [savingEdited, setSavingEdited] = useState(false);
   const [editorQueue, setEditorQueue] = useState<File[]>([]);
 
   const useEditor = squareCropEditor === true;
@@ -172,11 +174,14 @@ export default function PhotoUpload({
 
   /** 편집 후 압축·DB 반영이 간헐적으로 실패하는 기기용 짧은 재시도 */
   async function finishEditedSquare(squareJpegBlob: Blob) {
+    if (!squareJpegBlob?.size || squareJpegBlob.size < 48) {
+      throw new Error("편집된 사진 데이터가 비어 있습니다. 다시 확인해 주세요.");
+    }
     let last: unknown;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 4; attempt++) {
       try {
         if (attempt > 0) {
-          await new Promise<void>((r) => setTimeout(r, 160 * attempt));
+          await new Promise<void>((r) => setTimeout(r, 180 * attempt));
         }
         const compressed = await compressImage(squareJpegBlob, {
           maxDimension: 1280,
@@ -184,11 +189,23 @@ export default function PhotoUpload({
           square: false,
           ...compressOptions,
         });
-        const thumb = await compressImage(compressed, {
-          maxDimension: 320,
-          quality: 0.7,
-          square: false,
-        });
+        if (!compressed?.size) {
+          throw new Error("사진 압축 결과가 비어 있습니다.");
+        }
+        let thumb: Blob;
+        try {
+          thumb = await compressImage(compressed, {
+            maxDimension: 320,
+            quality: 0.7,
+            square: false,
+          });
+        } catch (thumbErr) {
+          console.warn("[PhotoUpload] 썸네일 생성 실패 — 본 사진으로 대체", thumbErr);
+          thumb = compressed.size <= 400_000 ? compressed : squareJpegBlob;
+        }
+        if (!thumb?.size) {
+          throw new Error("썸네일을 만들지 못했습니다.");
+        }
         await onPicked(compressed, thumb);
         return;
       } catch (e) {
@@ -290,7 +307,7 @@ export default function PhotoUpload({
   const galleryAria =
     galleryMultiple === true ? "갤러리에서 선택 (여러 장 가능)" : "사진 선택·앨범에서 가져오기";
 
-  const blocked = !!(disabled || busy);
+  const blocked = !!(disabled || busy || savingEdited);
   const editorFile = editorQueue[0];
   const editorOpen = useEditor && editorQueue.length > 0;
 
@@ -305,13 +322,15 @@ export default function PhotoUpload({
             setEditorQueue([]);
           }}
           onConfirm={async (blob) => {
+            setSavingEdited(true);
             try {
               await finishEditedSquare(blob);
               setEditorQueue((q) => q.slice(1));
             } catch (e) {
               console.error("[PhotoUpload] 편집 후 처리 실패", e);
-              const detail = e instanceof Error ? e.message : String(e);
-              alert(`이미지를 저장하지 못했습니다.\n${detail}\n\n잠시 후 확인을 다시 눌러 주세요.`);
+              alert(userFacingStorageErrorMessage(e));
+            } finally {
+              setSavingEdited(false);
             }
           }}
         />

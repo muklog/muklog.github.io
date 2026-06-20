@@ -1,4 +1,4 @@
-import { toPng } from "html-to-image";
+import { getFontEmbedCSS, toPng } from "html-to-image";
 import { blobToDataUrl } from "./image";
 
 /** 모바일 GPU 한계 — 캡처 단계 픽셀 상한 */
@@ -221,13 +221,37 @@ function drawWatermarkBar(
   }
 }
 
+const SHARE_CAPTURE_PREP_CLASS = "share-capture-prep";
+
+/** 캡처 직전: 웹폰트 로드 대기 + 레이아웃 안정화용 클래스 부착 */
+async function armShareCaptureSurface(element: HTMLElement): Promise<() => void> {
+  try {
+    await document.fonts.ready;
+  } catch {
+    /* noop */
+  }
+  element.classList.add(SHARE_CAPTURE_PREP_CLASS);
+  void element.offsetHeight;
+  await new Promise<void>((r) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => r()));
+  });
+  return () => element.classList.remove(SHARE_CAPTURE_PREP_CLASS);
+}
+
 async function captureElementToDataUrl(element: HTMLElement, pixelRatio: number): Promise<string> {
+  let fontEmbedCSS: string | undefined;
+  try {
+    fontEmbedCSS = await getFontEmbedCSS(element);
+  } catch (e) {
+    console.warn("[shareMealCardImage] font embed css 실패", e);
+  }
   return toPng(element, {
     pixelRatio,
     cacheBust: false,
     backgroundColor: "#0f172a",
     // Pretendard 등 웹폰트를 SVG에 포함해야 칩·태그 등 소형 텍스트가 화면과 동일한 크기·메트릭으로 그려짐
     skipFonts: false,
+    fontEmbedCSS,
     filter: (node) => {
       if (!(node instanceof HTMLElement)) return true;
       if (node.closest(".exclude-from-share-capture")) return false;
@@ -286,6 +310,7 @@ export async function shareMealCardFromElement(
   }
 
   const revertDom = await inlineBlobImagesForCapture(element);
+  const disarmPrep = await armShareCaptureSurface(element);
   let dataUrl: string;
   try {
     await ensureImagesDecoded(element);
@@ -313,6 +338,7 @@ export async function shareMealCardFromElement(
         : "이미지를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.",
     );
   } finally {
+    disarmPrep();
     revertDom();
   }
 
