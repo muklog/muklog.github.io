@@ -10,7 +10,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const apiKey = process.env.GEMINI_API_KEY?.trim();
-const modelName = (process.env.GEMINI_MODEL || "gemini-2.5-flash-lite").trim();
+const modelName = (process.env.GEMINI_MODEL || "gemini-3.5-flash-lite").trim();
 
 if (!apiKey) {
   console.error("GEMINI_API_KEY 환경 변수를 설정하세요.");

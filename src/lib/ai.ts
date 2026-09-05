@@ -11,8 +11,8 @@ import { GoogleGenerativeAI, type GenerativeModel } from "@google/generative-ai"
 import { blobToBase64, compressImage } from "./image";
 import type { MealSlot } from "../types";
 
-/** AI Studio 무료 한도 표가 보통 2.5 Flash Lite 기준이므로, 2.0 계열과 쿼터 풀이 다를 수 있음 */
-export const DEFAULT_MODEL = "gemini-2.5-flash-lite";
+/** AI Studio 무료 한도 표가 보통 flash-lite 계열 기준이므로, 구형 모델과 쿼터 풀이 다를 수 있음 */
+export const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 
 /** 429 등 Google 쿼터/속도 제한 시 사용자 안내 */
 function formatGeminiFailure(prefix: string, e: unknown): string {
