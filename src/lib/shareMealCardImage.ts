@@ -138,7 +138,7 @@ function truncateWithEllipsis(ctx: CanvasRenderingContext2D, text: string, maxWi
 
 /** 캡처 PNG 하단에만 쓰임 */
 export const SHARE_CARD_WATERMARK_TAGLINE =
-  "친구와 공유하는 식단 다이어리, 구글에서 먹로그 검색!";
+  "AI가 분석하는 식단 다이어리, 구글에서 「먹로그」 검색!";
 
 /**
  * Lucide 등 inline SVG 를 동일 크기·색의 <img> 로 바꿉다 (복제본 전용).
@@ -196,6 +196,8 @@ async function rasterizeInlineSvgsForCapture(
     if (wantsFill) {
       for (const path of clone.querySelectorAll("path")) {
         if (path.getAttribute("fill") !== "none") path.setAttribute("fill", color);
+        // 채운 별에 stroke 가 남으면 테두리가 겹쳐 보이므로 맞춤
+        path.setAttribute("stroke", color);
       }
     } else {
       // 빈 별 등 stroke 아이콘
@@ -244,26 +246,30 @@ async function buildOffscreenCaptureClone(source: HTMLElement): Promise<{
     /* noop */
   }
 
-  // 화면 원본에서 아이콘 크기·색을 먼저 잰다 (오프스크린에선 clientWidth 가 0 일 수 있음)
-  const svgMeta = [...source.querySelectorAll("svg")].map((svg) => {
-    const cs = getComputedStyle(svg);
-    return {
-      w: Math.max(
-        1,
-        Math.round(
-          svg.clientWidth || parseFloat(cs.width) || Number(svg.getAttribute("width")) || 12,
+  // 화면 원본에서 아이콘 크기·색을 먼저 잰다.
+  // exclude-from-share-capture 안 SVG(공유 버튼 Share2 등)는 복제본에서 제거되므로
+  // 메타에도 넣지 않는다 — 넣으면 첫 별점에 큰 회색 테두리 별이 붙는다.
+  const svgMeta = [...source.querySelectorAll("svg")]
+    .filter((svg) => !svg.closest(".exclude-from-share-capture"))
+    .map((svg) => {
+      const cs = getComputedStyle(svg);
+      return {
+        w: Math.max(
+          1,
+          Math.round(
+            svg.clientWidth || parseFloat(cs.width) || Number(svg.getAttribute("width")) || 12,
+          ),
         ),
-      ),
-      h: Math.max(
-        1,
-        Math.round(
-          svg.clientHeight || parseFloat(cs.height) || Number(svg.getAttribute("height")) || 12,
+        h: Math.max(
+          1,
+          Math.round(
+            svg.clientHeight || parseFloat(cs.height) || Number(svg.getAttribute("height")) || 12,
+          ),
         ),
-      ),
-      color: cs.color || "#fcd34d",
-      classStr: svg.getAttribute("class") ?? "",
-    };
-  });
+        color: cs.color || "#fcd34d",
+        classStr: svg.getAttribute("class") ?? "",
+      };
+    });
 
   const width = Math.max(source.offsetWidth, source.clientWidth, 1);
   const clone = source.cloneNode(true) as HTMLElement;
