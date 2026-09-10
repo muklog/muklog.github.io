@@ -14,6 +14,7 @@ import {
 import { userFacingStorageErrorMessage } from "../lib/idbRetry";
 import { requestAutoCloudSync } from "../lib/autoCloudSync";
 import { analyzeMealImage } from "../lib/ai";
+import { snapshotBlob } from "../lib/image";
 import { shareMealCardFromElement } from "../lib/shareMealCardImage";
 import { getAppShareAbsoluteUrl } from "../lib/siteUrl";
 import {
@@ -227,6 +228,10 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
       throw new Error("사진 데이터가 비어 있습니다. 다시 촬영하거나 앨범에서 선택해 주세요.");
     }
     try {
+      // 삼성 인터넷 등: 카메라 File 이 IDB/Storage 직전에 비는 경우가 있어 바이트를 고정한다.
+      const photoSnap = await snapshotBlob(photo);
+      const thumbSnap = await snapshotBlob(thumbnail);
+
       const base = await mealRowForSlot();
       const currentItems = base?.items ?? [];
       if (currentItems.length >= MAX_MEAL_ITEMS) {
@@ -236,8 +241,8 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
       const itemId = uid();
       const newItem: MealItem = {
         id: itemId,
-        photo,
-        thumbnail,
+        photo: photoSnap,
+        thumbnail: thumbSnap,
         analysisStatus: apiKey ? "analyzing" : "skipped",
         createdAt: now,
         updatedAt: now,
@@ -256,13 +261,17 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
           };
       await runDexie(() => db.meals.put(nextMeal));
       afterUserDataMutation();
+      // IDB put 직후 한 프레임·짧은 대기 뒤 즉시 sync — Blob 이 반영된 뒤 Storage 로 올라가게
+      await new Promise<void>((r) => {
+        requestAnimationFrame(() => setTimeout(r, 80));
+      });
       requestAutoCloudSync({ immediate: true });
       setScrollCarouselToItemId(itemId);
 
       if (apiKey) {
         const mid = nextMeal.id;
         analysisTailRef.current = analysisTailRef.current
-          .then(() => runAnalysis(mid, itemId, photo, apiKey))
+          .then(() => runAnalysis(mid, itemId, photoSnap, apiKey))
           .catch(() => {});
         void analysisTailRef.current;
       }

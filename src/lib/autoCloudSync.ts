@@ -108,7 +108,28 @@ export async function runCloudSyncNow(): Promise<void> {
 }
 
 function kickSync(): void {
-  void runSyncCycle();
+  void (async () => {
+    // 카메라 복귀 직후 등 document.hidden 이면 Storage 업로드가 브라우저에 의해
+    // 지연·중단될 수 있어, 보이기 시작할 때까지 잠깐 기다린다.
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      await new Promise<void>((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          document.removeEventListener("visibilitychange", onVis);
+          clearTimeout(timer);
+          resolve();
+        };
+        const onVis = () => {
+          if (document.visibilityState === "visible") finish();
+        };
+        document.addEventListener("visibilitychange", onVis);
+        const timer = window.setTimeout(finish, 45_000);
+      });
+    }
+    await runSyncCycle();
+  })();
 }
 
 /**

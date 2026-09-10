@@ -223,17 +223,36 @@ textarea {
   content: "칼로리 ";
 }
 
+/* 매크로 바: flex 대신 고정 grid — 라벨/막대/g 수 정렬이 캡처에서도 유지 */
 .share-capture-prep .share-capture-macro-row {
   display: grid !important;
-  grid-template-columns: 3.25rem minmax(0, 1fr) 2.5rem !important;
+  grid-template-columns: 52px minmax(48px, 1fr) 40px !important;
   align-items: center !important;
-  gap: 0.5rem !important;
+  column-gap: 8px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.share-capture-prep .share-capture-macro-row > span:first-child {
+  width: auto !important;
+  max-width: 52px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
 }
 
 .share-capture-prep .share-capture-macro-row > div:nth-child(2) {
   width: 100% !important;
   min-width: 0 !important;
+  max-width: 100% !important;
   flex: none !important;
+}
+
+.share-capture-prep .share-capture-macro-row > span:last-child {
+  width: auto !important;
+  text-align: right !important;
+  white-space: nowrap !important;
+  font-variant-numeric: tabular-nums !important;
 }
 
 .share-capture-prep .share-capture-nutrition-chips {
@@ -243,12 +262,21 @@ textarea {
   align-items: center !important;
 }
 
-.share-capture-prep .share-capture-rating svg {
+/* Lucide SVG 별은 foreignObject 에서 자주 깨지므로 유니코드 ★ 로 대체 */
+.share-capture-prep .share-capture-rating-svg {
   display: none !important;
 }
 
-.share-capture-prep .share-capture-rating .share-capture-rating-text::after {
-  content: "점";
+.share-capture-prep .share-capture-rating-stars {
+  display: inline !important;
+  letter-spacing: 0.05em;
+  font-size: 12px;
+  line-height: 1;
+  color: #fcd34d;
+}
+
+.share-capture-prep .share-capture-rating-text::after {
+  content: none;
 }
 
 .share-capture-prep .share-capture-ai-comment {

@@ -17,7 +17,7 @@ import type {
 } from "../types";
 import { db as dexieDb, getSettings, normalizeMeal, runDexie, SETTINGS_KEY } from "./db";
 import { getFirestoreDb, getFirebaseAuth } from "./firebaseApp";
-import { base64ToBlob, compressImage, makeThumbnail } from "./image";
+import { base64ToBlob, compressImage, makeThumbnail, snapshotBlob } from "./image";
 import {
   blobFromStoragePath,
   deleteHealthMediaFolder,
@@ -401,6 +401,27 @@ function itemHasRenderableImage(it: MealItem): boolean {
   );
 }
 
+/** 로컬이 이긴 merge 에서도 원격 Storage 경로는 보존·병합 */
+function mergeLocalMealWithRemoteStoragePaths(local: Meal, remote: MealStored): Meal {
+  const rMap = new Map((remote.items ?? []).map((x) => [x.id, x]));
+  let changed = false;
+  const items = local.items.map((it) => {
+    const r = rMap.get(it.id);
+    if (!r) return it;
+    const photoStoragePath = it.photoStoragePath || r.photoStoragePath;
+    const thumbStoragePath = it.thumbStoragePath || r.thumbStoragePath;
+    if (
+      photoStoragePath === it.photoStoragePath &&
+      thumbStoragePath === it.thumbStoragePath
+    ) {
+      return it;
+    }
+    changed = true;
+    return { ...it, photoStoragePath, thumbStoragePath };
+  });
+  return changed ? { ...local, items } : local;
+}
+
 async function mergeMealItemPhotoFromLocal(remoteItem: MealItem, loc?: MealItem): Promise<MealItem> {
   if (itemHasRenderableImage(remoteItem)) return remoteItem;
   if (!loc || !itemHasRenderableImage(loc)) return remoteItem;
@@ -463,12 +484,15 @@ async function mergeMeals(local: Meal[], remote: MealStored[]): Promise<Meal[]> 
       /**
        * 로컬 타임스탬프만 이긴 상태에서 IndexedDB Blob 이 비어 있는 경우가 있다
        * (클라이언트 재설치, Blob 역직렬화 실패 등). 원격 Storage/Base64 에서 채운다.
+       *
+       * Blob 이 있어도 원격 photoStoragePath 는 병합한다 — 안 하면 매 sync 마다
+       * Storage 재업로드를 시도하거나, 경로 없는 메타만 친구에게 보일 수 있다.
        */
       const needsRemotePhotos = l.items.some((it) => !itemHasRenderableImage(it));
       out.push(
         needsRemotePhotos
           ? await hydrateMealPhotosFromLocal(l, await storedToMeal(r!, PULL_DEFER_STORAGE))
-          : l,
+          : mergeLocalMealWithRemoteStoragePaths(l, r!),
       );
     } else {
       out.push(
@@ -780,17 +804,24 @@ async function mealToStored(m: Meal, ownerFirebaseUid: string): Promise<MealStor
           thumbStoragePath: it.thumbStoragePath,
           photoMimeType: "image/jpeg",
         });
+      } else if (it.photo || it.thumbnail) {
+        // Blob 필드는 있는데 size=0 — 삼성 인터넷 등에서 IDB 직후 흔한 일시 상태.
+        // 메타만 올리면 친구 피드에 사진 없는 식단이 남으므로 실패로 두고 재시도한다.
+        throw new Error(
+          `사진 데이터가 아직 준비되지 않아 Storage 업로드를 미룹니다 (${m.date} ${m.slot}).`,
+        );
       } else {
         stored.push(meta);
       }
       continue;
     }
-    const fullJpeg = await compressImage(source, {
+    const solid = await snapshotBlob(source);
+    const fullJpeg = await compressImage(solid, {
       maxDimension: 960,
       quality: 0.72,
       mimeType: "image/jpeg",
     });
-    const thumbJpeg = await compressImage(fullJpeg.size ? fullJpeg : source, {
+    const thumbJpeg = await compressImage(fullJpeg.size ? fullJpeg : solid, {
       maxDimension: 480,
       quality: 0.58,
       mimeType: "image/jpeg",
@@ -931,6 +962,7 @@ async function pushMeals(
   const fs = getFirestoreDb();
   type Pending = { meal: Meal; stored: MealStored };
   let pending: Pending[] = [];
+  const uploadedPaths: MealStored[] = [];
 
   async function flush(): Promise<void> {
     if (pending.length === 0) return;
@@ -942,6 +974,7 @@ async function pushMeals(
         batch.set(doc(fs, "users", uid, "meals", meal.id), stored);
       }
       await batch.commit();
+      for (const { stored } of slice) uploadedPaths.push(stored);
     } catch (e) {
       console.warn(
         "[cloudSync] meals batch.commit 실패 — 끼니별 setDoc 으로 폴백",
@@ -950,6 +983,7 @@ async function pushMeals(
       for (const { meal, stored } of slice) {
         try {
           await setDoc(doc(fs, "users", uid, "meals", meal.id), stored);
+          uploadedPaths.push(stored);
         } catch (perItem) {
           console.warn("[cloudSync] meal setDoc 실패", meal.id, perItem);
           failed.push({
@@ -965,7 +999,14 @@ async function pushMeals(
   }
 
   for (const raw of meals) {
-    const m = normalizeMeal(raw);
+    let m = normalizeMeal(raw);
+    // push 직전에 Dexie 최신본을 다시 읽어 빈 Blob / 경로 누락을 줄인다.
+    try {
+      const fresh = await runDexie(() => dexieDb.meals.get(m.id));
+      if (fresh) m = normalizeMeal(fresh);
+    } catch (e) {
+      console.warn("[cloudSync] meal 재조회 실패 — merge 스냅샷 사용", m.id, e);
+    }
     let stored: MealStored | null;
     try {
       stored = await mealToStored(m, uid);
@@ -985,6 +1026,40 @@ async function pushMeals(
     if (pending.length >= BATCH) await flush();
   }
   await flush();
+
+  // Storage 경로를 로컬 Dexie 에 바로 기록 — 다음 sync 재업로드·친구 피드 공백을 줄인다.
+  if (uploadedPaths.length > 0) {
+    await persistMealStoragePathsLocally(uploadedPaths);
+  }
+}
+
+/** Firestore 에 올린 Storage 경로를 로컬 항목에 되쓴다 (updatedAt 은 건드리지 않음). */
+async function persistMealStoragePathsLocally(storedList: MealStored[]): Promise<void> {
+  await runDexie(async () => {
+    for (const stored of storedList) {
+      const local = await dexieDb.meals.get(stored.id);
+      if (!local) continue;
+      const pathById = new Map((stored.items ?? []).map((x) => [x.id, x]));
+      let changed = false;
+      const items = (local.items ?? []).map((it) => {
+        const s = pathById.get(it.id);
+        if (!s) return it;
+        const photoStoragePath = s.photoStoragePath || it.photoStoragePath;
+        const thumbStoragePath = s.thumbStoragePath || it.thumbStoragePath;
+        if (
+          photoStoragePath === it.photoStoragePath &&
+          thumbStoragePath === it.thumbStoragePath
+        ) {
+          return it;
+        }
+        changed = true;
+        return { ...it, photoStoragePath, thumbStoragePath };
+      });
+      if (changed) {
+        await dexieDb.meals.put({ ...local, items });
+      }
+    }
+  });
 }
 
 async function pushHealth(

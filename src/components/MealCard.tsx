@@ -448,15 +448,15 @@ function NutritionMacroBars({ nutrition }: { nutrition: NonNullable<MealItem["nu
       {values.map((row) => {
         const widthPct = total > 0 ? (row.g / total) * 100 : 0;
         return (
-          <div key={row.key} className="flex items-center gap-2 share-capture-macro-row">
+          <div key={row.key} className="grid grid-cols-[3.25rem_minmax(0,1fr)_2.5rem] items-center gap-2 share-capture-macro-row">
             <span className="w-[3.25rem] shrink-0 text-[10px] text-slate-400">{row.label}</span>
-            <div className="relative h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-700/85">
+            <div className="relative h-2 min-w-0 overflow-hidden rounded-full bg-slate-700/85">
               <div
                 className={cls("h-full min-w-px rounded-full transition-[width]", row.barClass)}
                 style={{ width: `${widthPct}%` }}
               />
             </div>
-            <span className="shrink-0 text-[10px] tabular-nums text-slate-300">{row.g}g</span>
+            <span className="shrink-0 text-right text-[10px] tabular-nums text-slate-300">{row.g}g</span>
           </div>
         );
       })}
@@ -502,17 +502,23 @@ export function ItemAnalysisBlock({
             {item.menuText ?? "—"}
           </p>
           <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-2 py-1 text-xs font-bold text-amber-300 share-capture-rating">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <Star
-                key={i}
-                size={12}
-                className={cls(
-                  i <= (item.rating ?? 0)
-                    ? "fill-amber-300 text-amber-300"
-                    : "text-amber-300/30",
-                )}
-              />
-            ))}
+            <span className="share-capture-rating-svg inline-flex items-center gap-0.5">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Star
+                  key={i}
+                  size={12}
+                  className={cls(
+                    i <= (item.rating ?? 0)
+                      ? "fill-amber-300 text-amber-300"
+                      : "text-amber-300/30",
+                  )}
+                />
+              ))}
+            </span>
+            <span className="share-capture-rating-stars hidden" aria-hidden>
+              {"★".repeat(Math.max(0, Math.min(5, item.rating ?? 0)))}
+              {"☆".repeat(Math.max(0, 5 - Math.min(5, item.rating ?? 0)))}
+            </span>
             <span className="share-capture-rating-text ml-0.5">{item.rating ?? "-"}</span>
           </span>
         </div>

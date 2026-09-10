@@ -381,6 +381,21 @@ export async function blobToBase64(blob: Blob): Promise<string> {
   return dataUrl.split(",")[1] ?? "";
 }
 
+/**
+ * Blob 바이트를 ArrayBuffer 로 읽어 새 Blob 을 만든다.
+ * 삼성 인터넷 등에서 카메라/IndexedDB 직후 `size` 가 잠깐 0 이거나
+ * 참조만 남은 Blob 으로 Storage 업로드가 건너뛰어지는 것을 줄인다.
+ */
+export async function snapshotBlob(blob: Blob): Promise<Blob> {
+  if (!blob) throw new Error("사진 데이터가 비어 있습니다.");
+  const ab = await blob.arrayBuffer();
+  if (ab.byteLength < 24) {
+    throw new Error("사진 데이터가 비어 있거나 아직 준비 중입니다.");
+  }
+  const type = blob.type && blob.type.length > 0 ? blob.type : "image/jpeg";
+  return new Blob([ab], { type });
+}
+
 /** Firestore 동기화 등 — Base64 → Blob */
 export function base64ToBlob(base64: string, mimeType: string): Blob {
   const bin = atob(base64);

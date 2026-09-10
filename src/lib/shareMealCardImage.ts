@@ -136,8 +136,8 @@ function truncateWithEllipsis(ctx: CanvasRenderingContext2D, text: string, maxWi
   return ellipsis;
 }
 
-/** 캡처 PNG 하단에만 쓰임 — 웹 주소 대신 고정 카피 */
-export const SHARE_CARD_WATERMARK_TAGLINE = "먹로그 — https://muklog.github.io";
+/** 캡처 PNG 하단에만 쓰임 */
+export const SHARE_CARD_WATERMARK_TAGLINE = "구글에서 「먹로그」를 검색해보세요";
 
 function computeWatermarkLayout(
   canvasWidth: number,
