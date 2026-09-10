@@ -501,30 +501,24 @@ export function ItemAnalysisBlock({
           <p className="min-w-0 flex-1 break-words text-sm font-medium leading-relaxed text-slate-100">
             {item.menuText ?? "—"}
           </p>
-          <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-2 py-1 text-xs font-bold text-amber-300 share-capture-rating">
-            <span className="share-capture-rating-svg inline-flex items-center gap-0.5">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Star
-                  key={i}
-                  size={12}
-                  className={cls(
-                    i <= (item.rating ?? 0)
-                      ? "fill-amber-300 text-amber-300"
-                      : "text-amber-300/30",
-                  )}
-                />
-              ))}
-            </span>
-            <span className="share-capture-rating-stars hidden" aria-hidden>
-              {"★".repeat(Math.max(0, Math.min(5, item.rating ?? 0)))}
-              {"☆".repeat(Math.max(0, 5 - Math.min(5, item.rating ?? 0)))}
-            </span>
-            <span className="share-capture-rating-text ml-0.5">{item.rating ?? "-"}</span>
+          <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-2 py-1 text-xs font-bold text-amber-300">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Star
+                key={i}
+                size={12}
+                className={cls(
+                  i <= (item.rating ?? 0)
+                    ? "fill-amber-300 text-amber-300"
+                    : "text-amber-300/30",
+                )}
+              />
+            ))}
+            <span className="ml-0.5">{item.rating ?? "-"}</span>
           </span>
         </div>
         {item.aiComment && (
-          <p className="share-capture-ai-comment break-words text-xs leading-relaxed text-slate-400 whitespace-pre-wrap">
-            <Sparkles size={11} className="share-capture-hide-in-export mb-0.5 mr-1 inline text-brand-400" />
+          <p className="break-words text-xs leading-relaxed text-slate-400 whitespace-pre-wrap">
+            <Sparkles size={11} className="mb-0.5 mr-1 inline text-brand-400" />
             {item.aiComment}
           </p>
         )}
@@ -533,13 +527,10 @@ export function ItemAnalysisBlock({
             <NutritionMacroBars nutrition={item.nutrition} />
             {(item.nutrition.calories !== undefined ||
               (item.nutrition.healthTags?.length ?? 0) > 0) && (
-              <div className="flex flex-wrap gap-1.5 share-capture-nutrition-chips">
+              <div className="flex flex-wrap gap-1.5">
                 {item.nutrition.calories !== undefined && (
-                  <span className="chip bg-slate-700/60 text-slate-200 share-capture-calorie-chip">
-                    <span className="share-capture-hide-in-export" aria-hidden>
-                      🔥{" "}
-                    </span>
-                    {item.nutrition.calories}kcal
+                  <span className="chip bg-slate-700/60 text-slate-200">
+                    🔥 {item.nutrition.calories}kcal
                   </span>
                 )}
                 {item.nutrition.healthTags?.map((t) => (

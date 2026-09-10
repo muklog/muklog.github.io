@@ -137,12 +137,203 @@ function truncateWithEllipsis(ctx: CanvasRenderingContext2D, text: string, maxWi
 }
 
 /** 캡처 PNG 하단에만 쓰임 */
-export const SHARE_CARD_WATERMARK_TAGLINE = "구글에서 「먹로그」를 검색해보세요";
+export const SHARE_CARD_WATERMARK_TAGLINE =
+  "친구와 공유하는 식단 다이어리, 구글에서 먹로그 검색!";
+
+/**
+ * Lucide 등 inline SVG 를 동일 크기·색의 <img> 로 바꿉다 (복제본 전용).
+ * html-to-image 에서 SVG currentColor/fill 이 깨지는 것을 막으면서 모양은 유지한다.
+ */
+async function rasterizeInlineSvgsForCapture(
+  root: HTMLElement,
+  meta?: Array<{ w: number; h: number; color: string; classStr: string }>,
+): Promise<void> {
+  const svgs = [...root.querySelectorAll("svg")];
+  for (let i = 0; i < svgs.length; i++) {
+    const svg = svgs[i]!;
+    const m = meta?.[i];
+    const cs = getComputedStyle(svg);
+    const w = Math.max(
+      1,
+      m?.w ??
+        Math.round(
+          svg.clientWidth || parseFloat(cs.width) || Number(svg.getAttribute("width")) || 12,
+        ),
+    );
+    const h = Math.max(
+      1,
+      m?.h ??
+        Math.round(
+          svg.clientHeight || parseFloat(cs.height) || Number(svg.getAttribute("height")) || 12,
+        ),
+    );
+    const color = m?.color || cs.color || "#fcd34d";
+    const classStr =
+      m?.classStr ||
+      (typeof svg.className === "string" ? svg.className : (svg.getAttribute("class") ?? ""));
+    const wantsFill = /\bfill-/.test(classStr);
+
+    const clone = svg.cloneNode(true) as SVGElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("width", String(w));
+    clone.setAttribute("height", String(h));
+    const vb = svg.getAttribute("viewBox") || clone.getAttribute("viewBox") || "0 0 24 24";
+    clone.setAttribute("viewBox", vb);
+    clone.setAttribute("color", color);
+    clone.style.color = color;
+
+    for (const el of [clone, ...clone.querySelectorAll<SVGElement>("*")]) {
+      const fill = el.getAttribute("fill");
+      if (fill === "currentColor" || (wantsFill && fill !== "none" && !fill)) {
+        el.setAttribute("fill", color);
+      } else if (wantsFill && (!fill || fill === "currentColor")) {
+        el.setAttribute("fill", color);
+      }
+      if (el.getAttribute("stroke") === "currentColor") {
+        el.setAttribute("stroke", color);
+      }
+    }
+    if (wantsFill) {
+      for (const path of clone.querySelectorAll("path")) {
+        if (path.getAttribute("fill") !== "none") path.setAttribute("fill", color);
+      }
+    } else {
+      // 빈 별 등 stroke 아이콘
+      for (const el of clone.querySelectorAll<SVGElement>("path, circle, polyline, line")) {
+        if (!el.getAttribute("stroke") || el.getAttribute("stroke") === "currentColor") {
+          el.setAttribute("stroke", color);
+        }
+        if (!el.getAttribute("fill") || el.getAttribute("fill") === "currentColor") {
+          el.setAttribute("fill", "none");
+        }
+      }
+    }
+
+    const xml = new XMLSerializer().serializeToString(clone);
+    const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "";
+    img.width = w;
+    img.height = h;
+    img.style.width = `${w}px`;
+    img.style.height = `${h}px`;
+    img.style.display = "inline-block";
+    img.style.verticalAlign = "middle";
+    img.style.flexShrink = "0";
+    svg.replaceWith(img);
+    try {
+      await img.decode();
+    } catch {
+      /* noop */
+    }
+  }
+}
+
+/**
+ * 화면에 보이는 카드는 건드리지 않고, 오프스크린 복제본만 캡처한다.
+ * (공유 버튼 직후 별·글자가 바뀌어 보이는 깜빡임을 없앤다)
+ */
+async function buildOffscreenCaptureClone(source: HTMLElement): Promise<{
+  clone: HTMLElement;
+  dispose: () => void;
+}> {
+  try {
+    await document.fonts.ready;
+  } catch {
+    /* noop */
+  }
+
+  // 화면 원본에서 아이콘 크기·색을 먼저 잰다 (오프스크린에선 clientWidth 가 0 일 수 있음)
+  const svgMeta = [...source.querySelectorAll("svg")].map((svg) => {
+    const cs = getComputedStyle(svg);
+    return {
+      w: Math.max(
+        1,
+        Math.round(
+          svg.clientWidth || parseFloat(cs.width) || Number(svg.getAttribute("width")) || 12,
+        ),
+      ),
+      h: Math.max(
+        1,
+        Math.round(
+          svg.clientHeight || parseFloat(cs.height) || Number(svg.getAttribute("height")) || 12,
+        ),
+      ),
+      color: cs.color || "#fcd34d",
+      classStr: svg.getAttribute("class") ?? "",
+    };
+  });
+
+  const width = Math.max(source.offsetWidth, source.clientWidth, 1);
+  const clone = source.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll(".exclude-from-share-capture").forEach((n) => n.remove());
+
+  const host = document.createElement("div");
+  host.setAttribute("aria-hidden", "true");
+  host.style.cssText = [
+    "position:fixed",
+    "left:-10000px",
+    "top:0",
+    `width:${width}px`,
+    "pointer-events:none",
+    "z-index:-1",
+    "overflow:visible",
+  ].join(";");
+  clone.style.width = `${width}px`;
+  clone.style.maxWidth = `${width}px`;
+  clone.style.boxSizing = "border-box";
+  clone.style.margin = "0";
+  host.appendChild(clone);
+  document.body.appendChild(host);
+
+  const dispose = () => {
+    host.remove();
+  };
+
+  try {
+    await inlineBlobImagesForCapture(clone);
+    await ensureImagesDecoded(clone);
+    await rasterizeInlineSvgsForCapture(clone, svgMeta);
+    void clone.offsetHeight;
+    await new Promise<void>((r) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => r()));
+    });
+  } catch (e) {
+    dispose();
+    throw e;
+  }
+
+  return { clone, dispose };
+}
+
+async function captureElementToDataUrl(element: HTMLElement, pixelRatio: number): Promise<string> {
+  let fontEmbedCSS: string | undefined;
+  try {
+    fontEmbedCSS = await getFontEmbedCSS(element);
+  } catch (e) {
+    console.warn("[shareMealCardImage] font embed css 실패", e);
+  }
+  return toPng(element, {
+    pixelRatio,
+    cacheBust: false,
+    backgroundColor: "#0f172a",
+    skipFonts: false,
+    fontEmbedCSS,
+    filter: (node) => {
+      if (!(node instanceof HTMLElement)) return true;
+      if (node.closest(".exclude-from-share-capture")) return false;
+      const cls = typeof node.className === "string" ? node.className : "";
+      if (cls.includes("backdrop-blur")) return false;
+      if (cls.includes("backdrop-saturate")) return false;
+      return true;
+    },
+  });
+}
 
 function computeWatermarkLayout(
   canvasWidth: number,
   cssWidthRef: number,
-  /** 하단 한 덩어리 문구 (줄바꿈만 허용) */
   footTagline: string,
 ): {
   barPx: number;
@@ -221,48 +412,6 @@ function drawWatermarkBar(
   }
 }
 
-const SHARE_CAPTURE_PREP_CLASS = "share-capture-prep";
-
-/** 캡처 직전: 웹폰트 로드 대기 + 레이아웃 안정화용 클래스 부착 */
-async function armShareCaptureSurface(element: HTMLElement): Promise<() => void> {
-  try {
-    await document.fonts.ready;
-  } catch {
-    /* noop */
-  }
-  element.classList.add(SHARE_CAPTURE_PREP_CLASS);
-  void element.offsetHeight;
-  await new Promise<void>((r) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => r()));
-  });
-  return () => element.classList.remove(SHARE_CAPTURE_PREP_CLASS);
-}
-
-async function captureElementToDataUrl(element: HTMLElement, pixelRatio: number): Promise<string> {
-  let fontEmbedCSS: string | undefined;
-  try {
-    fontEmbedCSS = await getFontEmbedCSS(element);
-  } catch (e) {
-    console.warn("[shareMealCardImage] font embed css 실패", e);
-  }
-  return toPng(element, {
-    pixelRatio,
-    cacheBust: false,
-    backgroundColor: "#0f172a",
-    // Pretendard 등 웹폰트를 SVG에 포함해야 칩·태그 등 소형 텍스트가 화면과 동일한 크기·메트릭으로 그려짐
-    skipFonts: false,
-    fontEmbedCSS,
-    filter: (node) => {
-      if (!(node instanceof HTMLElement)) return true;
-      if (node.closest(".exclude-from-share-capture")) return false;
-      const cls = typeof node.className === "string" ? node.className : "";
-      if (cls.includes("backdrop-blur")) return false;
-      if (cls.includes("backdrop-saturate")) return false;
-      return true;
-    },
-  });
-}
-
 function scaleBitmapToMaxEdge(
   source: CanvasImageSource,
   sw: number,
@@ -309,22 +458,21 @@ export async function shareMealCardFromElement(
     throw new Error("캡처할 카드 영역이 비어 있어요. 보이는 카드에서 다시 시도해 주세요.");
   }
 
-  const revertDom = await inlineBlobImagesForCapture(element);
-  const disarmPrep = await armShareCaptureSurface(element);
+  const cssW = Math.max(element.clientWidth, w);
+  const cssH = Math.max(element.clientHeight, h);
+  const pr = choosePixelRatio(cssW, cssH);
+
+  let disposeClone: (() => void) | undefined;
   let dataUrl: string;
   try {
-    await ensureImagesDecoded(element);
-
-    const cssW = Math.max(element.clientWidth, w);
-    const cssH = Math.max(element.clientHeight, h);
-    const pr = choosePixelRatio(cssW, cssH);
-
+    const { clone, dispose } = await buildOffscreenCaptureClone(element);
+    disposeClone = dispose;
     try {
-      dataUrl = await captureElementToDataUrl(element, pr);
+      dataUrl = await captureElementToDataUrl(clone, pr);
     } catch (first) {
       console.warn("[shareMealCardImage] toPng 실패, pixelRatio 1 재시도", first);
       if (pr <= 1) throw first;
-      dataUrl = await captureElementToDataUrl(element, 1);
+      dataUrl = await captureElementToDataUrl(clone, 1);
     }
 
     if (!dataUrl || dataUrl.length < 64) {
@@ -338,8 +486,7 @@ export async function shareMealCardFromElement(
         : "이미지를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.",
     );
   } finally {
-    disarmPrep();
-    revertDom();
+    disposeClone?.();
   }
 
   const img = new Image();
