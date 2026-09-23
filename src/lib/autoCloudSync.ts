@@ -4,6 +4,11 @@ import {
   isCloudSyncMutation,
   syncCloudWithLocal,
 } from "./cloudSync";
+import {
+  awaitPhotoCaptureIdle,
+  isPhotoCaptureSessionActive,
+  whenPhotoCaptureIdle,
+} from "./photoCaptureGate";
 
 const DEBOUNCE_MS = 1500;
 
@@ -13,6 +18,10 @@ const DEBOUNCE_MS = 1500;
  * 끝나면 백오프는 초기화된다. 새 변경(사진 추가 등)·탭 복귀·온라인 복귀 시에도 초기화.
  */
 const RETRY_DELAYS_MS = [3_000, 8_000, 20_000, 45_000, 90_000];
+
+/** 카메라 복귀 직후 파일 처리·편집이 끝날 때까지 visibility sync 를 미룬다 */
+let pendingVisibleSync = false;
+let visibleSyncDelayTimer: ReturnType<typeof setTimeout> | null = null;
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
@@ -48,12 +57,10 @@ function scheduleRetryIfNeeded(cycleStartedAt: number): void {
     (issue.failedItems.length > 0 || !!issue.lastError);
 
   if (!hadIssues) {
-    // 깨끗하게 끝남 — 백오프 초기화
     clearRetry();
     return;
   }
   if (retryAttempt >= RETRY_DELAYS_MS.length) {
-    // 자동 재시도 소진 — 배너의 수동 «다시 시도» 와 online/visible 복귀에 맡긴다.
     return;
   }
   const delay = RETRY_DELAYS_MS[retryAttempt]!;
@@ -74,18 +81,12 @@ async function runSyncOnce(): Promise<void> {
   try {
     await syncCloudWithLocal();
   } catch (e) {
-    // syncCloudWithLocal 내부 finally 에서 issue 이벤트를 이미 디스패치하므로
-    // 여기서는 콘솔 경고만 남긴다(silent fail 방지는 UI 측 배너 + 자동 재시도가 담당).
     console.warn("[autoCloudSync]", e);
   } finally {
     running = false;
   }
 }
 
-/**
- * 한 사이클: 진행 중이면 후속 실행만 예약하고, 아니면 끝까지 돌린 뒤 남은 실패가
- * 있으면 자동 재시도를 예약한다.
- */
 async function runSyncCycle(): Promise<void> {
   if (running) {
     runAgain = true;
@@ -109,8 +110,11 @@ export async function runCloudSyncNow(): Promise<void> {
 
 function kickSync(): void {
   void (async () => {
-    // 카메라 복귀 직후 등 document.hidden 이면 Storage 업로드가 브라우저에 의해
-    // 지연·중단될 수 있어, 보이기 시작할 때까지 잠깐 기다린다.
+    // 사진 촬영·편집·저장 중이면 끝날 때까지 기다린다 (스냅샷 bulkPut 덮어쓰기 방지)
+    if (isPhotoCaptureSessionActive()) {
+      await awaitPhotoCaptureIdle();
+      await new Promise<void>((r) => setTimeout(r, 350));
+    }
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
       await new Promise<void>((resolve) => {
         let done = false;
@@ -136,24 +140,16 @@ function kickSync(): void {
  * 로그인된 경우에만, 로컬 데이터 변경 후 Firestore 와 맞춥니다.
  * - immediate: 대기 없이 곧바로(탭 복귀·로그인 직후 등)
  * - 기본: DEBOUNCE_MS 후 한 번만(연속 저장 합침)
- *
- * 주의: 진행 중인 sync 의 로컬 트랜잭션 동안 들어온 요청을 버리면
- * AI 분석 완료처럼 sync 도중에 발생한 변경이 영영 클라우드로 올라가지
- * 않을 수 있다(친구 화면에서 `analyzing` 이 계속 보이는 원인). 따라서
- * sync 가 진행 중이어도 후속 실행이 보장되도록 항상 kickSync 까지 호출한다.
  */
 export function requestAutoCloudSync(options?: { immediate?: boolean }): void {
   if (typeof window === "undefined" || !isAuthed()) return;
 
-  // 새 사용자 변경·복귀가 들어오면 백오프 스케줄을 초기화해 즉시 다시 시도한다.
-  // (오래된 백오프 대기 때문에 방금 추가한 사진 업로드가 늦어지는 것을 막는다.)
   retryAttempt = 0;
   if (retryTimer) {
     clearTimeout(retryTimer);
     retryTimer = null;
   }
 
-  // 진행 중인 sync 가 있다면 즉시 후속 실행을 예약해 둔다(immediate 여부 무관).
   if (isCloudSyncMutation()) {
     runAgain = true;
   }
@@ -174,15 +170,38 @@ export function requestAutoCloudSync(options?: { immediate?: boolean }): void {
   }, DEBOUNCE_MS);
 }
 
+function flushPendingVisibleSync(): void {
+  if (!pendingVisibleSync) return;
+  if (isPhotoCaptureSessionActive()) {
+    whenPhotoCaptureIdle(() => {
+      window.setTimeout(() => flushPendingVisibleSync(), 400);
+    });
+    return;
+  }
+  pendingVisibleSync = false;
+  requestAutoCloudSync({ immediate: true });
+}
+
 export function ensureAutoCloudSyncListeners(): void {
   if (typeof window === "undefined" || listenersStarted) return;
   listenersStarted = true;
   const onVisible = () => {
-    if (document.visibilityState === "visible") {
+    if (document.visibilityState !== "visible") return;
+    // 카메라 Intent 복귀 직후 곧바로 sync 하면 아직 put 되기 전 스냅샷으로
+    // 방금 저장한 식단을 덮어쓸 수 있어, 짧게 미룬 뒤 캡처 세션을 확인한다.
+    if (visibleSyncDelayTimer) clearTimeout(visibleSyncDelayTimer);
+    visibleSyncDelayTimer = setTimeout(() => {
+      visibleSyncDelayTimer = null;
+      if (isPhotoCaptureSessionActive()) {
+        pendingVisibleSync = true;
+        whenPhotoCaptureIdle(() => {
+          window.setTimeout(() => flushPendingVisibleSync(), 400);
+        });
+        return;
+      }
       requestAutoCloudSync({ immediate: true });
-    }
+    }, 1800);
   };
   document.addEventListener("visibilitychange", onVisible);
-  /** 오프라인 이후 연결되면 한 번 즉시 맞춤(조용히 실패한 동기화 복구) */
   window.addEventListener("online", () => requestAutoCloudSync({ immediate: true }));
 }

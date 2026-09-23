@@ -1,5 +1,6 @@
 import Dexie from "dexie";
 import { isSamsungInternetBrowser } from "./filePickerCapabilities";
+import { isPhotoCaptureSessionActive, whenPhotoCaptureIdle } from "./photoCaptureGate";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -102,21 +103,42 @@ export async function recoverDexieConnection(dexieDb: Dexie): Promise<void> {
 /**
  * Safari(iOS) 등에서 탭이 백그라운드로 갔다 오면 IndexedDB 서버 연결이 끊긴 채로 남는 경우가 많아,
  * 포그라운드 복귀·bfcache 복원 시 선제적으로 한 번 재연결한다.
+ *
+ * 단, 카메라 촬영·편집·저장 중에는 close/open 을 미룬다 — liveQuery 가 끊기면
+ * 저장은 됐는데 화면이 안 바뀌는(새로고침 필요) 증상이 난다.
  */
 export function installIndexedDbLifecycleHandlers(dexieDb: Dexie): void {
   if (typeof document === "undefined" || typeof window === "undefined") return;
 
   let wasHidden = false;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingReconnect = false;
+
+  const runReconnect = () => {
+    void recoverDexieConnection(dexieDb).catch((e) => {
+      console.warn("[idb] lifecycle 재연결 실패", e);
+    });
+  };
 
   const scheduleReconnect = () => {
     if (debounceTimer !== undefined) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = undefined;
-      void recoverDexieConnection(dexieDb).catch((e) => {
-        console.warn("[idb] lifecycle 재연결 실패", e);
-      });
-    }, 280);
+      if (isPhotoCaptureSessionActive()) {
+        pendingReconnect = true;
+        whenPhotoCaptureIdle(() => {
+          window.setTimeout(() => {
+            if (pendingReconnect && !isPhotoCaptureSessionActive()) {
+              pendingReconnect = false;
+              runReconnect();
+            }
+          }, 500);
+        });
+        return;
+      }
+      pendingReconnect = false;
+      runReconnect();
+    }, 1200);
   };
 
   document.addEventListener("visibilitychange", () => {

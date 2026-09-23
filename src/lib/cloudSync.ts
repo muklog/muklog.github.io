@@ -401,6 +401,101 @@ function itemHasRenderableImage(it: MealItem): boolean {
   );
 }
 
+/**
+ * sync bulkPut 직전: merge 스냅샷보다 뒤에 put 된 로컬 항목·사진을 지우지 않도록 합친다.
+ */
+function reconcileMergedMealWithFresherLocal(merged: Meal, fresh: Meal): Meal {
+  if (fresh.updatedAt > merged.updatedAt) return fresh;
+  const byId = new Map(merged.items.map((x) => [x.id, x]));
+  let changed = false;
+  for (const it of fresh.items) {
+    const prev = byId.get(it.id);
+    if (!prev) {
+      byId.set(it.id, it);
+      changed = true;
+      continue;
+    }
+    const pt = prev.updatedAt ?? 0;
+    const ft = it.updatedAt ?? 0;
+    if (ft > pt) {
+      byId.set(it.id, it);
+      changed = true;
+    } else if (ft === pt) {
+      const prevBlob =
+        (prev.photo?.size ?? 0) > 0 || (prev.thumbnail?.size ?? 0) > 0;
+      const freshBlob =
+        (it.photo?.size ?? 0) > 0 || (it.thumbnail?.size ?? 0) > 0;
+      if (freshBlob && !prevBlob) {
+        byId.set(it.id, it);
+        changed = true;
+      } else if (
+        (!prev.photoStoragePath && it.photoStoragePath) ||
+        (!prev.thumbStoragePath && it.thumbStoragePath)
+      ) {
+        byId.set(it.id, {
+          ...prev,
+          photoStoragePath: prev.photoStoragePath || it.photoStoragePath,
+          thumbStoragePath: prev.thumbStoragePath || it.thumbStoragePath,
+          photo: prev.photo?.size ? prev.photo : it.photo,
+          thumbnail: prev.thumbnail?.size ? prev.thumbnail : it.thumbnail,
+        });
+        changed = true;
+      }
+    }
+  }
+  if (!changed && fresh.updatedAt <= merged.updatedAt) return merged;
+  return {
+    ...merged,
+    items: [...byId.values()],
+    updatedAt: Math.max(merged.updatedAt, fresh.updatedAt),
+  };
+}
+
+function reconcileMergedMealsWithFreshLocal(merged: Meal[], fresh: Meal[]): Meal[] {
+  const out = new Map(merged.map((m) => [m.id, normalizeMeal(m)]));
+  for (const raw of fresh) {
+    const f = normalizeMeal(raw);
+    const m = out.get(f.id);
+    if (!m) {
+      out.set(f.id, f);
+      continue;
+    }
+    out.set(f.id, reconcileMergedMealWithFresherLocal(m, f));
+  }
+  return [...out.values()];
+}
+
+function reconcileMergedHealthWithFreshLocal(
+  merged: HealthRecord[],
+  fresh: HealthRecord[],
+): HealthRecord[] {
+  const out = new Map(merged.map((h) => [h.id, h]));
+  for (const f of fresh) {
+    const m = out.get(f.id);
+    if (!m) {
+      out.set(f.id, f);
+      continue;
+    }
+    if (f.updatedAt > m.updatedAt) {
+      out.set(f.id, f);
+    } else if (f.updatedAt === m.updatedAt) {
+      const mBlob = (m.photo?.size ?? 0) > 0 || (m.thumbnail?.size ?? 0) > 0;
+      const fBlob = (f.photo?.size ?? 0) > 0 || (f.thumbnail?.size ?? 0) > 0;
+      if (fBlob && !mBlob) out.set(f.id, f);
+      else {
+        out.set(f.id, {
+          ...m,
+          photoStoragePath: m.photoStoragePath || f.photoStoragePath,
+          thumbStoragePath: m.thumbStoragePath || f.thumbStoragePath,
+          photo: m.photo?.size ? m.photo : f.photo,
+          thumbnail: m.thumbnail?.size ? m.thumbnail : f.thumbnail,
+        });
+      }
+    }
+  }
+  return [...out.values()];
+}
+
 /** 로컬이 이긴 merge 에서도 원격 Storage 경로는 보존·병합 */
 function mergeLocalMealWithRemoteStoragePaths(local: Meal, remote: MealStored): Meal {
   const rMap = new Map((remote.items ?? []).map((x) => [x.id, x]));
@@ -1396,6 +1491,29 @@ export async function syncCloudWithLocal(): Promise<void> {
         id: SETTINGS_KEY,
       };
 
+      /**
+       * pull/merge 도중에 카메라 저장이 put 되면 옛 localMeals 스냅샷으로
+       * bulkPut 하며 새 항목이 사라진다. 쓰기 직전 최신 Dexie 로 다시 merge 한다.
+       */
+      const freshLocalMeals = await dexieDb.meals.toArray();
+      const freshLocalHealth = await dexieDb.health.toArray();
+      mergedMeals = await mergeMeals(freshLocalMeals, remoteMealsFiltered);
+      mergedHealth = await mergeHealth(freshLocalHealth, remoteHealthFiltered);
+      const consolidatedFresh = consolidateToFirebaseProfile(
+        uid,
+        mergedMembers,
+        mergedMeals,
+        mergedHealth,
+      );
+      mergedMembers = consolidatedFresh.members;
+      mergedMeals = consolidatedFresh.meals;
+      mergedHealth = consolidatedFresh.health;
+      localSettings = {
+        ...localSettings,
+        activeUserId: consolidatedFresh.activeUserId,
+        id: SETTINGS_KEY,
+      };
+
       await dexieDb.transaction(
         "rw",
         dexieDb.users,
@@ -1403,6 +1521,12 @@ export async function syncCloudWithLocal(): Promise<void> {
         dexieDb.health,
         dexieDb.settings,
         async () => {
+          // 트랜잭션 안에서도 한 번 더 읽어, rematch~쓰기 사이 put 을 지워버리지 않는다.
+          const liveMeals = await dexieDb.meals.toArray();
+          const liveHealth = await dexieDb.health.toArray();
+          mergedMeals = reconcileMergedMealsWithFreshLocal(mergedMeals, liveMeals);
+          mergedHealth = reconcileMergedHealthWithFreshLocal(mergedHealth, liveHealth);
+
           const mu = new Set(mergedMembers.map((x) => x.id));
           const oldU = await dexieDb.users.toCollection().primaryKeys();
           await dexieDb.users.bulkDelete(oldU.filter((id) => !mu.has(id as string)) as string[]);

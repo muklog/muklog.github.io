@@ -1,8 +1,12 @@
-import { Fragment, useId, useRef, useState, type RefObject } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type RefObject } from "react";
 import { Camera, ImagePlus, Loader2 } from "lucide-react";
 import { compressImage, type CompressOptions } from "../lib/image";
 import { shouldOmitCaptureOnFileInputs } from "../lib/filePickerCapabilities";
 import { userFacingStorageErrorMessage } from "../lib/idbRetry";
+import {
+  beginPhotoCaptureSession,
+  endPhotoCaptureSession,
+} from "../lib/photoCaptureGate";
 import { cls } from "../lib/utils";
 import PhotoEditDialog from "./PhotoEditDialog";
 
@@ -147,6 +151,11 @@ export default function PhotoUpload({
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [savingEdited, setSavingEdited] = useState(false);
   const [editorQueue, setEditorQueue] = useState<File[]>([]);
+  /** 편집 큐가 열린 동안 캡처 세션을 유지하기 위한 플래그 */
+  const holdSessionForEditorRef = useRef(false);
+  /** 카메라 버튼으로 피커를 연 뒤 백그라운드 복귀했는지 (빈 FileList 안내용) */
+  const cameraPickerArmedRef = useRef(false);
+  const cameraSawHiddenRef = useRef(false);
 
   const useEditor = squareCropEditor === true;
   const maxDim = compressOptions?.maxDimension ?? 1280;
@@ -156,11 +165,11 @@ export default function PhotoUpload({
   );
 
   /**
-   * 메인 버튼은 카메라 직행이 목적이므로 capture 를 켠다(삼성 인터넷 포함).
-   * 과거엔 삼성 인터넷의 빈-파일 이슈로 capture 를 생략했지만, 이제 빈-파일 재시도
-   * 로직(coerceFileToReadableImage)이 있어 카메라 직행을 우선한다. 앨범은 별도 버튼.
+   * 메인 버튼: 가능하면 카메라 직행(capture).
+   * 삼성 인터넷은 capture 직후 빈 File 이 잦아 AvatarPicker 와 같이 생략하고
+   * OS 선택 시트(카메라/앨범)에 맡긴다 — 앨범 전용 버튼도 그대로 둔다.
    */
-  const captureProp = !preferCamera ? undefined : true;
+  const captureProp = preferCamera && !omitCapture ? true : undefined;
 
   /**
    * 앨범(갤러리) 버튼 — 삼성 인터넷에서 어떤 앱(갤러리/파일/카메라)으로 열지는
@@ -171,6 +180,32 @@ export default function PhotoUpload({
    */
   const galleryAccept = GALLERY_FILE_ACCEPT;
   const galleryMultiple = omitCapture ? false : multipleGallery;
+
+  useEffect(() => {
+    const onVis = () => {
+      if (
+        cameraPickerArmedRef.current &&
+        document.visibilityState === "hidden"
+      ) {
+        cameraSawHiddenRef.current = true;
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
+  // 편집기·저장이 모두 끝나면 캡처 세션 해제 → deferred sync / idb reconnect 진행
+  useEffect(() => {
+    if (
+      holdSessionForEditorRef.current &&
+      editorQueue.length === 0 &&
+      !busy &&
+      !savingEdited
+    ) {
+      holdSessionForEditorRef.current = false;
+      endPhotoCaptureSession();
+    }
+  }, [editorQueue.length, busy, savingEdited]);
 
   /** 편집 후 압축·DB 반영이 간헐적으로 실패하는 기기용 짧은 재시도 */
   async function finishEditedSquare(squareJpegBlob: Blob) {
@@ -238,9 +273,27 @@ export default function PhotoUpload({
   async function handleFiles(
     fileList: FileList | File[] | null | undefined,
     clearRefs: Array<RefObject<HTMLInputElement | null>>,
+    opts?: { fromCamera?: boolean },
   ) {
+    const fromCamera = opts?.fromCamera === true;
     const raw = Array.from(fileList ?? []).filter(Boolean) as File[];
-    if (raw.length === 0) return;
+    if (raw.length === 0) {
+      if (fromCamera && cameraSawHiddenRef.current) {
+        alert(
+          "사진을 받지 못했어요. 촬영이 취소됐거나, 브라우저가 파일을 넘기지 못한 경우예요.\n\n오른쪽 앨범 버튼에서 방금 찍은 사진을 골라 주세요.",
+        );
+      }
+      cameraPickerArmedRef.current = false;
+      cameraSawHiddenRef.current = false;
+      if (fromCamera) endPhotoCaptureSession();
+      return;
+    }
+
+    // 카메라 버튼에서 이미 begin 한 경우 중복 begin 방지
+    if (!fromCamera || !cameraPickerArmedRef.current) {
+      beginPhotoCaptureSession();
+    }
+    let keepSessionForEditor = false;
 
     // 카메라 앱 복귀 직후 change 이벤트가 빈 상태로 도는 브라우저용 추가 틱
     await new Promise<void>((resolve) => {
@@ -271,6 +324,8 @@ export default function PhotoUpload({
       }
 
       if (useEditor) {
+        holdSessionForEditorRef.current = true;
+        keepSessionForEditor = true;
         setEditorQueue(prepared);
       } else {
         for (let i = 0; i < prepared.length; i++) {
@@ -300,7 +355,40 @@ export default function PhotoUpload({
       setBusy(false);
       setBusyLabel(null);
       clearInputs(clearRefs);
+      cameraPickerArmedRef.current = false;
+      cameraSawHiddenRef.current = false;
+      if (camArmTimeoutRef.current) {
+        clearTimeout(camArmTimeoutRef.current);
+        camArmTimeoutRef.current = null;
+      }
+      if (!keepSessionForEditor) {
+        endPhotoCaptureSession();
+      }
     }
+  }
+
+  const camArmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function armCameraPicker() {
+    clearInput(camRef.current);
+    if (camArmTimeoutRef.current) {
+      clearTimeout(camArmTimeoutRef.current);
+      camArmTimeoutRef.current = null;
+    }
+    if (!cameraPickerArmedRef.current) {
+      cameraPickerArmedRef.current = true;
+      cameraSawHiddenRef.current = false;
+      beginPhotoCaptureSession();
+    }
+    // 취소 시 change 가 안 오는 브라우저 — 세션이 영원히 남지 않게 타임아웃
+    camArmTimeoutRef.current = setTimeout(() => {
+      camArmTimeoutRef.current = null;
+      if (cameraPickerArmedRef.current && !holdSessionForEditorRef.current) {
+        cameraPickerArmedRef.current = false;
+        cameraSawHiddenRef.current = false;
+        endPhotoCaptureSession();
+      }
+    }, 90_000);
   }
 
   const btnClass = variant === "primary" ? "btn-primary" : "btn-secondary";
@@ -338,7 +426,7 @@ export default function PhotoUpload({
       <div className={cls("flex gap-2", className)}>
       <label
         htmlFor={camInputId}
-        onPointerDown={() => clearInput(camRef.current)}
+        onPointerDown={armCameraPicker}
         className={cls(
           btnClass,
           "flex flex-1 cursor-pointer items-center justify-center gap-2 py-3",
@@ -369,8 +457,8 @@ export default function PhotoUpload({
         {...(captureProp !== undefined ? { capture: captureProp } : {})}
         disabled={blocked}
         className="sr-only"
-        onPointerDown={() => clearInput(camRef.current)}
-        onChange={(e) => void handleFiles(e.target.files, [camRef])}
+        onPointerDown={armCameraPicker}
+        onChange={(e) => void handleFiles(e.target.files, [camRef], { fromCamera: true })}
       />
       <input
         ref={galRef}
