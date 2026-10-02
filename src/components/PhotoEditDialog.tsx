@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Check, Loader2, RotateCcw, RotateCw, X } from "lucide-react";
 import {
   clampPanForSquareCover,
+  canvasScaledToMaxEdge,
   decodeImage,
   drawSquareCoverCrop,
   exportSquareCropJpegFromRotatedCanvas,
@@ -147,14 +148,27 @@ export default function PhotoEditDialog({
     };
   }, [file]);
 
-  /** 디코드 직후 + 회전 시: 페인트 전에 회전 캔버스 반영. */
+  /** 디코드 직후 + 회전 시: 페인트 전에 회전 캔버스 반영. 저장은 이 캔버스를 정사각형으로 잘라 만든다. */
   useLayoutEffect(() => {
     const d = decodedRef.current;
     if (!d) return;
-    const rot = rotatedSourceCanvas(d.source, d.width, d.height, quarterTurns);
-    setRotCanvas(rot);
-    setRw(rot.width);
-    setRh(rot.height);
+    try {
+      const fitted = canvasScaledToMaxEdge(d.source, d.width, d.height, 2048);
+      const rot = rotatedSourceCanvas(fitted, fitted.width, fitted.height, quarterTurns);
+      if (rot.width < 1 || rot.height < 1) {
+        throw new Error("회전한 사진을 만들지 못했습니다. 다시 촬영해 주세요.");
+      }
+      setDecodeErr(null);
+      setRotCanvas(rot);
+      setRw(rot.width);
+      setRh(rot.height);
+    } catch (e) {
+      console.warn("[PhotoEditDialog] 회전 캔버스 실패", e);
+      setRotCanvas(null);
+      setRw(0);
+      setRh(0);
+      setDecodeErr(e instanceof Error ? e.message : "사진을 회전하지 못했습니다.");
+    }
   }, [decodedGeneration, quarterTurns]);
 
   useLayoutEffect(() => {

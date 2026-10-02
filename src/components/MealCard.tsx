@@ -752,7 +752,8 @@ interface EditDialogProps {
   variant?: "edit" | "addManual";
   /** 저장 후 AI 에게 별점·한줄평·영양·태그 재분석 요청 (텍스트 기반). 구현되어 있지 않으면 버튼 숨김. */
   canReanalyze?: boolean;
-  onClose: () => void;
+  /** `saved: true` 면 저장이 끝난 닫기. 초안은 이 경우가 아니면 버린다. */
+  onClose: (opts?: { saved?: boolean }) => void;
   onSave: (patch: MealItemPatch, opts: { reanalyze: boolean }) => Promise<void> | void;
 }
 
@@ -822,7 +823,7 @@ export function MealItemEditDialog({
         },
         { reanalyze },
       );
-      onClose();
+      onClose({ saved: true });
     } catch (e) {
       alert(userFacingStorageErrorMessage(e));
     } finally {

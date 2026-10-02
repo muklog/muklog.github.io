@@ -106,7 +106,7 @@ export async function updateMealItem(
     await new Promise((r) => setTimeout(r, 120));
     if (!(await attempt())) {
       console.warn("[updateMealItem] 항목을 찾지 못함", mealId, itemId);
-      return;
+      throw new Error("저장할 식단을 찾지 못했어요. 화면을 새로고침한 뒤 다시 시도해 주세요.");
     }
   }
   afterUserDataMutation();

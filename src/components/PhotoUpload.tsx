@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useId, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { Camera, ImagePlus, Loader2 } from "lucide-react";
 import { compressImage, type CompressOptions } from "../lib/image";
 import { shouldOmitCaptureOnFileInputs } from "../lib/filePickerCapabilities";
@@ -86,14 +87,32 @@ async function readFileAsNonEmptyBuffer(file: File): Promise<ArrayBuffer | null>
   });
 }
 
+/** JPEG 은 끝의 EOI(FF D9)가 있어야 잘린 카메라 파일이 아니다. */
+function isCompleteImageBuffer(buf: ArrayBuffer, mime: string): boolean {
+  const u = new Uint8Array(buf);
+  if (u.byteLength < 32) return false;
+  const jpegMagic = u[0] === 0xff && u[1] === 0xd8;
+  const jpegMime = /jpe?g/i.test(mime);
+  if (!jpegMagic && !jpegMime) return true;
+  if (!jpegMagic) return false;
+  const from = Math.max(2, u.length - 2048);
+  for (let i = u.length - 2; i >= from; i--) {
+    if (u[i] === 0xff && u[i + 1] === 0xd9) return true;
+  }
+  return false;
+}
+
 /**
- * 카메라(WebView·모바일 크롬)에서는 촬영 직후 `size`만 갱신되고 `arrayBuffer()`가 비었다가
- * 늦게 채워지는 경우가 있다. 원본 File 핸들을 그대로 넘기지 않고, 읽기에 성공한 바이트로만 File을 만든다.
+ * 카메라(WebView·모바일 크롬)에서는 촬영 직후 `size`만 갱신되고 바이트는 나중에 찬다.
+ * 0바이트가 아닌 잘린 JPEG 를 바로 쓰면 편집 화면은 뜨고, 확인 저장만 실패한다.
+ * 같은 크기가 두 번 연속이고(JPEG 이면 EOI 까지)일 때만 복사본을 만든다.
  */
 async function coerceFileToReadableImage(file: File): Promise<File | null> {
-  const steps = [0, 50, 120, 280, 500, 800, 1200, 1800, 2600, 3500, 5000, 7000];
+  const steps = [0, 80, 160, 280, 450, 700, 1000, 1400, 1900, 2500, 3200, 4000, 5000, 6500];
   const mime = file.type && file.type.length > 0 ? file.type : "image/jpeg";
   const name = file.name || "photo.jpg";
+  let prevLen = -1;
+  let lastGood: ArrayBuffer | null = null;
 
   for (let i = 0; i < steps.length; i++) {
     const ms = steps[i]!;
@@ -102,15 +121,20 @@ async function coerceFileToReadableImage(file: File): Promise<File | null> {
     }
     try {
       const buf = await readFileAsNonEmptyBuffer(file);
-      if (buf && buf.byteLength > 0) {
+      if (!buf) continue;
+      const complete = isCompleteImageBuffer(buf, mime);
+      if (complete) lastGood = buf;
+      if (complete && prevLen === buf.byteLength) {
         return new File([buf], name, { type: mime });
       }
+      prevLen = buf.byteLength;
     } catch (e) {
       if (i === steps.length - 1) {
         console.warn("[PhotoUpload] 카메라·앨범 파일 읽기 실패", e);
       }
     }
   }
+  if (lastGood) return new File([lastGood], name, { type: mime });
   return null;
 }
 
@@ -147,6 +171,8 @@ export default function PhotoUpload({
   const camRef = useRef<HTMLInputElement>(null);
   const galRef = useRef<HTMLInputElement>(null);
 
+  /** 카메라 복귀 후 편집 화면이 열리기 전까지 */
+  const [cameraPreparing, setCameraPreparing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [savingEdited, setSavingEdited] = useState(false);
@@ -156,6 +182,11 @@ export default function PhotoUpload({
   /** 카메라 버튼으로 피커를 연 뒤 백그라운드 복귀했는지 (빈 FileList 안내용) */
   const cameraPickerArmedRef = useRef(false);
   const cameraSawHiddenRef = useRef(false);
+  /** 카메라 change 가 빈 목록 → 실제 파일 순으로 두 번 올 때, 앞의 빈 이벤트가 세션을 끊지 않게 */
+  const fileEventGenRef = useRef(0);
+  /** 복귀 직후 띄운 준비 중 오버레이를, 파일 읽기가 시작되면 취소 타이머가 끄지 않게 */
+  const prepareGenRef = useRef(0);
+  const cameraReadActiveRef = useRef(false);
 
   const useEditor = squareCropEditor === true;
   const maxDim = compressOptions?.maxDimension ?? 1280;
@@ -183,16 +214,27 @@ export default function PhotoUpload({
 
   useEffect(() => {
     const onVis = () => {
-      if (
-        cameraPickerArmedRef.current &&
-        document.visibilityState === "hidden"
-      ) {
+      if (!cameraPickerArmedRef.current) return;
+      if (document.visibilityState === "hidden") {
         cameraSawHiddenRef.current = true;
+        return;
       }
+      if (!cameraSawHiddenRef.current) return;
+      const gen = ++prepareGenRef.current;
+      setCameraPreparing(true);
+      window.setTimeout(() => {
+        if (prepareGenRef.current !== gen) return;
+        if (cameraReadActiveRef.current || holdSessionForEditorRef.current) return;
+        setCameraPreparing(false);
+      }, 3500);
     };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
+
+  useEffect(() => {
+    if (editorQueue.length > 0) setCameraPreparing(false);
+  }, [editorQueue.length]);
 
   // 편집기·저장이 모두 끝나면 캡처 세션 해제 → deferred sync / idb reconnect 진행
   useEffect(() => {
@@ -276,17 +318,30 @@ export default function PhotoUpload({
     opts?: { fromCamera?: boolean },
   ) {
     const fromCamera = opts?.fromCamera === true;
+    const eventGen = ++fileEventGenRef.current;
     const raw = Array.from(fileList ?? []).filter(Boolean) as File[];
     if (raw.length === 0) {
-      if (fromCamera && cameraSawHiddenRef.current) {
+      if (!fromCamera) return;
+      await new Promise<void>((r) => setTimeout(r, 800));
+      if (fileEventGenRef.current !== eventGen) return;
+      if (holdSessionForEditorRef.current) return;
+      if (cameraSawHiddenRef.current) {
         alert(
           "사진을 받지 못했어요. 촬영이 취소됐거나, 브라우저가 파일을 넘기지 못한 경우예요.\n\n오른쪽 앨범 버튼에서 방금 찍은 사진을 골라 주세요.",
         );
       }
       cameraPickerArmedRef.current = false;
       cameraSawHiddenRef.current = false;
-      if (fromCamera) endPhotoCaptureSession();
+      cameraReadActiveRef.current = false;
+      setCameraPreparing(false);
+      endPhotoCaptureSession();
       return;
+    }
+
+    if (fromCamera) {
+      prepareGenRef.current += 1;
+      cameraReadActiveRef.current = true;
+      setCameraPreparing(true);
     }
 
     // 카메라 버튼에서 이미 begin 한 경우 중복 begin 방지
@@ -357,11 +412,13 @@ export default function PhotoUpload({
       clearInputs(clearRefs);
       cameraPickerArmedRef.current = false;
       cameraSawHiddenRef.current = false;
+      if (fromCamera) cameraReadActiveRef.current = false;
       if (camArmTimeoutRef.current) {
         clearTimeout(camArmTimeoutRef.current);
         camArmTimeoutRef.current = null;
       }
       if (!keepSessionForEditor) {
+        if (fromCamera) setCameraPreparing(false);
         endPhotoCaptureSession();
       }
     }
@@ -386,6 +443,8 @@ export default function PhotoUpload({
       if (cameraPickerArmedRef.current && !holdSessionForEditorRef.current) {
         cameraPickerArmedRef.current = false;
         cameraSawHiddenRef.current = false;
+        cameraReadActiveRef.current = false;
+        setCameraPreparing(false);
         endPhotoCaptureSession();
       }
     }, 90_000);
@@ -401,6 +460,26 @@ export default function PhotoUpload({
 
   return (
     <Fragment>
+      {cameraPreparing && !editorOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/75 px-6 backdrop-blur-[2px]"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-700 bg-slate-900 px-6 py-5 text-center shadow-xl">
+                <Loader2 className="h-8 w-8 animate-spin text-brand-400" aria-hidden />
+                <p className="text-sm font-medium text-slate-100">사진 준비 중</p>
+                <p className="text-xs leading-relaxed text-slate-400">
+                  촬영한 사진을 불러오고 있어요.
+                  <br />
+                  편집 화면이 열릴 때까지 기다려 주세요.
+                </p>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
       {editorOpen && editorFile ? (
         <PhotoEditDialog
           key={`${editorFile.name}-${editorFile.size}-${editorFile.lastModified}-${editorQueue.length}`}

@@ -130,39 +130,66 @@ export async function decodeImage(blob: Blob): Promise<DecodedImage> {
 /**
  * 일부 모바일·WebView 에서 `toBlob` 이 null 을 돌려주는 경우가 있어 toDataURL 로 폴백한다.
  */
+function blobFromDataUrl(dataUrl: string, mimeType: string): Blob {
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) throw new Error("이미지를 JPEG 로 저장하지 못했습니다.");
+  const base64 = dataUrl.slice(comma + 1);
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const out = new Blob([bytes], { type: mimeType });
+  if (out.size <= 0) throw new Error("이미지를 JPEG 로 저장하지 못했습니다.");
+  return out;
+}
+
 function canvasToBlobWithFallback(
   canvas: HTMLCanvasElement,
   mimeType: string,
   quality: number,
 ): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (b) => {
-        if (b && b.size > 0) {
-          resolve(b);
-          return;
-        }
-        try {
-          const dataUrl = canvas.toDataURL(mimeType, quality);
-          const comma = dataUrl.indexOf(",");
-          if (comma < 0) {
-            reject(new Error("이미지를 JPEG 로 저장하지 못했습니다."));
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
+    const viaDataUrl = () => {
+      const dataUrl = canvas.toDataURL(mimeType, quality);
+      finish(() => resolve(blobFromDataUrl(dataUrl, mimeType)));
+    };
+    const timer = setTimeout(() => {
+      try {
+        viaDataUrl();
+      } catch (e) {
+        finish(() => reject(e instanceof Error ? e : new Error(String(e))));
+      }
+    }, 2500);
+    try {
+      canvas.toBlob(
+        (b) => {
+          clearTimeout(timer);
+          if (b && b.size > 0) {
+            finish(() => resolve(b));
             return;
           }
-          const base64 = dataUrl.slice(comma + 1);
-          const bin = atob(base64);
-          const bytes = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          const out = new Blob([bytes], { type: mimeType });
-          if (out.size > 0) resolve(out);
-          else reject(new Error("이미지를 JPEG 로 저장하지 못했습니다."));
-        } catch (e) {
-          reject(e instanceof Error ? e : new Error(String(e)));
-        }
-      },
-      mimeType,
-      quality,
-    );
+          try {
+            viaDataUrl();
+          } catch (e) {
+            finish(() => reject(e instanceof Error ? e : new Error(String(e))));
+          }
+        },
+        mimeType,
+        quality,
+      );
+    } catch (e) {
+      clearTimeout(timer);
+      try {
+        viaDataUrl();
+      } catch (err) {
+        finish(() => reject(err instanceof Error ? err : e));
+      }
+    }
   });
 }
 
@@ -282,6 +309,32 @@ export function drawSquareCoverCrop(
   ctx.scale(K, K);
   ctx.drawImage(rot, -Rw / 2, -Rh / 2, Rw, Rh);
   ctx.restore();
+}
+
+/**
+ * 편집 직전 작업용 캔버스. 가로·세로 비율은 그대로 두고 긴 변만 제한한다.
+ * 카메라 원본(수천만 화소)을 그대로 회전하면 WebView 가 확인 저장 중에 죽는다.
+ * 정사각형으로 잘라 저장하는 단계는 이 다음이다.
+ */
+export function canvasScaledToMaxEdge(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  maxEdge: number,
+): HTMLCanvasElement {
+  const longest = Math.max(width, height, 1);
+  const scale = Math.min(1, maxEdge / longest);
+  const w = Math.max(1, Math.round(width * scale));
+  const h = Math.max(1, Math.round(height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx || canvas.width < 1 || canvas.height < 1) {
+    throw new Error("사진을 편집용 크기로 준비하지 못했습니다. 다시 촬영해 주세요.");
+  }
+  ctx.drawImage(source, 0, 0, w, h);
+  return canvas;
 }
 
 /** 회전(90° 단위)된 오프스크린 캔버스 · 미리보기/내보내기 공용 */

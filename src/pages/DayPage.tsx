@@ -260,6 +260,13 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
             updatedAt: now,
           };
       await runDexie(() => db.meals.put(nextMeal));
+      const saved = await runDexie(() => db.meals.get(nextMeal.id));
+      const savedItem = saved
+        ? normalizeMeal(saved).items.find((it) => it.id === itemId)
+        : undefined;
+      if (!savedItem?.photo?.size && !savedItem?.thumbnail?.size) {
+        throw new Error("사진을 기기에 저장하지 못했습니다. 확인을 한 번 더 눌러 주세요.");
+      }
       afterUserDataMutation();
       // IDB put 직후 한 프레임·짧은 대기 뒤 즉시 sync — Blob 이 반영된 뒤 Storage 로 올라가게
       await new Promise<void>((r) => {
@@ -430,37 +437,39 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
           <button
             type="button"
             onClick={() => {
-              if (items.length >= MAX_MEAL_ITEMS) {
-                alert(`한 끼니에는 항목을 최대 ${MAX_MEAL_ITEMS}개까지 추가할 수 있어요.`);
-                return;
-              }
-              // 분석 없이 메뉴만 기록하고 싶을 때를 위한 빠른 진입점.
-              // 빈 슬롯에서도 사진 없이 바로 기록할 수 있게 항상 노출한다.
-              const now = Date.now();
-              const id = uid();
-              const newItem: MealItem = {
-                id,
-                analysisStatus: "skipped",
-                draft: true,
-                createdAt: now,
-                updatedAt: now,
-              };
-              const base: Meal = meal
-                ? { ...meal, items: [...items, newItem], updatedAt: now }
-                : {
-                    id: uid(),
-                    userId,
-                    date,
-                    slot,
-                    items: [newItem],
+              void (async () => {
+                try {
+                  const existing = await mealRowForSlot();
+                  const currentItems = existing?.items ?? items;
+                  if (currentItems.length >= MAX_MEAL_ITEMS) {
+                    alert(`한 끼니에는 항목을 최대 ${MAX_MEAL_ITEMS}개까지 추가할 수 있어요.`);
+                    return;
+                  }
+                  const now = Date.now();
+                  const id = uid();
+                  const newItem: MealItem = {
+                    id,
+                    analysisStatus: "skipped",
+                    draft: true,
                     createdAt: now,
                     updatedAt: now,
                   };
-              void (async () => {
-                await runDexie(() => db.meals.put(base));
-                afterUserDataMutation();
-                requestAutoCloudSync({ immediate: true });
-                setEditingItemId(id);
+                  const base: Meal = existing
+                    ? { ...existing, items: [...currentItems, newItem], updatedAt: now }
+                    : {
+                        id: uid(),
+                        userId,
+                        date,
+                        slot,
+                        items: [newItem],
+                        createdAt: now,
+                        updatedAt: now,
+                      };
+                  await runDexie(() => db.meals.put(base));
+                  setEditingItemId(id);
+                } catch (e) {
+                  alert(userFacingStorageErrorMessage(e));
+                }
               })();
             }}
             className="btn-secondary w-full py-2 text-xs"
@@ -477,9 +486,9 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
           item={editingItem}
           variant={editingItem.draft ? "addManual" : "edit"}
           canReanalyze={!!apiKey}
-          onClose={() => {
+          onClose={(opts) => {
             const id = editingItemId;
-            const closingDraft = editingItem.draft === true;
+            const closingDraft = editingItem.draft === true && opts?.saved !== true;
             setEditingItemId(null);
             if (closingDraft && id) {
               void deleteMealItem(meal.id, id, { ownerUid });
