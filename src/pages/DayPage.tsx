@@ -13,7 +13,7 @@ import {
 } from "../lib/db";
 import { userFacingStorageErrorMessage } from "../lib/idbRetry";
 import { requestAutoCloudSync } from "../lib/autoCloudSync";
-import { analyzeMealImage } from "../lib/ai";
+import { analyzeMealImage, reanalyzeMealFromText } from "../lib/ai";
 import { snapshotBlob } from "../lib/image";
 import { shareMealCardFromElement } from "../lib/shareMealCardImage";
 import { getAppShareAbsoluteUrl } from "../lib/siteUrl";
@@ -162,6 +162,8 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
   const [shareBusy, setShareBusy] = useState(false);
   const mealShareRef = useRef<HTMLDivElement | null>(null);
   const [removeBusyId, setRemoveBusyId] = useState<string | null>(null);
+  /** 저장이 끝난 초안은 창을 닫아도 지우지 않는다 */
+  const keptManualIdsRef = useRef(new Set<string>());
 
   useEffect(() => {
     if (searchParams.get("slot") !== slot) return;
@@ -342,6 +344,52 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
     await deleteEntireMeal(meal.id, { ownerUid });
   }
 
+  async function reanalyzeSavedManualItem(
+    mealId: string,
+    itemId: string,
+    patch: { menuText: string; nutrition?: MealItem["nutrition"] },
+  ) {
+    if (!apiKey) return;
+    await updateMealItem(mealId, itemId, (it) => ({
+      ...it,
+      draft: false,
+      analysisStatus: "analyzing",
+      analysisError: undefined,
+      manuallyEdited: false,
+    }));
+    try {
+      const profile = await getAnalysisProfileForUser(userId);
+      const result = await reanalyzeMealFromText(
+        apiKey,
+        { menuText: patch.menuText, nutrition: patch.nutrition },
+        slot,
+        undefined,
+        profile,
+      );
+      await updateMealItem(mealId, itemId, (it) => ({
+        ...it,
+        draft: false,
+        menuText: result.menuText || patch.menuText,
+        rating: result.rating,
+        aiComment: result.aiComment,
+        nutrition: result.nutrition,
+        isMealPhoto: true,
+        analysisStatus: "done",
+        analysisError: undefined,
+        manuallyEdited: false,
+      }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await updateMealItem(mealId, itemId, (it) => ({
+        ...it,
+        draft: false,
+        analysisStatus: "error",
+        analysisError: msg,
+      })).catch(() => {});
+      alert(`메뉴는 저장됐어요.\nAI 분석만 실패했어요.\n${msg}`);
+    }
+  }
+
   const editingItem = items.find((it) => it.id === editingItemId) ?? null;
 
   return (
@@ -488,19 +536,33 @@ function SlotSection({ slot, date, userId, meal, apiKey, ownerUid }: SlotProps) 
           canReanalyze={!!apiKey}
           onClose={(opts) => {
             const id = editingItemId;
-            const closingDraft = editingItem.draft === true && opts?.saved !== true;
+            const kept = id != null && keptManualIdsRef.current.has(id);
+            const closingDraft =
+              editingItem.draft === true && opts?.saved !== true && !kept;
             setEditingItemId(null);
             if (closingDraft && id) {
+              keptManualIdsRef.current.delete(id);
               void deleteMealItem(meal.id, id, { ownerUid });
             }
           }}
           onSave={async (patch, opts) => {
-            const res = await saveMealItemPatch(meal.id, editingItem.id, patch, opts, {
+            const mealId = meal.id;
+            const itemId = editingItem.id;
+            await saveMealItemPatch(mealId, itemId, patch, { reanalyze: false }, {
               userId,
               slot,
               apiKey,
             });
-            if (opts.reanalyze && !res.reanalyzed && res.error) alert(res.error);
+            keptManualIdsRef.current.add(itemId);
+            if (!opts.reanalyze || !apiKey) {
+              if (opts.reanalyze && !apiKey) {
+                alert("메뉴는 저장했어요. Gemini API 키가 없어 AI 분석은 건너뛰었어요.");
+              }
+              return;
+            }
+            analysisTailRef.current = analysisTailRef.current
+              .then(() => reanalyzeSavedManualItem(mealId, itemId, patch))
+              .catch(() => {});
           }}
         />
       )}
