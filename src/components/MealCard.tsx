@@ -799,6 +799,7 @@ export function MealItemEditDialog({
     }
     setBusy(reanalyze ? "reanalyze" : "save");
     try {
+      const menuOnly = variant === "addManual";
       const preservedTags = item.nutrition?.healthTags?.filter(Boolean) ?? [];
       const nutrition: MealItem["nutrition"] = {
         calories: strToNum(cal),
@@ -818,8 +819,8 @@ export function MealItemEditDialog({
       await onSave(
         {
           menuText: menu.trim(),
-          aiComment: item.aiComment?.trim() || undefined,
-          nutrition: hasAny ? nutrition : undefined,
+          aiComment: menuOnly ? undefined : item.aiComment?.trim() || undefined,
+          nutrition: menuOnly || !hasAny ? undefined : nutrition,
         },
         { reanalyze },
       );
@@ -879,7 +880,7 @@ export function MealItemEditDialog({
           <div className="min-w-0 flex-1">
             <p className="text-[11px] text-slate-400">
               {variant === "addManual"
-                ? "사진 없이 메뉴와 영양 정보를 적어 저장하면 끼니에 추가돼요. 저장한 뒤에도 AI로 별점·한 줄 평을 받을 수 있어요."
+                ? "메뉴만 적으면 됩니다. AI 분석을 누르면 칼로리·영양과 별점·한 줄 평을 채워서 저장해요."
                 : "메뉴·영양 정보를 직접 고치고 AI 분석을 다시 받을 수 있어요."}
             </p>
             {variant !== "addManual" && (
@@ -904,23 +905,25 @@ export function MealItemEditDialog({
             />
           </Field>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="칼로리 (kcal)">
-              <input inputMode="numeric" value={cal} onChange={(e) => setCal(e.target.value)} className="input" />
-            </Field>
-            <Field label="탄수화물 (g)">
-              <input inputMode="numeric" value={carb} onChange={(e) => setCarb(e.target.value)} className="input" />
-            </Field>
-            <Field label="단백질 (g)">
-              <input inputMode="numeric" value={pro} onChange={(e) => setPro(e.target.value)} className="input" />
-            </Field>
-            <Field label="지방 (g)">
-              <input inputMode="numeric" value={fat} onChange={(e) => setFat(e.target.value)} className="input" />
-            </Field>
-            <Field label="당 (g)" className="col-span-2">
-              <input inputMode="numeric" value={sugar} onChange={(e) => setSugar(e.target.value)} className="input" />
-            </Field>
-          </div>
+          {variant !== "addManual" && (
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="칼로리 (kcal)">
+                <input inputMode="numeric" value={cal} onChange={(e) => setCal(e.target.value)} className="input" />
+              </Field>
+              <Field label="탄수화물 (g)">
+                <input inputMode="numeric" value={carb} onChange={(e) => setCarb(e.target.value)} className="input" />
+              </Field>
+              <Field label="단백질 (g)">
+                <input inputMode="numeric" value={pro} onChange={(e) => setPro(e.target.value)} className="input" />
+              </Field>
+              <Field label="지방 (g)">
+                <input inputMode="numeric" value={fat} onChange={(e) => setFat(e.target.value)} className="input" />
+              </Field>
+              <Field label="당 (g)" className="col-span-2">
+                <input inputMode="numeric" value={sugar} onChange={(e) => setSugar(e.target.value)} className="input" />
+              </Field>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 space-y-2">
