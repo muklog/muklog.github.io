@@ -849,9 +849,9 @@ export function MealItemEditDialog({
           </h2>
           <button
             type="button"
-            onClick={onClose}
             className="rounded-lg p-1.5 text-slate-400 hover:text-slate-100"
             aria-label="닫기"
+            onClick={() => onClose()}
           >
             <X size={18} />
           </button>
@@ -945,7 +945,7 @@ export function MealItemEditDialog({
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose()}
               disabled={busy !== null}
               className="btn-secondary flex-1 py-2 text-sm"
             >
